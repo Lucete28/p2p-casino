@@ -5,7 +5,10 @@ const SDK = 'https://www.gstatic.com/firebasejs/12.19.0/'
 // 로컬 테스트용: localhost에서 ?emu 를 붙이면 Firebase 에뮬레이터에 연결
 const EMU = new URLSearchParams(location.search).has('emu') && ['localhost', '127.0.0.1'].includes(location.hostname)
 
-export const enabled = !!(firebaseConfig || EMU)
+// 로컬 개발용: localhost에서 ?local 을 붙이면 Firebase 없이 브라우저 저장만 사용
+const LOCAL = new URLSearchParams(location.search).has('local') && ['localhost', '127.0.0.1'].includes(location.hostname)
+
+export const enabled = !LOCAL && !!(firebaseConfig || EMU)
 
 let A, F, auth, db
 
