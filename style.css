@@ -195,8 +195,60 @@ header .me-info b { color: var(--gold); }
 }
 .actions .row { display: flex; gap: 8px; flex-wrap: wrap; }
 .actions .row .btn { flex: 1; min-width: 90px; }
-.actions .slider { align-items: center; }
-.actions input[type=range] { flex: 1; min-width: 140px; accent-color: var(--gold); }
+.bet-box { display: flex; flex-direction: column; gap: 6px; }
+.amount-row { display: flex; align-items: center; gap: 6px; }
+.amount-row .step {
+  width: 40px; height: 40px; border-radius: 10px; border: 1px solid #33507d; background: #1f2d45;
+  color: var(--text); font-size: 20px; font-weight: 700; line-height: 1;
+}
+.amount-row .step:active { transform: scale(.94); }
+.amt-input {
+  width: 120px; height: 40px; text-align: center; font-size: 18px; font-weight: 700;
+  background: #0d1117; color: var(--gold); border: 1px solid #33507d; border-radius: 10px;
+  -moz-appearance: textfield;
+}
+.amt-input::-webkit-outer-spin-button, .amt-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.amount-row .extra { margin-left: auto; font-size: 12px; color: var(--muted); }
+.amount-row .extra b { color: var(--text); }
+.actions input[type=range] { width: 100%; accent-color: var(--gold); margin: 2px 0 0; }
+.range-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: -4px; }
+.presets { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.presets .chip { padding: 7px 0; font-size: 13px; color: var(--text); }
+.presets .chip.active { background: var(--gold); color: #1b1300; border-color: var(--gold); font-weight: 700; }
+.presets .chip:disabled { opacity: .3; cursor: not-allowed; }
+
+/* 빈 자리 */
+.seat.empty { width: 90px; }
+.seat.empty .plate { background: #0005; border: 2px dashed #ffffff2e; padding: 10px 6px; }
+.seat.empty .pname { color: #ffffff55; font-weight: 600; font-size: 12px; }
+
+/* 대기 인원 */
+.chip.count { color: var(--text); border-color: #4b6584; background: #1f2d45; cursor: default; }
+.waiting { text-align: center; max-width: 62%; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.wait-count { font-size: 15px; color: #cdd9e5; text-shadow: 0 1px 2px #000; }
+.wait-count b { font-size: 38px; color: var(--gold); margin: 0 4px; vertical-align: -4px; }
+.wait-count span { color: #cdd9e5aa; }
+.wait-sub { font-size: 14px; text-shadow: 0 1px 2px #000; }
+.wait-sub b { color: var(--gold); }
+.wait-list { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; }
+.wchip { font-size: 12px; padding: 3px 9px; border-radius: 999px; background: #000a; border: 1px solid #3fb95088; white-space: nowrap; }
+.wchip.sitout, .wchip.left { border-color: #ffffff30; color: #cdd9e5aa; }
+.wchip.broke { border-color: #f0883e88; }
+.wait-hint { font-size: 12px; color: #cdd9e5aa; }
+
+/* 파산 안내 */
+.bankrupt-box { max-width: 340px; }
+.bankrupt-box h2 { margin: 6px 0; }
+.bankrupt-box p { color: #cdd9e5; line-height: 1.6; }
+.bankrupt-box p b { color: var(--gold); }
+.bk-icon { font-size: 44px; animation: pop .45s cubic-bezier(.2, 1.6, .4, 1); }
+.bk-actions { display: flex; gap: 8px; justify-content: center; margin-top: 14px; }
+.bk-actions .btn { flex: 1; }
+#lobby-refill { margin-top: 8px; }
+
+/* 버전 */
+.version { margin: 0; text-align: center; font-size: 11px; color: var(--muted); letter-spacing: .5px; }
+#version-game { margin-top: 8px; }
 
 /* 행동 효과: 자리 앞 말풍선 + 퍼지는 고리 */
 .act-fx {
@@ -310,6 +362,14 @@ header .me-info b { color: var(--gold); }
   .odds-row { grid-template-columns: 7.5em 1fr 3.6em; font-size: 12px; }
   .card.mini { width: 20px; height: 29px; font-size: 9px; }
   .act-fx { font-size: 14px; padding: 4px 10px; }
+  .seat.empty { width: 64px; }
+  .seat.empty .plate { padding: 6px 4px; }
+  .wait-count b { font-size: 24px; }
+  .wait-count { font-size: 12px; }
+  .waiting { max-width: 50%; gap: 3px; }
+  .wait-sub { font-size: 12px; }
+  .wchip { font-size: 11px; padding: 2px 7px; }
+  .wait-hint { display: none; }
   .act-fx.allin { font-size: 17px; }
   .act-ring { width: 80px; height: 40px; margin: -20px 0 0 -40px; }
 }
