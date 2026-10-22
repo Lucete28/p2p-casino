@@ -98,6 +98,40 @@ header .me-info b { color: var(--gold); }
 .board { display: flex; gap: 6px; }
 .result { text-align: center; font-size: 14px; min-height: 1.3em; text-shadow: 0 1px 2px #000; line-height: 1.5; }
 .result small { color: var(--gold); }
+.result.big {
+  font-size: 16px; padding: 6px 16px; border-radius: 12px;
+  background: #000a; border: 1px solid var(--gold-dark);
+  animation: pop .45s cubic-bezier(.2, 1.6, .4, 1);
+}
+.result.mine { border-color: var(--gold); box-shadow: 0 0 24px #e3b34199; }
+.result .amt { color: #3fb950; font-weight: 800; }
+.win-title {
+  font-size: 26px; font-weight: 900; letter-spacing: 4px; color: var(--gold);
+  text-shadow: 0 0 12px #e3b341cc, 0 2px 0 #000; animation: shine 1.2s ease-in-out infinite alternate;
+}
+@keyframes pop { from { transform: scale(.4); opacity: 0; } }
+@keyframes shine { to { text-shadow: 0 0 26px #f2c94c, 0 2px 0 #000; } }
+
+/* 결과: 승리 족보 5장 강조 */
+.card.hi { box-shadow: 0 0 0 2px var(--gold), 0 0 14px #e3b341cc; transform: translateY(-4px); transition: transform .3s; }
+.card.dim { opacity: .35; filter: grayscale(.5); }
+
+/* 승리 연출 레이어 */
+.fx { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+.fly-chip {
+  position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%;
+  background: radial-gradient(circle, #fff3 0 30%, transparent 31%), repeating-conic-gradient(var(--gold) 0 30deg, #9e1c1c 30deg 60deg);
+  border: 2px solid #fff; box-shadow: 0 2px 4px #000a;
+  transition: left .8s cubic-bezier(.5, -0.3, .3, 1), top .8s cubic-bezier(.5, -0.3, .3, 1), opacity .8s;
+}
+.float-amt {
+  position: absolute; transform: translate(-50%, -50%); font-size: 22px; font-weight: 900; color: #3fb950;
+  text-shadow: 0 0 8px #000, 0 2px 0 #000; animation: rise 2.2s ease-out forwards; white-space: nowrap;
+}
+@keyframes rise { 0% { opacity: 0; margin-top: 0; } 15% { opacity: 1; } 100% { opacity: 0; margin-top: -70px; } }
+.confetti { position: fixed; inset: 0; pointer-events: none; z-index: 40; }
+.crown { position: absolute; top: -28px; z-index: 3; font-size: 22px; animation: bob 1s ease-in-out infinite alternate; filter: drop-shadow(0 2px 2px #000); }
+@keyframes bob { to { transform: translateY(-5px); } }
 
 /* 카드 */
 .card {
@@ -131,7 +165,8 @@ header .me-info b { color: var(--gold); }
 }
 .seat.me .plate { border-color: #4b6584; }
 .seat.turn .plate { border-color: var(--gold); box-shadow: 0 0 16px #e3b34180; }
-.seat.winner .plate { border-color: #3fb950; box-shadow: 0 0 18px #3fb95090; }
+.seat.winner .plate { border-color: var(--gold); animation: winpulse 1s ease-in-out infinite alternate; }
+@keyframes winpulse { from { box-shadow: 0 0 10px #e3b34166; } to { box-shadow: 0 0 28px #e3b341dd, 0 0 4px #fff; } }
 .seat.folded { opacity: .45; }
 .pname { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tag { font-style: normal; font-size: 10px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 3px; margin-left: 3px; }
@@ -163,6 +198,89 @@ header .me-info b { color: var(--gold); }
 .actions .slider { align-items: center; }
 .actions input[type=range] { flex: 1; min-width: 140px; accent-color: var(--gold); }
 
+/* 행동 효과: 자리 앞 말풍선 + 퍼지는 고리 */
+.act-fx {
+  --c: #8b949e;
+  position: absolute; z-index: 5; transform: translate(-50%, -50%);
+  padding: 5px 14px; border-radius: 999px; white-space: nowrap;
+  font-size: 17px; font-weight: 900; color: #fff;
+  background: var(--c); border: 2px solid #fff8;
+  box-shadow: 0 4px 14px #000b, 0 0 18px var(--c);
+  text-shadow: 0 1px 2px #0008;
+  animation: actpop 1.8s ease-out forwards;
+}
+.act-fx.fold { --c: #6e7681; }
+.act-fx.check { --c: #2f6fb5; }
+.act-fx.call { --c: #2f8a4f; }
+.act-fx.bet, .act-fx.raise { --c: #d97a16; }
+.act-fx.allin {
+  --c: #c62a2a; font-size: 22px; border-color: var(--gold);
+  box-shadow: 0 4px 14px #000b, 0 0 30px #ff5a2a, 0 0 8px var(--gold);
+  animation: actpop 2s ease-out forwards, shake .4s .15s 2;
+}
+@keyframes actpop {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(.3); }
+  12% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+  22% { transform: translate(-50%, -50%) scale(1); }
+  75% { opacity: 1; transform: translate(-50%, -60%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -110%) scale(.9); }
+}
+@keyframes shake {
+  25% { margin-left: -5px; } 75% { margin-left: 5px; }
+}
+.act-ring {
+  --c: #8b949e;
+  position: absolute; z-index: 1; width: 120px; height: 60px; margin: -30px 0 0 -60px;
+  border-radius: 50%; border: 3px solid var(--c); opacity: 0;
+  animation: ring .9s ease-out;
+}
+.act-ring.check { --c: #58a6ff; }
+.act-ring.call { --c: #3fb950; }
+.act-ring.bet, .act-ring.raise { --c: #f0883e; }
+.act-ring.allin { --c: #ff5a2a; }
+@keyframes ring { from { opacity: .9; transform: scale(.6); } to { opacity: 0; transform: scale(1.6); } }
+@media (prefers-reduced-motion: reduce) {
+  .act-fx, .act-fx.allin { animation: actfade 1.8s forwards; }
+  .act-ring { display: none; }
+  @keyframes actfade { 0%, 75% { opacity: 1; } 100% { opacity: 0; } }
+}
+
+/* 내 패 분석 */
+.odds {
+  margin-top: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+}
+.odds-head {
+  width: 100%; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: transparent; border: 0; color: var(--text); padding: 10px 12px; text-align: left; font-size: 14px;
+}
+.odds-head b { color: var(--gold); }
+.odds-head .eq { margin-left: auto; color: var(--muted); }
+.odds-head .eq b { color: #3fb950; font-size: 16px; }
+.odds-head .caret { color: var(--muted); }
+.odds-rows { padding: 0 12px 4px; display: grid; gap: 4px; }
+.odds-row { display: grid; grid-template-columns: 9.5em 1fr 4em; align-items: center; gap: 8px; font-size: 13px; }
+.odds-row .nm i, .ranks-list i { font-style: normal; font-size: 10px; color: #1b1300; background: var(--gold); border-radius: 4px; padding: 0 4px; }
+.odds-row .bar { height: 8px; background: #ffffff12; border-radius: 4px; overflow: hidden; }
+.odds-row .bar i { display: block; height: 100%; background: linear-gradient(90deg, #2f6b47, #3fb950); border-radius: 4px; transition: width .4s; }
+.odds-row.now .bar i { background: linear-gradient(90deg, var(--gold-dark), var(--gold)); }
+.odds-row .pc { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.odds-row.now .nm, .odds-row.now .pc { color: var(--text); font-weight: 700; }
+.odds-note { margin: 4px 12px 10px; font-size: 11px; color: var(--muted); }
+
+/* 족보표 */
+.ranks-box { max-width: 460px; width: 100%; text-align: left; max-height: 90vh; overflow-y: auto; }
+.ranks-head { display: flex; align-items: center; justify-content: space-between; }
+.ranks-head h2 { margin: 0; font-size: 18px; }
+.ranks-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+.ranks-list li { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 10px; border: 1px solid transparent; }
+.ranks-list li.now { border-color: var(--gold); background: #e3b3411a; }
+.ranks-list .rk { color: var(--muted); font-weight: 700; text-align: center; }
+.ranks-list .rinfo b { font-size: 14px; }
+.ranks-list .rinfo small { display: block; color: var(--muted); font-size: 11px; }
+.mini-cards { display: flex; gap: 2px; }
+.card.mini { width: 24px; height: 34px; font-size: 10px; border-radius: 4px; box-shadow: none; }
+.ranks-box .odds-note { margin: 10px 0 0; }
+
 .log {
   margin-top: 12px; max-height: 150px; overflow-y: auto;
   background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
@@ -189,4 +307,9 @@ header .me-info b { color: var(--gold); }
   .card { width: 34px; height: 48px; font-size: 14px; }
   .board { gap: 4px; }
   header .me-info { margin-left: 0; order: 3; width: 100%; }
+  .odds-row { grid-template-columns: 7.5em 1fr 3.6em; font-size: 12px; }
+  .card.mini { width: 20px; height: 29px; font-size: 9px; }
+  .act-fx { font-size: 14px; padding: 4px 10px; }
+  .act-fx.allin { font-size: 17px; }
+  .act-ring { width: 80px; height: 40px; margin: -20px 0 0 -40px; }
 }
