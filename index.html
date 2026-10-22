@@ -28,12 +28,13 @@
       <button id="join" class="btn big">참가하기</button>
 
       <p class="note">게임 토큰은 연습용이며 실제 돈과 무관합니다.<br>토큰이 바닥나면 기본 토큰을 다시 받을 수 있어요.</p>
+      <p class="version" id="version"></p>
     </div>
   </section>
 
   <section id="game" hidden>
     <header>
-      <div class="room">방 <b id="room-code"></b> <button id="copy" class="chip">초대 링크 복사</button></div>
+      <div class="room">방 <b id="room-code"></b> <span id="headcount" class="chip count"></span> <button id="copy" class="chip">초대 링크 복사</button></div>
       <div class="me-info">🪙 <b id="my-tokens">0</b></div>
       <button id="ranks-btn" class="chip">족보</button>
       <button id="leave" class="chip">나가기</button>
@@ -44,6 +45,7 @@
         <div class="felt">
           <div id="pot" class="pot"></div>
           <div id="board" class="board"></div>
+          <div id="waiting" class="waiting" hidden></div>
           <div id="result" class="result"></div>
         </div>
         <div id="seats"></div>
@@ -54,11 +56,13 @@
     <div id="status" class="status"></div>
     <div class="controls">
       <button id="start" class="btn gold" hidden>게임 시작</button>
+      <button id="refill-btn" class="btn gold" hidden>🪙 기본 토큰 받기</button>
       <label id="sitout-wrap" class="sitout" hidden><input type="checkbox" id="sitout"> 다음 판부터 쉬기</label>
     </div>
-    <div id="odds" class="odds" hidden></div>
     <div id="actions" class="actions" hidden></div>
+    <div id="odds" class="odds" hidden></div>
     <div id="log" class="log"></div>
+    <p class="version" id="version-game"></p>
   </section>
 
   <div id="overlay" class="overlay" hidden>
@@ -66,6 +70,17 @@
       <h2 id="overlay-title"></h2>
       <p id="overlay-msg"></p>
       <button id="overlay-btn" class="btn gold">로비로</button>
+    </div>
+  </div>
+  <div id="bankrupt" class="overlay" hidden>
+    <div class="overlay-box bankrupt-box" role="dialog" aria-labelledby="bk-title">
+      <div class="bk-icon" id="bk-icon">💸</div>
+      <h2 id="bk-title"></h2>
+      <p id="bk-msg"></p>
+      <div class="bk-actions">
+        <button id="bk-later" class="btn">나중에</button>
+        <button id="bk-claim" class="btn gold">🪙 1,000 토큰 받기</button>
+      </div>
     </div>
   </div>
   <div id="ranks" class="overlay" hidden>
