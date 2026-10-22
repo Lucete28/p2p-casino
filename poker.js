@@ -73,18 +73,19 @@ export function compareScore(a, b) {
 
 // 5~7장 중 가장 좋은 5장 조합
 export function evaluate(cards) {
-  let best = null
+  let best = null, bestCards = null
   const n = cards.length
   for (let a = 0; a < n; a++)
     for (let b = a + 1; b < n; b++)
       for (let c = b + 1; c < n; c++)
         for (let d = c + 1; d < n; d++)
           for (let e = d + 1; e < n; e++) {
-            const s = score5([cards[a], cards[b], cards[c], cards[d], cards[e]])
-            if (!best || compareScore(s, best) > 0) best = s
+            const five = [cards[a], cards[b], cards[c], cards[d], cards[e]]
+            const s = score5(five)
+            if (!best || compareScore(s, best) > 0) { best = s; bestCards = five }
           }
   const name = best[0] === 8 && best[1] === 14 ? '로열 플러시' : HAND_NAMES[best[0]]
-  return { score: best, name }
+  return { score: best, name, cards: bestCards }
 }
 
 export class Table {
@@ -105,6 +106,8 @@ export class Table {
     this.deck = []
     this.result = null
     this.log = []
+    this.lastAction = null // 마지막 행동 (화면 효과용)
+    this.actSeq = 0
   }
 
   seat(id) { return this.seats.find(s => s.id === id) }
@@ -235,6 +238,9 @@ export class Table {
       return { ok: false, error: '알 수 없는 행동입니다.' }
     }
     s.acted = true
+    const kind = type === 'fold' ? 'fold' : s.allIn ? 'allin'
+      : s.last.startsWith('체크') ? 'check' : s.last.startsWith('콜') ? 'call' : s.last.startsWith('벳') ? 'bet' : 'raise'
+    this.lastAction = { id, kind, label: s.last, seq: ++this.actSeq }
     this.addLog(`${s.name}: ${s.last}`)
     this._advance()
     return { ok: true }
@@ -252,6 +258,7 @@ export class Table {
       dealerId: this.dealerId,
       toActId: this.toActId(),
       turnSeq: this.turnSeq,
+      lastAction: this.lastAction,
       result: this.result,
       log: this.log.slice(-25),
       bb: this.cfg.BB,
@@ -389,7 +396,7 @@ export class Table {
     for (const s of order) {
       if (!won[s.id]) continue
       s.stack += won[s.id]
-      winners.push({ id: s.id, name: s.name, amount: won[s.id], hand: evals[s.id].name })
+      winners.push({ id: s.id, name: s.name, amount: won[s.id], hand: evals[s.id].name, best: evals[s.id].cards })
       this.addLog(`${s.name} 님이 ${evals[s.id].name}(으)로 ${won[s.id]} 토큰 획득!`)
     }
     this.result = { winners, shown }
