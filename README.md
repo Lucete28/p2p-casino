@@ -9,6 +9,7 @@ GitHub Pages에 그대로 올리면 동작합니다.
 - `index.html`, `style.css` — 화면
 - `app.js` — P2P 연결, 방 만들기/참가, 화면 그리기
 - `poker.js` — 게임 규칙(족보 판정, 베팅, 사이드팟). 설정값(`CONFIG`)도 여기에 있음
+- `odds.js` — 내 패 분석(족보별 완성 확률, 예상 승률)과 족보표 데이터
 - `cloud.js`, `firebase-config.js` — 구글 로그인과 토큰 저장(Firebase)
 - `firestore.rules` — Firebase 보안 규칙(콘솔에 붙여넣기용)
 
