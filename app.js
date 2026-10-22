@@ -2,11 +2,14 @@
 import { joinRoom, selfId } from 'https://cdn.jsdelivr.net/npm/trystero@0.25.4/+esm'
 import { CONFIG, Table } from './poker.js'
 import * as cloud from './cloud.js'
+import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js'
 
 const APP_ID = 'p2p-casino-poker-v1'
 const STORE = 'p2pcasino.v1'
 const PHASES = { waiting: '대기 중', preflop: '프리플랍', flop: '플랍', turn: '턴', river: '리버', showdown: '결과' }
 const SUIT = { s: '♠', h: '♥', d: '♦', c: '♣' }
+const BETTING = ['preflop', 'flop', 'turn', 'river']
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
 
 const $ = s => document.querySelector(s)
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`)
@@ -238,6 +241,7 @@ function timeout(id) {
   if (!s || table.toActId() !== id) return
   table.act(id, table.currentBet > s.bet ? 'fold' : 'check')
   s.last += ' (시간 초과)'
+  if (table.lastAction?.id === id) table.lastAction.label = s.last
   afterChange()
 }
 
@@ -309,13 +313,18 @@ function render() {
   const n = seats.length
   const mine = Math.max(0, seats.findIndex(p => p.id === selfId))
   const hasMyHole = myHole && myHole.handNo === state.handNo
+  // 결과 화면: 이긴 사람의 족보 5장은 빛나게, 나머지는 흐리게
+  const r = state.result
+  const hi = r && !BETTING.includes(state.phase) && r.winners.some(w => w.best)
+    ? new Set(r.winners.flatMap(w => w.best || [])) : null
+  const mark = c => (hi ? (hi.has(c) ? 'hi' : 'dim') : '')
   $('#seats').innerHTML = seats.map((p, i) => {
     const pos = (i - mine + n) % n
     const ang = Math.PI / 2 + (pos * 2 * Math.PI) / Math.max(n, 2)
     const x = 50 + 44 * Math.cos(ang), y = 50 + 42 * Math.sin(ang)
     let cards = ''
-    if (p.id === selfId && hasMyHole && p.inHand) cards = myHole.cards.map(c => cardHtml(c)).join('')
-    else if (p.cards) cards = p.cards.map(c => cardHtml(c)).join('')
+    if (p.id === selfId && hasMyHole && p.inHand) cards = myHole.cards.map(c => cardHtml(c, p.cards ? mark(c) : '')).join('')
+    else if (p.cards) cards = p.cards.map(c => cardHtml(c, mark(c))).join('')
     else if (p.inHand && !p.folded) cards = cardHtml(null) + cardHtml(null)
     const turn = p.id === state.toActId
     const tags = [
@@ -325,7 +334,8 @@ function render() {
     ].join('')
     const win = state.result?.winners.find(w => w.id === p.id)
     return `<div class="seat ${turn ? 'turn' : ''} ${p.folded ? 'folded' : ''} ${p.id === selfId ? 'me' : ''} ${win ? 'winner' : ''}"
-              style="left:${x}%;top:${y}%">
+              data-id="${esc(p.id)}" style="left:${x}%;top:${y}%">
+      ${win ? '<b class="crown">👑</b>' : ''}
       <div class="cards">${cards}</div>
       <div class="plate">
         ${p.id === state.dealerId ? '<b class="dealer">D</b>' : ''}
@@ -338,15 +348,34 @@ function render() {
     </div>`
   }).join('')
 
-  $('#board').innerHTML = [0, 1, 2, 3, 4].map(i => state.board[i] ? cardHtml(state.board[i], 'deal') : '<div class="card slot"></div>').join('')
+  // 누가 무엇을 했는지 그 사람 자리에 효과로 표시 (처음 받은 상태는 건너뜀)
+  const la = state.lastAction
+  if (la && la.seq !== actShown) {
+    if (actShown !== null) showActionFx(la)
+    actShown = la.seq
+  } else if (actShown === null) actShown = la ? la.seq : 0
+
+  const fresh = boardSeen.hand === state.handNo ? boardSeen.len : 0
+  boardSeen = { hand: state.handNo, len: state.board.length }
+  $('#board').innerHTML = [0, 1, 2, 3, 4].map(i => state.board[i]
+    ? cardHtml(state.board[i], `${i >= fresh ? 'deal' : ''} ${mark(state.board[i])}`)
+    : '<div class="card slot"></div>').join('')
   const potTotal = state.pot + seats.reduce((a, p) => a + p.bet, 0)
   $('#pot').textContent = potTotal ? `팟 ${potTotal.toLocaleString()}` : ''
 
-  // 결과 / 상태 문구
-  const r = state.result
-  $('#result').innerHTML = r && !['preflop', 'flop', 'turn', 'river'].includes(state.phase)
-    ? r.winners.map(w => `🏆 <b>${esc(w.name)}</b> +${w.amount.toLocaleString()}${w.hand ? ` <small>${esc(w.hand)}</small>` : ''}`).join('<br>')
-    : ''
+  // 결과 배너 (내용이 바뀔 때만 다시 그려서 애니메이션이 한 번만 나오게)
+  const showResult = r && !BETTING.includes(state.phase)
+  const resultKey = showResult ? state.handNo : 0
+  if (resultKey !== resultShown) {
+    resultShown = resultKey
+    const iWon = showResult && r.winners.some(w => w.id === selfId)
+    $('#result').className = 'result' + (showResult ? ' big' : '') + (iWon ? ' mine' : '')
+    $('#result').innerHTML = showResult
+      ? (iWon ? '<div class="win-title">승리!</div>' : '') +
+        r.winners.map(w => `🏆 <b>${esc(w.name)}</b> <span class="amt">+${w.amount.toLocaleString()}</span>${w.hand ? ` <small>${esc(w.hand)}</small>` : ''}`).join('<br>')
+      : ''
+    if (showResult && state.handNo !== celebrated) { celebrated = state.handNo; celebrate(r) }
+  }
   const actor = seats.find(p => p.id === state.toActId)
   let status = PHASES[state.phase] || ''
   if (actor) status += ` · ${actor.id === selfId ? '내 차례!' : esc(actor.name) + ' 님 차례'}`
@@ -369,7 +398,177 @@ function render() {
   $('#log').scrollTop = 1e9
 
   renderActions(me)
+  renderOdds(me, hasMyHole)
 }
+
+// ---------- 행동 효과 ----------
+let actShown = null
+const ACT_ICON = { fold: '✖', check: '✔', call: '●', bet: '▲', raise: '▲', allin: '🔥' }
+
+function showActionFx(a) {
+  const seat = document.querySelector(`.seat[data-id="${CSS.escape(a.id)}"]`)
+  if (!seat) return
+  const sx = parseFloat(seat.style.left), sy = parseFloat(seat.style.top)
+  const fx = $('#fx')
+  // 자리에서 퍼지는 고리
+  const ring = document.createElement('div')
+  ring.className = `act-ring ${a.kind}`
+  ring.style.left = sx + '%'
+  ring.style.top = sy + '%'
+  fx.appendChild(ring)
+  setTimeout(() => ring.remove(), 900)
+  // 자리 앞(테이블 안쪽)에 행동 말풍선
+  const bub = document.createElement('div')
+  bub.className = `act-fx ${a.kind}`
+  bub.textContent = `${ACT_ICON[a.kind] || ''} ${a.label}`
+  bub.style.left = 50 + (sx - 50) * 0.45 + '%'
+  bub.style.top = 50 + (sy - 50) * 0.45 + '%'
+  fx.appendChild(bub)
+  setTimeout(() => bub.remove(), 1800)
+}
+
+// ---------- 승리 연출 ----------
+let boardSeen = { hand: 0, len: 0 }, resultShown = 0, celebrated = 0
+
+function celebrate(r) {
+  const fx = $('#fx')
+  const iWon = r.winners.some(w => w.id === selfId)
+  for (const w of r.winners) {
+    const seat = document.querySelector(`.seat[data-id="${CSS.escape(w.id)}"]`)
+    if (!seat) continue
+    const x = seat.style.left, y = seat.style.top
+    // +금액 떠오르기
+    const amt = document.createElement('div')
+    amt.className = 'float-amt'
+    amt.textContent = '+' + w.amount.toLocaleString()
+    amt.style.left = x
+    amt.style.top = y
+    fx.appendChild(amt)
+    setTimeout(() => amt.remove(), 2200)
+    if (reduceMotion) continue
+    // 팟에서 승자에게 칩이 날아감
+    for (let i = 0; i < 10; i++) {
+      const chip = document.createElement('div')
+      chip.className = 'fly-chip'
+      chip.style.left = 50 + (Math.random() * 8 - 4) + '%'
+      chip.style.top = 50 + (Math.random() * 8 - 4) + '%'
+      fx.appendChild(chip)
+      setTimeout(() => { chip.style.left = x; chip.style.top = y; chip.style.opacity = '0.2' }, 40 + i * 60)
+      setTimeout(() => chip.remove(), 1400 + i * 60)
+    }
+  }
+  if (iWon && !reduceMotion) confetti()
+}
+
+function confetti() {
+  const cv = document.createElement('canvas')
+  cv.className = 'confetti'
+  cv.width = innerWidth
+  cv.height = innerHeight
+  document.body.appendChild(cv)
+  const ctx = cv.getContext('2d')
+  const colors = ['#e3b341', '#f2c94c', '#3fb950', '#d1342f', '#58a6ff', '#ffffff']
+  const parts = Array.from({ length: 160 }, () => ({
+    x: cv.width / 2, y: cv.height * 0.45,
+    vx: (Math.random() - 0.5) * 16, vy: -Math.random() * 14 - 4,
+    w: 6 + Math.random() * 6, h: 3 + Math.random() * 5,
+    rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.4,
+    c: colors[Math.floor(Math.random() * colors.length)],
+  }))
+  const start = performance.now()
+  ;(function frame(now) {
+    const t = now - start
+    ctx.clearRect(0, 0, cv.width, cv.height)
+    for (const p of parts) {
+      p.vy += 0.35
+      p.x += p.vx
+      p.y += p.vy
+      p.rot += p.vr
+      ctx.save()
+      ctx.globalAlpha = Math.max(0, 1 - t / 2600)
+      ctx.translate(p.x, p.y)
+      ctx.rotate(p.rot)
+      ctx.fillStyle = p.c
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h)
+      ctx.restore()
+    }
+    if (t < 2600) requestAnimationFrame(frame)
+    else cv.remove()
+  })(start)
+}
+
+// ---------- 내 패 분석 (족보 + 확률) ----------
+let oddsKey = '', oddsResult = null
+let oddsOpen = true
+try { oddsOpen = localStorage.getItem('p2pcasino.odds') !== 'closed' } catch {}
+
+function renderOdds(me, hasMyHole) {
+  const box = $('#odds')
+  const active = me && hasMyHole && me.inHand && !me.folded && BETTING.includes(state.phase)
+  if (!active) { box.hidden = true; oddsKey = ''; return }
+  box.hidden = false
+  const opponents = state.seats.filter(p => p.inHand && !p.folded && p.id !== selfId).length
+  const key = [myHole.handNo, ...myHole.cards, ...state.board, opponents].join(',')
+  if (key !== oddsKey) {
+    oddsKey = key
+    oddsResult = null
+    analyze(myHole.cards, state.board, opponents, () => oddsKey !== key)
+      .then(res => { if (res && oddsKey === key) { oddsResult = res; drawOdds() } })
+  }
+  drawOdds()
+}
+
+const pct = p => (p >= 0.9995 ? '100%' : p > 0 && p < 0.001 ? '<0.1%' : (p * 100).toFixed(1) + '%')
+
+function drawOdds() {
+  const cur = currentHand(myHole.cards, state.board)
+  const head = `<button class="odds-head" id="odds-toggle" aria-expanded="${oddsOpen}">
+      <span>지금 내 족보 <b>${HAND_RANKS[cur.cat]}</b></span>
+      <span class="eq">${oddsResult ? (oddsResult.equity != null ? `예상 승률 <b>${pct(oddsResult.equity)}</b>` : '') : '계산 중…'}</span>
+      <span class="caret">${oddsOpen ? '▾' : '▸'}</span>
+    </button>`
+  let body = ''
+  if (oddsOpen && oddsResult) {
+    const rows = []
+    for (let c = 9; c >= 0; c--) {
+      const p = oddsResult.dist[c]
+      if (!p) continue
+      rows.push(`<div class="odds-row ${c === cur.cat ? 'now' : ''}">
+        <span class="nm">${HAND_RANKS[c]}${c === cur.cat ? ' <i>현재</i>' : ''}</span>
+        <span class="bar"><i style="width:${Math.max(1, p * 100)}%"></i></span>
+        <span class="pc">${pct(p)}</span></div>`)
+    }
+    body = `<div class="odds-rows">${rows.join('')}</div>
+      <p class="odds-note">${state.board.length === 5 ? '최종 족보' : '리버까지 갔을 때 완성될 확률'} · 승률은 상대 패를 모른다고 가정한 추정치</p>`
+  }
+  $('#odds').innerHTML = head + body
+  $('#odds-toggle').onclick = () => {
+    oddsOpen = !oddsOpen
+    try { localStorage.setItem('p2pcasino.odds', oddsOpen ? 'open' : 'closed') } catch {}
+    drawOdds()
+  }
+}
+
+// ---------- 족보표 ----------
+function openRanks() {
+  const me = state?.seats.find(p => p.id === selfId)
+  const live = me && myHole && myHole.handNo === state.handNo && me.inHand && !me.folded
+  const cur = live ? currentHand(myHole.cards, state.board).cat : -1
+  const rows = []
+  for (let c = 9; c >= 0; c--) {
+    rows.push(`<li class="${c === cur ? 'now' : ''}">
+      <span class="rk">${10 - c}</span>
+      <div class="rinfo"><b>${HAND_RANKS[c]}</b>${c === cur ? ' <i>내 족보</i>' : ''}<small>${HAND_DESC[c]}</small></div>
+      <div class="mini-cards">${HAND_EXAMPLES[c].map(x => cardHtml(x, 'mini')).join('')}</div>
+    </li>`)
+  }
+  $('#ranks-list').innerHTML = rows.join('')
+  $('#ranks').hidden = false
+}
+$('#ranks-btn').onclick = openRanks
+$('#ranks-close').onclick = () => { $('#ranks').hidden = true }
+$('#ranks').onclick = e => { if (e.target.id === 'ranks') $('#ranks').hidden = true }
+addEventListener('keydown', e => { if (e.key === 'Escape') $('#ranks').hidden = true })
 
 function renderActions(me) {
   const bar = $('#actions')
