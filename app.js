@@ -4,11 +4,14 @@ import { CONFIG, Table } from './poker.js'
 import * as cloud from './cloud.js'
 import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js'
 
+const VERSION = '1.3.0' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
 const APP_ID = 'p2p-casino-poker-v1'
 const STORE = 'p2pcasino.v1'
 const PHASES = { waiting: '대기 중', preflop: '프리플랍', flop: '플랍', turn: '턴', river: '리버', showdown: '결과' }
 const SUIT = { s: '♠', h: '♥', d: '♦', c: '♣' }
 const BETTING = ['preflop', 'flop', 'turn', 'river']
+// 인원수별 자리 배치 (6자리 중 최대한 고르게 퍼지도록). 게임 순서는 그대로, 보이는 위치만 정함
+const SEAT_LAYOUT = { 1: [0], 2: [0, 3], 3: [0, 2, 4], 4: [0, 1, 3, 4], 5: [0, 1, 2, 3, 4], 6: [0, 1, 2, 3, 4, 5] }
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
 
 const $ = s => document.querySelector(s)
@@ -57,10 +60,11 @@ function refillIfBroke() {
   return true
 }
 const outForToday = () => { rollover(); return wallet.tokens <= 0 && wallet.refills >= CONFIG.DAILY_REFILLS }
+const canRefill = () => { rollover(); return wallet.tokens <= 0 && wallet.refills < CONFIG.DAILY_REFILLS }
 const wallet = cloud.enabled
   ? { name: '', tokens: 0, day: today(), refills: 0 }
   : loadWallet()
-if (!cloud.enabled) { refillIfBroke(); saveWallet() }
+if (!cloud.enabled) saveWallet()
 
 // ---------- 상태 ----------
 let room, act, isHost = false, hostId = null
@@ -68,6 +72,7 @@ let table = null          // 호스트만 가짐
 let state = null          // 화면에 그릴 공개 상태
 let myHole = null
 let refillPending = false
+let bustPrompted = null
 let sitOut = false
 let running = false
 let turnTimer = null, timerSeq = -1, turnDeadline = 0, nextTimer = null
@@ -80,7 +85,9 @@ const myInfo = () => ({ name: wallet.name, tokens: wallet.tokens, sitOut })
 const nameInput = $('#name'), codeInput = $('#code')
 nameInput.value = wallet.name
 codeInput.value = location.hash.slice(1).toUpperCase()
+$('#version').textContent = $('#version-game').textContent = 'v' + VERSION
 updateLobbyWallet()
+if (!cloud.enabled && canRefill()) openBankrupt()
 
 function updateLobbyWallet() {
   const needLogin = cloud.enabled && !uid
@@ -89,7 +96,10 @@ function updateLobbyWallet() {
   if (needLogin) return
   $('#lobby-wallet').innerHTML =
     `보유 토큰 <b>${wallet.tokens.toLocaleString()}</b>` +
+    (canRefill() ? `<br><button id="lobby-refill" class="btn gold">🪙 기본 토큰 ${CONFIG.START_TOKENS.toLocaleString()} 받기</button>` : '') +
     (outForToday() ? '<br><span class="out">오늘 받을 수 있는 토큰을 모두 받았어요.<br>내일 다시 참여할 수 있어요.</span>' : '')
+  const btn = $('#lobby-refill')
+  if (btn) btn.onclick = openBankrupt
 }
 
 function takeName() {
@@ -134,9 +144,9 @@ if (cloud.enabled) {
         if (saved) Object.assign(wallet, saved)
         else Object.assign(wallet, { name: (user.displayName || '').slice(0, 12), tokens: CONFIG.START_TOKENS, day: today(), refills: 0 })
         rollover()
-        refillIfBroke()
         saveWallet()
         nameInput.value = wallet.name
+        if (canRefill()) openBankrupt()
       } catch (err) {
         console.warn(err)
         toast('저장된 정보를 불러오지 못했어요.')
@@ -270,12 +280,11 @@ function onState(s) {
   if (me && !me.left) {
     if (me.stack > 0) refillPending = false
     if (!refillPending) { wallet.tokens = me.stack; saveWallet() }
-    const busy = me.inHand && ['preflop', 'flop', 'turn', 'river'].includes(s.phase)
-    if (me.stack === 0 && !busy && !refillPending && refillIfBroke()) {
-      refillPending = true
-      toast(`토큰이 바닥나서 기본 토큰 ${CONFIG.START_TOKENS.toLocaleString()}을 다시 받았어요!`)
-      sendInfo()
-      if (isHost) return // sendInfo가 이미 새 상태로 다시 그림
+    const busy = me.inHand && BETTING.includes(s.phase)
+    // 파산: 판이 끝난 뒤 한 번 안내창을 띄운다 ("나중에"를 누르면 아래 버튼으로 다시 열 수 있음)
+    if (me.stack === 0 && !busy && !refillPending && bustPrompted !== s.handNo) {
+      bustPrompted = s.handNo
+      openBankrupt()
     }
   }
   render()
@@ -310,18 +319,22 @@ function render() {
 
   // 자리 배치: 내가 항상 아래쪽
   const seats = state.seats
-  const n = seats.length
-  const mine = Math.max(0, seats.findIndex(p => p.id === selfId))
+  const n = CONFIG.MAX_SEATS
   const hasMyHole = myHole && myHole.handNo === state.handNo
   // 결과 화면: 이긴 사람의 족보 5장은 빛나게, 나머지는 흐리게
   const r = state.result
   const hi = r && !BETTING.includes(state.phase) && r.winners.some(w => w.best)
     ? new Set(r.winners.flatMap(w => w.best || [])) : null
   const mark = c => (hi ? (hi.has(c) ? 'hi' : 'dim') : '')
-  $('#seats').innerHTML = seats.map((p, i) => {
-    const pos = (i - mine + n) % n
-    const ang = Math.PI / 2 + (pos * 2 * Math.PI) / Math.max(n, 2)
+  const layout = SEAT_LAYOUT[Math.min(seats.length, n)] || [0]
+  const slots = Array(n).fill(null)
+  layout.forEach((slot, k) => { if (seats[k]) slots[slot] = seats[k] })
+  const mySlot = layout[Math.max(0, seats.findIndex(p => p.id === selfId))] ?? 0
+  $('#seats').innerHTML = slots.map((p, i) => {
+    const pos = (i - mySlot + n) % n
+    const ang = Math.PI / 2 + (pos * 2 * Math.PI) / n
     const x = 50 + 44 * Math.cos(ang), y = 50 + 42 * Math.sin(ang)
+    if (!p) return `<div class="seat empty" style="left:${x}%;top:${y}%"><div class="plate"><div class="pname">빈 자리</div></div></div>`
     let cards = ''
     if (p.id === selfId && hasMyHole && p.inHand) cards = myHole.cards.map(c => cardHtml(c, p.cards ? mark(c) : '')).join('')
     else if (p.cards) cards = p.cards.map(c => cardHtml(c, mark(c))).join('')
@@ -362,6 +375,7 @@ function render() {
     : '<div class="card slot"></div>').join('')
   const potTotal = state.pot + seats.reduce((a, p) => a + p.bet, 0)
   $('#pot').textContent = potTotal ? `팟 ${potTotal.toLocaleString()}` : ''
+  renderWaiting(seats)
 
   // 결과 배너 (내용이 바뀔 때만 다시 그려서 애니메이션이 한 번만 나오게)
   const showResult = r && !BETTING.includes(state.phase)
@@ -381,7 +395,7 @@ function render() {
   if (actor) status += ` · ${actor.id === selfId ? '내 차례!' : esc(actor.name) + ' 님 차례'}`
   else if (state.phase === 'waiting' || state.phase === 'showdown') {
     const ready = seats.filter(p => !p.left && !p.sitOut && p.stack > 0).length
-    if (!state.running) status += isHost ? ` · ${ready}명 준비됨 — 시작 버튼을 누르세요` : ' · 방장이 시작하길 기다리는 중'
+    if (!state.running) status += ready < 2 ? '' : isHost ? ' · 시작 버튼을 누르세요' : ' · 방장이 시작하길 기다리는 중'
     else if (ready < 2) status += ' · 참여 가능한 플레이어가 2명 이상 필요합니다'
     else if (state.phase === 'showdown') status += ' · 곧 다음 판이 시작됩니다'
   }
@@ -392,6 +406,8 @@ function render() {
   $('#status').innerHTML = status
 
   $('#start').hidden = !(isHost && !state.running)
+  const busyMe = me && me.inHand && BETTING.includes(state.phase)
+  $('#refill-btn').hidden = !(me && me.stack === 0 && !busyMe && !refillPending && canRefill())
   $('#sitout').checked = sitOut
   $('#sitout-wrap').hidden = !me
   $('#log').innerHTML = state.log.map(l => `<div>${esc(l)}</div>`).join('')
@@ -400,6 +416,62 @@ function render() {
   renderActions(me)
   renderOdds(me, hasMyHole)
 }
+
+// ---------- 대기 인원 ----------
+const WAIT_ICON = { ready: '✅', sitout: '💤', broke: '💸', left: '🚪' }
+
+function renderWaiting(seats) {
+  $('#headcount').textContent = `👥 ${seats.length}/${CONFIG.MAX_SEATS}`
+  const waiting = !BETTING.includes(state.phase) && (state.phase === 'waiting' || !state.running)
+  $('#waiting').hidden = !waiting
+  $('#board').hidden = waiting
+  $('#result').hidden = waiting
+  if (!waiting) return
+  const kind = p => (p.left ? 'left' : p.sitOut ? 'sitout' : p.stack <= 0 ? 'broke' : 'ready')
+  const ready = seats.filter(p => kind(p) === 'ready').length
+  const need = Math.max(0, 2 - ready)
+  const sub = need > 0 ? `<b>${need}명</b> 더 모이면 시작할 수 있어요`
+    : !state.running ? (isHost ? '준비됐어요! 아래 <b>게임 시작</b>을 눌러 주세요' : '방장이 시작하길 기다리는 중')
+    : '곧 다음 판이 시작됩니다'
+  const label = { ready: '참가', sitout: '쉬는 중', broke: '토큰 없음', left: '나감' }
+  $('#waiting').innerHTML = `
+    <div class="wait-count">👥 <b>${seats.length}</b><span>/ ${CONFIG.MAX_SEATS}명</span></div>
+    <div class="wait-sub">${sub}</div>
+    <div class="wait-list">${seats.map(p => `<span class="wchip ${kind(p)}" title="${label[kind(p)]}">${WAIT_ICON[kind(p)]} ${esc(p.name)}</span>`).join('')}</div>
+    ${seats.length < CONFIG.MAX_SEATS ? '<div class="wait-hint">위쪽 <b>초대 링크 복사</b>로 친구를 불러 보세요</div>' : ''}`
+}
+
+// ---------- 파산 안내 ----------
+function openBankrupt() {
+  const box = $('#bankrupt')
+  if (canRefill()) {
+    $('#bk-icon').textContent = '💸'
+    $('#bk-title').textContent = '토큰을 모두 잃었어요'
+    $('#bk-msg').innerHTML = `괜찮아요! 기본 토큰 <b>${CONFIG.START_TOKENS.toLocaleString()}</b>개를 받아서 다시 도전할 수 있어요.`
+    $('#bk-claim').hidden = false
+    $('#bk-later').textContent = '나중에'
+  } else if (outForToday()) {
+    $('#bk-icon').textContent = '🌙'
+    $('#bk-title').textContent = '오늘은 여기까지'
+    $('#bk-msg').innerHTML = '오늘 받을 수 있는 토큰을 모두 받았어요.<br>내일 다시 참여할 수 있어요. 관전은 계속 할 수 있어요.'
+    $('#bk-claim').hidden = true
+    $('#bk-later').textContent = '확인'
+  } else return
+  box.hidden = false
+  $(canRefill() ? '#bk-claim' : '#bk-later').focus()
+}
+
+function claimRefill() {
+  $('#bankrupt').hidden = true
+  if (!refillIfBroke()) return
+  toast(`🪙 기본 토큰 ${CONFIG.START_TOKENS.toLocaleString()}개를 받았어요!`)
+  updateLobbyWallet()
+  if (room) { refillPending = true; sendInfo() }
+  if (state) render()
+}
+$('#bk-claim').onclick = claimRefill
+$('#bk-later').onclick = () => { $('#bankrupt').hidden = true; if (state) render() }
+$('#refill-btn').onclick = openBankrupt
 
 // ---------- 행동 효과 ----------
 let actShown = null
@@ -570,17 +642,36 @@ $('#ranks-close').onclick = () => { $('#ranks').hidden = true }
 $('#ranks').onclick = e => { if (e.target.id === 'ranks') $('#ranks').hidden = true }
 addEventListener('keydown', e => { if (e.key === 'Escape') $('#ranks').hidden = true })
 
+let actionKey = ''
+
 function renderActions(me) {
   const bar = $('#actions')
-  if (!me || state.toActId !== selfId) { bar.innerHTML = ''; bar.hidden = true; return }
+  if (!me || state.toActId !== selfId) { bar.innerHTML = ''; bar.hidden = true; actionKey = ''; return }
+  // 같은 차례 안에서는 다시 그리지 않음 (입력 중인 금액과 포커스 유지)
+  const key = [state.turnSeq, me.stack, me.bet, state.currentBet, state.minRaise, state.pot].join(',')
+  if (key === actionKey) return
+  actionKey = key
   bar.hidden = false
+
+  const bb = state.bb
   const toCall = state.currentBet - me.bet
   const maxTo = me.bet + me.stack
   const minTo = Math.min(maxTo, state.currentBet + state.minRaise)
-  const canRaise = maxTo > state.currentBet
-  raiseTo = Math.min(maxTo, Math.max(minTo, raiseTo))
+  const canRaise = maxTo > minTo
+  const verb = state.currentBet ? '레이즈' : '벳'
   const potTotal = state.pot + state.seats.reduce((a, p) => a + p.bet, 0)
-  const preset = f => Math.min(maxTo, Math.max(minTo, state.currentBet + Math.round((potTotal + toCall) * f)))
+  const clamp = v => Math.min(maxTo, Math.max(minTo, Math.round(v)))
+  raiseTo = clamp(raiseTo || minTo)
+
+  // 빠른 금액: [이름, 올릴 총액]
+  const potTo = f => state.currentBet + (potTotal + toCall) * f
+  const presets = [
+    ['최소', minTo],
+    [state.currentBet ? '3배' : '3BB', state.currentBet ? state.currentBet * 3 : bb * 3],
+    ['½팟', potTo(0.5)],
+    ['¾팟', potTo(0.75)],
+    ['팟', potTo(1)],
+  ]
 
   bar.innerHTML = `
     <div class="row">
@@ -588,25 +679,53 @@ function renderActions(me) {
       ${toCall <= 0
         ? '<button class="btn check" data-a="check">체크</button>'
         : `<button class="btn call" data-a="call">콜 ${Math.min(toCall, me.stack).toLocaleString()}</button>`}
-      ${canRaise && maxTo > minTo ? `<button class="btn raise" data-a="raise">${state.currentBet ? '레이즈' : '벳'} <b id="raise-val">${raiseTo}</b></button>` : ''}
+      ${canRaise ? `<button class="btn raise" data-a="raise"><span id="raise-verb">${verb}</span> <b id="raise-val"></b></button>` : ''}
       <button class="btn allin" data-a="allin">올인 ${maxTo.toLocaleString()}</button>
     </div>
-    ${canRaise && maxTo > minTo ? `
-    <div class="row slider">
-      <input type="range" id="raise" min="${minTo}" max="${maxTo}" step="${state.bb / 2}" value="${raiseTo}">
-      <button class="chip" data-p="${minTo}">최소</button>
-      <button class="chip" data-p="${preset(0.5)}">½팟</button>
-      <button class="chip" data-p="${preset(1)}">팟</button>
+    ${canRaise ? `
+    <div class="bet-box">
+      <div class="amount-row">
+        <button class="step" data-step="-1" aria-label="${bb}만큼 줄이기">−</button>
+        <input id="raise-input" class="amt-input" type="number" inputmode="numeric" min="${minTo}" max="${maxTo}" step="${bb}" aria-label="${verb} 금액">
+        <button class="step" data-step="1" aria-label="${bb}만큼 늘리기">+</button>
+        <span class="extra" id="raise-extra"></span>
+      </div>
+      <input type="range" id="raise" min="${minTo}" max="${maxTo}" step="1" aria-label="${verb} 금액 슬라이더">
+      <div class="range-labels"><span>최소 ${minTo.toLocaleString()}</span><span>최대 ${maxTo.toLocaleString()}</span></div>
+      <div class="presets">
+        ${presets.map(([name, v]) => `<button class="chip" data-p="${clamp(Math.round(v / (bb / 2)) * (bb / 2))}" ${v > maxTo ? 'disabled' : ''}>${name}</button>`).join('')}
+      </div>
     </div>` : ''}`
 
-  const slider = $('#raise')
-  if (slider) slider.oninput = () => { raiseTo = +slider.value; $('#raise-val').textContent = raiseTo }
-  bar.querySelectorAll('[data-p]').forEach(b => b.onclick = () => {
-    raiseTo = +b.dataset.p; slider.value = raiseTo; $('#raise-val').textContent = raiseTo
-  })
+  const slider = $('#raise'), input = $('#raise-input')
+  function setRaise(v, fromInput) {
+    raiseTo = clamp(v)
+    if (slider) slider.value = raiseTo
+    if (input && !fromInput) input.value = raiseTo
+    const allIn = raiseTo >= maxTo
+    $('#raise-verb').textContent = allIn ? '올인' : verb
+    $('#raise-val').textContent = raiseTo.toLocaleString()
+    $('#raise-extra').innerHTML = `추가로 <b>${(raiseTo - me.bet).toLocaleString()}</b> 냄`
+    let marked = false // 같은 금액인 빠른 버튼이 여럿이면 첫 번째만 표시
+    bar.querySelectorAll('[data-p]').forEach(b => {
+      const on = !marked && +b.dataset.p === raiseTo
+      if (on) marked = true
+      b.classList.toggle('active', on)
+    })
+  }
+  if (canRaise) {
+    setRaise(raiseTo)
+    slider.oninput = () => setRaise(+slider.value)
+    // 직접 입력: 입력 중에는 범위를 강제하지 않고, 칸을 벗어나거나 Enter를 누를 때 맞춤
+    input.oninput = () => { if (input.value !== '') setRaise(+input.value, true) }
+    input.onchange = () => setRaise(+input.value || minTo)
+    input.onkeydown = e => { if (e.key === 'Enter') { setRaise(+input.value || minTo); bar.querySelector('[data-a=raise]').click() } }
+    bar.querySelectorAll('[data-step]').forEach(b => b.onclick = () => setRaise(raiseTo + bb * +b.dataset.step))
+    bar.querySelectorAll('[data-p]').forEach(b => b.onclick = () => setRaise(+b.dataset.p))
+  }
   bar.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
     const a = b.dataset.a
-    sendMove(a, a === 'raise' ? (raiseTo >= maxTo ? maxTo : raiseTo) : undefined)
+    sendMove(a, a === 'raise' ? raiseTo : undefined)
     raiseTo = 0
   })
 }
