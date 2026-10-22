@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>P2P 카지노 · 포커</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <section id="lobby">
+    <div class="lobby-box">
+      <div class="logo">♠ ♥ ♦ ♣</div>
+      <h1>P2P 카지노</h1>
+      <p class="sub">텍사스 홀덤 · 서버 없이 친구와 바로 연결</p>
+      <p id="lobby-wallet" class="wallet"></p>
+
+      <div id="auth" class="auth" hidden>
+        <button id="login" class="btn big google">G 구글로 로그인</button>
+        <div id="user-line" class="user-line" hidden><span id="user-name"></span> 님 로그인됨 <button id="logout" class="chip">로그아웃</button></div>
+      </div>
+
+      <label>닉네임 <input id="name" maxlength="12" placeholder="예: 포커왕" autocomplete="off"></label>
+      <button id="create" class="btn gold big">방 만들기</button>
+
+      <div class="or"><span>또는</span></div>
+
+      <label>방 코드 <input id="code" maxlength="8" placeholder="친구에게 받은 코드" autocomplete="off"></label>
+      <button id="join" class="btn big">참가하기</button>
+
+      <p class="note">게임 토큰은 연습용이며 실제 돈과 무관합니다.<br>토큰이 바닥나면 기본 토큰을 다시 받을 수 있어요.</p>
+    </div>
+  </section>
+
+  <section id="game" hidden>
+    <header>
+      <div class="room">방 <b id="room-code"></b> <button id="copy" class="chip">초대 링크 복사</button></div>
+      <div class="me-info">🪙 <b id="my-tokens">0</b></div>
+      <button id="leave" class="chip">나가기</button>
+    </header>
+
+    <div class="table-wrap">
+      <div class="table">
+        <div class="felt">
+          <div id="pot" class="pot"></div>
+          <div id="board" class="board"></div>
+          <div id="result" class="result"></div>
+        </div>
+        <div id="seats"></div>
+      </div>
+    </div>
+
+    <div id="status" class="status"></div>
+    <div class="controls">
+      <button id="start" class="btn gold" hidden>게임 시작</button>
+      <label id="sitout-wrap" class="sitout" hidden><input type="checkbox" id="sitout"> 다음 판부터 쉬기</label>
+    </div>
+    <div id="actions" class="actions" hidden></div>
+    <div id="log" class="log"></div>
+  </section>
+
+  <div id="overlay" class="overlay" hidden>
+    <div class="overlay-box">
+      <h2 id="overlay-title"></h2>
+      <p id="overlay-msg"></p>
+      <button id="overlay-btn" class="btn gold">로비로</button>
+    </div>
+  </div>
+  <div id="toast" class="toast"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
