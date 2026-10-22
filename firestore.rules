@@ -1,0 +1,37 @@
+rules_version = '2';
+// Firebase 콘솔 → Firestore Database → 규칙(Rules) 탭에 이 내용을 그대로 붙여넣고 게시하세요.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 한국 시간 기준 오늘 날짜 번호 (서버 시각으로 계산하므로 기기 시계를 바꿔도 소용없음)
+    function today() {
+      return math.floor((request.time.toMillis() + 32400000) / 86400000);
+    }
+
+    function validShape(d) {
+      return d.keys().hasOnly(['name', 'tokens', 'refills', 'day'])
+        && d.name is string && d.name.size() <= 12
+        && d.tokens is int && d.tokens >= 0 && d.tokens <= 100000000
+        && d.refills is int && d.refills >= 0 && d.refills <= 10
+        && d.day == today();
+    }
+
+    // 재지급은 하루 10번까지, 한 번에 1회씩, 받을 때는 정확히 기본 토큰(1000)
+    function refillOk(o, n) {
+      let base = o.day == n.day ? o.refills : 0;
+      return n.refills == base || (n.refills == base + 1 && n.tokens == 1000);
+    }
+
+    match /players/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid
+        && validShape(request.resource.data)
+        && request.resource.data.tokens == 1000
+        && request.resource.data.refills == 0;
+      allow update: if request.auth != null && request.auth.uid == uid
+        && validShape(request.resource.data)
+        && refillOk(resource.data, request.resource.data);
+      allow delete: if false;
+    }
+  }
+}
