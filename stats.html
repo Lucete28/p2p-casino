@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>사용 통계 · P2P 카지노</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    :root { --bar: #3987e5; }
+    .stats { max-width: 920px; margin: 0 auto; padding: 16px 16px 40px; }
+    .stats-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    .stats-head h1 { font-size: 20px; text-align: left; margin: 0; }
+    .stats-head .spacer { flex: 1; }
+    .gate { max-width: 420px; margin: 60px auto; text-align: center; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 24px; line-height: 1.7; }
+    .gate code { display: block; margin: 10px 0; padding: 8px; background: #0d1117; border-radius: 8px; color: var(--gold); word-break: break-all; font-size: 13px; }
+    .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+    .tile .k { font-size: 12px; color: var(--muted); }
+    .tile .v { font-size: 28px; font-weight: 800; margin-top: 2px; font-variant-numeric: tabular-nums; }
+    .tile .s { font-size: 11px; color: var(--muted); }
+    .card-box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 14px; }
+    .card-box h2 { font-size: 15px; margin: 0 0 10px; }
+    .chart { position: relative; display: grid; grid-template-columns: 30px 1fr; gap: 6px; height: 170px; }
+    .yaxis { display: flex; flex-direction: column; justify-content: space-between; font-size: 10px; color: var(--muted); text-align: right; padding-bottom: 18px; }
+    .plot { position: relative; display: flex; align-items: flex-end; gap: 2px; border-bottom: 1px solid #ffffff22; padding-bottom: 0; margin-bottom: 18px; }
+    .plot::before { content: ''; position: absolute; inset: 0 0 auto 0; border-top: 1px dashed #ffffff14; }
+    .col { flex: 1; height: 100%; display: flex; align-items: flex-end; justify-content: center; position: relative; outline: none; }
+    .col .b { width: min(70%, 26px); background: var(--bar); border-radius: 4px 4px 0 0; min-height: 0; }
+    .col.zero .b { height: 2px !important; background: #ffffff22; border-radius: 1px; }
+    .col:hover .b, .col:focus .b { filter: brightness(1.25); }
+    .col .x { position: absolute; bottom: -17px; font-size: 10px; color: var(--muted); white-space: nowrap; }
+    .col .x.hide { visibility: hidden; }
+    .tip {
+      position: absolute; z-index: 5; pointer-events: none; transform: translate(-50%, -100%);
+      background: #0d1117; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 12px; white-space: nowrap;
+      box-shadow: 0 6px 18px #000a;
+    }
+    .tip b { color: var(--text); }
+    table.days { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+    table.days th, table.days td { padding: 6px 8px; border-bottom: 1px solid #ffffff12; text-align: right; }
+    table.days th:first-child, table.days td:first-child { text-align: left; }
+    table.days th { color: var(--muted); font-weight: 600; }
+    .top { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+    .top li { display: grid; grid-template-columns: 24px 1fr auto; gap: 8px; font-size: 14px; padding: 4px 0; border-bottom: 1px solid #ffffff10; }
+    .top .r { color: var(--muted); text-align: center; }
+    .top .t { color: var(--gold); font-variant-numeric: tabular-nums; }
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .muted { color: var(--muted); font-size: 12px; }
+    @media (max-width: 700px) { .two { grid-template-columns: 1fr; } .tile .v { font-size: 24px; } }
+  </style>
+</head>
+<body>
+  <main class="stats">
+    <div class="stats-head">
+      <h1>📊 사용 통계</h1>
+      <span class="spacer"></span>
+      <span class="muted" id="who"></span>
+      <button id="refresh" class="chip" hidden>새로고침</button>
+      <a class="chip" href="./" style="text-decoration:none">게임으로</a>
+    </div>
+
+    <div id="gate" class="gate">불러오는 중…</div>
+
+    <div id="board" hidden>
+      <div class="tiles" id="tiles"></div>
+      <div class="two">
+        <div class="card-box"><h2>날짜별 접속한 사람</h2><div id="chart-users"></div></div>
+        <div class="card-box"><h2>날짜별 플레이한 판 수</h2><div id="chart-hands"></div></div>
+      </div>
+      <div class="two">
+        <div class="card-box"><h2>최근 14일 표</h2><table class="days" id="table"></table></div>
+        <div class="card-box"><h2>토큰 순위 (상위 10명)</h2><ol class="top" id="top"></ol></div>
+      </div>
+      <p class="muted">날짜는 한국 시간 기준이에요. 접속자는 그날 로그인한 사람 수(중복 제외), 방 인원은 그 방에 동시에 있었던 최대 인원이에요.</p>
+    </div>
+  </main>
+  <script type="module" src="stats.js"></script>
+</body>
+</html>
