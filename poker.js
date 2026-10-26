@@ -143,11 +143,11 @@ export class Table {
     }
   }
 
-  removePlayer(id) {
+  removePlayer(id, note = '나갔습니다.') {
     const idx = this.seats.findIndex(s => s.id === id)
     if (idx < 0) return
     const s = this.seats[idx]
-    this.addLog(`${s.name} 님이 나갔습니다.`)
+    this.addLog(`${s.name} 님이 ${note}`)
     if (this.isBetting() && s.inHand) {
       s.left = true
       if (!s.folded) {
