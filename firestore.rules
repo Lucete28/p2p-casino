@@ -22,8 +22,17 @@ service cloud.firestore {
       return n.refills == base || (n.refills == base + 1 && n.tokens == 1000);
     }
 
-    match /players/{uid} {
+    // 관리자: admins/{uid} 문서가 있는 계정 (콘솔에서 직접 추가. 앱에서는 만들 수 없음)
+    function isAdmin() {
+      return request.auth != null && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+    match /admins/{uid} {
       allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    match /players/{uid} {
+      allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
       allow create: if request.auth != null && request.auth.uid == uid
         && validShape(request.resource.data)
         && request.resource.data.tokens == 1000
@@ -32,6 +41,65 @@ service cloud.firestore {
         && validShape(request.resource.data)
         && refillOk(resource.data, request.resource.data);
       allow delete: if false;
+    }
+
+    // ---------- 사용 통계 (기록은 누구나 자기 것만, 보기는 관리자만) ----------
+    match /stats_days/{day}/users/{uid} {
+      allow read: if isAdmin();
+      allow create, update: if request.auth != null && request.auth.uid == uid && day.size() == 10
+        && request.resource.data.keys().hasOnly(['at'])
+        && request.resource.data.at == request.time;
+    }
+    match /stats_days/{day}/rooms/{id} {
+      allow read: if isAdmin();
+      allow create: if request.auth != null && day.size() == 10
+        && request.resource.data.keys().hasOnly(['by', 'code', 'at', 'maxPlayers', 'hands'])
+        && request.resource.data.by == request.auth.uid
+        && request.resource.data.code is string && request.resource.data.code.size() <= 8
+        && request.resource.data.at == request.time
+        && request.resource.data.maxPlayers == 1
+        && request.resource.data.hands == 0;
+      // 방을 만든 사람만, 판 수는 한 번에 1씩, 인원은 1~6
+      allow update: if request.auth != null && resource.data.by == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hands', 'maxPlayers'])
+        && request.resource.data.hands is int
+        && request.resource.data.hands >= resource.data.hands
+        && request.resource.data.hands <= resource.data.hands + 1
+        && request.resource.data.maxPlayers is int
+        && request.resource.data.maxPlayers >= 1 && request.resource.data.maxPlayers <= 6;
+    }
+
+    // ---------- 중계 (직접 연결이 안 될 때 게임 메시지를 전달) ----------
+    function signedIn() { return request.auth != null; }
+
+    match /rooms/{code}/peers/{peerId} {
+      // 방에 누가 있는지는 로그인한 사람이면 볼 수 있음 (계정 uid와 접속 시각만 저장)
+      allow read: if signedIn();
+      allow create: if signedIn() && peerId.size() <= 64
+        && request.resource.data.keys().hasOnly(['uid', 'at'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.at == request.time;
+      allow update: if signedIn() && resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid', 'at'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.at == request.time;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    match /rooms/{code}/msgs/{id} {
+      // 메시지는 받는 사람만 읽을 수 있음 (다른 사람의 카드가 새지 않도록)
+      allow read: if signedIn() && resource.data.toUid == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['to', 'toUid', 'from', 'fromUid', 'a', 'd', 'n', 't'])
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.toUid is string
+        && request.resource.data.a is string && request.resource.data.a.size() <= 10
+        && request.resource.data.d is string && request.resource.data.d.size() <= 20000
+        && request.resource.data.n is int
+        && request.resource.data.t == request.time;
+      allow delete: if signedIn()
+        && (resource.data.toUid == request.auth.uid || resource.data.fromUid == request.auth.uid);
+      allow update: if false;
     }
   }
 }
