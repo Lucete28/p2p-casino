@@ -1,10 +1,10 @@
 // P2P 연결 + 화면. 방을 만든 사람(호스트)이 딜러 역할을 하며 게임 상태를 결정한다.
-import { joinRoom, selfId } from 'https://cdn.jsdelivr.net/npm/trystero@0.25.4/+esm'
+import { createNet, selfId } from './net.js'
 import { CONFIG, Table } from './poker.js'
 import * as cloud from './cloud.js'
 import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js'
 
-const VERSION = '1.3.0' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
+const VERSION = '1.5.0' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
 const APP_ID = 'p2p-casino-poker-v1'
 const STORE = 'p2pcasino.v1'
 const PHASES = { waiting: '대기 중', preflop: '프리플랍', flop: '플랍', turn: '턴', river: '리버', showdown: '결과' }
@@ -67,7 +67,7 @@ const wallet = cloud.enabled
 if (!cloud.enabled) saveWallet()
 
 // ---------- 상태 ----------
-let room, act, isHost = false, hostId = null
+let net = null, isHost = false, hostId = null
 let table = null          // 호스트만 가짐
 let state = null          // 화면에 그릴 공개 상태
 let myHole = null
@@ -86,8 +86,30 @@ const nameInput = $('#name'), codeInput = $('#code')
 nameInput.value = wallet.name
 codeInput.value = location.hash.slice(1).toUpperCase()
 $('#version').textContent = $('#version-game').textContent = 'v' + VERSION
+const inviteCode = location.hash.slice(1).toUpperCase()
+let autoJoined = false
 updateLobbyWallet()
 if (!cloud.enabled && canRefill()) openBankrupt()
+if (!cloud.enabled) setTimeout(tryAutoJoin) // 스크립트가 모두 준비된 뒤 실행
+
+// 초대 링크(#방코드)로 들어오면 로그인/닉네임이 준비되는 대로 바로 그 방에 입장
+function tryAutoJoin() {
+  if (!inviteCode || autoJoined || roomCode) return
+  if (cloud.enabled && !uid) return
+  if (!nameInput.value.trim()) { nameInput.focus(); return }
+  autoJoined = true
+  $('#join').click()
+}
+
+function showInvite() {
+  const box = $('#invite')
+  box.hidden = !inviteCode
+  if (!inviteCode) return
+  const next = cloud.enabled && !uid ? '구글 로그인하면 바로 들어가요.'
+    : !nameInput.value.trim() ? '닉네임을 입력하고 <b>참가하기</b>를 눌러 주세요.'
+    : '방에 들어가는 중…'
+  box.innerHTML = `🎟 <b>${esc(inviteCode)}</b> 방에 초대받았어요<br><small>${next}</small>`
+}
 
 function updateLobbyWallet() {
   const needLogin = cloud.enabled && !uid
@@ -100,6 +122,7 @@ function updateLobbyWallet() {
     (outForToday() ? '<br><span class="out">오늘 받을 수 있는 토큰을 모두 받았어요.<br>내일 다시 참여할 수 있어요.</span>' : '')
   const btn = $('#lobby-refill')
   if (btn) btn.onclick = openBankrupt
+  showInvite()
 }
 
 function takeName() {
@@ -124,6 +147,7 @@ $('#join').onclick = () => {
   enter(code, false)
 }
 codeInput.onkeydown = e => { if (e.key === 'Enter') $('#join').click() }
+nameInput.onkeydown = e => { if (e.key === 'Enter' && inviteCode) $('#join').click() } // 초대받았으면 닉네임 입력 후 Enter로 바로 입장
 
 // ---------- 로그인 (Firebase 설정 시) ----------
 if (cloud.enabled) {
@@ -147,6 +171,7 @@ if (cloud.enabled) {
         saveWallet()
         nameInput.value = wallet.name
         if (canRefill()) openBankrupt()
+        cloud.recordVisit().catch(err => console.warn('stats', err))
       } catch (err) {
         console.warn(err)
         toast('저장된 정보를 불러오지 못했어요.')
@@ -154,53 +179,109 @@ if (cloud.enabled) {
       }
     }
     updateLobbyWallet()
+    if (uid) tryAutoJoin()
   }).catch(err => { console.warn(err); toast('Firebase에 연결하지 못했어요.') })
 }
 
 // ---------- 방 입장 ----------
+const kicked = new Set() // 방장이 내보낸 사람 (이번 방에서 다시 받지 않음)
+let stateSeq = 0, lastStateSeq = 0
+let statRoom = null, statMax = 1 // 사용 통계: 이 방의 기록 문서와 최대 인원
+
 function enter(code, host) {
   roomCode = code
   isHost = host
-  history.replaceState(null, '', '#' + code)
+  // 게스트만 주소에 방 코드를 남김 (새로고침하면 그 방으로 다시 들어감). 방장은 새로고침하면 로비로
+  history.replaceState(null, '', location.pathname + location.search + (host ? '' : '#' + code))
   $('#lobby').hidden = true
   $('#game').hidden = false
   $('#room-code').textContent = code
 
-  room = joinRoom({ appId: APP_ID }, 'poker-' + code)
-  act = {
-    state: room.makeAction('state'),
-    hole: room.makeAction('hole'),
-    info: room.makeAction('info'),
-    move: room.makeAction('move'),
-  }
+  net = createNet(APP_ID, code, { onJoin: onPeerJoin, onLeave: onPeerLeave, onMessage: onNetMessage })
 
   if (isHost) {
     hostId = selfId
     table = new Table()
     table.addPlayer(selfId, wallet.name, wallet.tokens)
-    act.info.onMessage = (d, { peerId }) => onInfo(peerId, d)
-    act.move.onMessage = (d, { peerId }) => hostMove(peerId, d)
-    room.onPeerJoin = p => act.state.send(publicState(), { target: p })
-    room.onPeerLeave = p => { table.removePlayer(p); afterChange() }
+    if (cloud.enabled) cloud.recordRoom(code).then(ref => { statRoom = ref }).catch(err => console.warn('stats', err))
     window.addEventListener('beforeunload', e => { e.preventDefault(); e.returnValue = '' })
     afterChange()
   } else {
-    room.onPeerJoin = p => act.info.send(myInfo(), { target: p })
-    act.state.onMessage = (d, { peerId }) => {
-      if (!d || d.hostId !== peerId || (hostId && hostId !== peerId)) return
-      hostId = peerId
-      onState(d)
-    }
-    act.hole.onMessage = (d, { peerId }) => { if (peerId === hostId) onHole(d) }
-    room.onPeerLeave = p => { if (p === hostId) showOverlay('방장이 나갔습니다', '방장이 나가면 게임이 끝납니다. 로비로 돌아가 새 방을 만들어 주세요.') }
     render()
-    setTimeout(() => { if (!state) $('#status').textContent = '아직 방을 찾지 못했어요. 방 코드가 맞는지, 방장이 접속해 있는지 확인하세요.' }, 15000)
+    watchConnection()
   }
 }
 
+function onPeerJoin(p) {
+  if (isHost) { if (!kicked.has(p)) net.send('state', publicState(), p) }
+  else net.send('info', myInfo(), p)
+}
+
+function onPeerLeave(p) {
+  if (isHost) { table.removePlayer(p); afterChange() }
+  else if (p === hostId) {
+    clearInvite()
+    showOverlay('방장이 나갔습니다', '방장이 나가면 게임이 끝납니다. 로비로 돌아가 새 방을 만들어 주세요.')
+  }
+}
+
+function onNetMessage(a, d, from) {
+  if (isHost) {
+    if (kicked.has(from)) return
+    if (a === 'info') onInfo(from, d)
+    else if (a === 'move') hostMove(from, d)
+    return
+  }
+  if (a === 'state') {
+    if (!d || d.hostId !== from || (hostId && hostId !== from)) return
+    if (d.seq && d.seq <= lastStateSeq) return // 늦게 도착한 옛 상태
+    lastStateSeq = d.seq || 0
+    hostId = from
+    onState(d)
+  } else if (a === 'hole' && from === hostId) onHole(d)
+  else if (a === 'kick' && from === hostId) onKicked()
+}
+
+// ---------- 연결 상태 ----------
+let connectStage = ''
+function watchConnection() {
+  connectStage = '방장을 찾는 중…'
+  render()
+  setTimeout(() => {
+    if (state) return
+    connectStage = net.relayOn ? '직접 연결이 늦어서 중계 서버로도 찾는 중…' : '연결이 늦어지고 있어요…'
+    render()
+  }, 6000)
+  setTimeout(() => { if (!state) { connectStage = 'fail'; render() } }, 30000)
+}
+
+// ---------- 추방 ----------
+function kickPlayer(id) {
+  const s = table.seat(id)
+  if (!s || id === selfId) return
+  if (!confirm(`${s.name} 님을 방에서 내보낼까요?`)) return
+  kicked.add(id)
+  net.send('kick', {}, id)
+  table.removePlayer(id, '방장에 의해 퇴장했습니다.')
+  afterChange()
+}
+
+function onKicked() {
+  net.leave()
+  clearInvite()
+  showOverlay('방에서 나가게 됐어요', '방장이 이 방에서 내보냈어요. 로비로 돌아가 다른 방에 참가할 수 있어요.')
+}
+
+$('#seats').addEventListener('click', e => {
+  const b = e.target.closest('[data-kick]')
+  if (b && isHost) kickPlayer(b.dataset.kick)
+})
+
+function clearInvite() { history.replaceState(null, '', location.pathname + location.search) }
+
 function sendInfo() {
   if (isHost) { table.updateInfo(selfId, myInfo()); afterChange() }
-  else if (hostId) act.info.send(myInfo(), { target: hostId })
+  else if (hostId) net.send('info', myInfo(), hostId)
 }
 
 // ---------- 호스트 전용 ----------
@@ -209,6 +290,7 @@ function publicState() {
   s.hostId = selfId
   s.running = running
   s.turnLeft = turnDeadline ? Math.max(0, turnDeadline - Date.now()) : 0
+  s.seq = ++stateSeq
   return s
 }
 
@@ -241,8 +323,10 @@ function afterChange() {
     } else turnDeadline = 0
   }
   if (running && !table.isBetting()) scheduleNext()
+  const present = table.seats.filter(p => !p.left).length
+  if (statRoom && present > statMax) { statMax = present; cloud.recordPlayers(statRoom, present).catch(() => {}) }
   const s = publicState()
-  act.state.send(s)
+  net.send('state', s)
   onState(s)
 }
 
@@ -263,12 +347,13 @@ function scheduleNext() {
 
 function tryStart() {
   const holes = table.startHand()
-  if (!holes) { act.state.send(publicState()); onState(publicState()); return }
+  if (!holes) { const s = publicState(); net.send('state', s); onState(s); return }
   for (const [id, cards] of Object.entries(holes)) {
     const msg = { handNo: table.handNo, cards }
     if (id === selfId) onHole(msg)
-    else act.hole.send(msg, { target: id }) // 내 카드는 나에게만 전송
+    else net.send('hole', msg, id) // 내 카드는 나에게만 전송
   }
+  if (statRoom) cloud.recordHand(statRoom).catch(() => {})
   afterChange()
 }
 
@@ -297,7 +382,7 @@ function onHole(d) {
 
 function sendMove(type, amount) {
   if (isHost) hostMove(selfId, { type, amount })
-  else act.move.send({ type, amount }, { target: hostId })
+  else net.send('move', { type, amount }, hostId)
 }
 
 // ---------- 화면 ----------
@@ -313,7 +398,12 @@ function render() {
   $('#my-tokens').textContent = (me ? me.stack + me.bet : wallet.tokens).toLocaleString()
 
   if (!state) {
-    $('#status').textContent = '방장에게 연결하는 중…'
+    $('#status').innerHTML = connectStage === 'fail'
+      ? `<div class="connect-fail"><b>방을 찾지 못했어요</b>
+          <ul><li>방 코드가 맞는지, 방장이 아직 방에 있는지 확인해 주세요.</li>
+          <li>방장과 버전이 같은지 첫 화면 아래 번호로 확인해 주세요. (지금 v${VERSION})</li></ul>
+          <button class="btn gold" onclick="location.reload()">다시 시도</button></div>`
+      : `<span class="connecting">${esc(connectStage || '방장을 찾는 중…')}</span>`
     return
   }
 
@@ -352,6 +442,7 @@ function render() {
       <div class="cards">${cards}</div>
       <div class="plate">
         ${p.id === state.dealerId ? '<b class="dealer">D</b>' : ''}
+        ${isHost && p.id !== selfId && !p.left ? `<button class="kick-btn" data-kick="${esc(p.id)}" title="내보내기" aria-label="${esc(p.name)} 내보내기">✕</button>` : ''}
         <div class="pname">${esc(p.name)}${tags}</div>
         <div class="stack">🪙 ${p.stack.toLocaleString()}</div>
         ${turn ? '<div class="timer"><i></i></div>' : ''}
@@ -466,7 +557,7 @@ function claimRefill() {
   if (!refillIfBroke()) return
   toast(`🪙 기본 토큰 ${CONFIG.START_TOKENS.toLocaleString()}개를 받았어요!`)
   updateLobbyWallet()
-  if (room) { refillPending = true; sendInfo() }
+  if (net) { refillPending = true; sendInfo() }
   if (state) render()
 }
 $('#bk-claim').onclick = claimRefill
@@ -745,7 +836,7 @@ $('#copy').onclick = async () => {
 }
 $('#leave').onclick = () => {
   if (state?.toActId && !confirm('게임 중에 나가면 이번 판에 건 토큰은 잃습니다. 나갈까요?')) return
-  room?.leave()
+  net?.leave()
   location.hash = ''
   location.reload()
 }
@@ -755,7 +846,7 @@ function showOverlay(title, msg) {
   $('#overlay-title').textContent = title
   $('#overlay-msg').textContent = msg
 }
-$('#overlay-btn').onclick = () => { room?.leave(); location.hash = ''; location.reload() }
+$('#overlay-btn').onclick = () => { net?.leave(); clearInvite(); location.reload() }
 
 let toastTimer
 function toast(msg) {
