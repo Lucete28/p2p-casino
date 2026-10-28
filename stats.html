@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>사용 통계 · P2P 카지노</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=1.6.0">
   <style>
-    :root { --bar: #3987e5; }
+    :root { --bar: #3987e5; --bar-2: #d95926; }
     .stats { max-width: 920px; margin: 0 auto; padding: 16px 16px 40px; }
     .stats-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
     .stats-head h1 { font-size: 20px; text-align: left; margin: 0; }
@@ -26,9 +26,13 @@
     .plot { position: relative; display: flex; align-items: flex-end; gap: 2px; border-bottom: 1px solid #ffffff22; padding-bottom: 0; margin-bottom: 18px; }
     .plot::before { content: ''; position: absolute; inset: 0 0 auto 0; border-top: 1px dashed #ffffff14; }
     .col { flex: 1; height: 100%; display: flex; align-items: flex-end; justify-content: center; position: relative; outline: none; }
-    .col .b { width: min(70%, 26px); background: var(--bar); border-radius: 4px 4px 0 0; min-height: 0; }
-    .col.zero .b { height: 2px !important; background: #ffffff22; border-radius: 1px; }
-    .col:hover .b, .col:focus .b { filter: brightness(1.25); }
+    .col .b { width: min(70%, 26px); height: 100%; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; }
+    .col .seg { width: 100%; flex: none; }
+    .col .seg:first-child { border-radius: 4px 4px 0 0; }
+    .col.zero .b::after { content: ''; display: block; height: 2px; background: #ffffff22; border-radius: 1px; }
+    .col:hover .seg, .col:focus .seg { filter: brightness(1.25); }
+    .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin: -4px 0 8px; }
+    .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
     .col .x { position: absolute; bottom: -17px; font-size: 10px; color: var(--muted); white-space: nowrap; }
     .col .x.hide { visibility: hidden; }
     .tip {
@@ -72,9 +76,10 @@
         <div class="card-box"><h2>최근 14일 표</h2><table class="days" id="table"></table></div>
         <div class="card-box"><h2>토큰 순위 (상위 10명)</h2><ol class="top" id="top"></ol></div>
       </div>
-      <p class="muted">날짜는 한국 시간 기준이에요. 접속자는 그날 로그인한 사람 수(중복 제외), 방 인원은 그 방에 동시에 있었던 최대 인원이에요.</p>
+      <div class="card-box"><h2 id="season-title">이번 주 시즌 랭킹</h2><ol class="top" id="season-top"></ol></div>
+      <p class="muted">날짜는 한국 시간 기준이에요. 접속자는 그날 로그인한 사람 수(중복 제외)이고, 신규는 그날 처음 가입한 사람, 초대는 초대 링크로 들어온 사람이에요. 재방문율은 지난주(8~14일 전)에 온 사람 중 이번 주(최근 7일)에도 온 비율이에요. 신규·초대는 v1.6.0부터 기록돼요.</p>
     </div>
   </main>
-  <script type="module" src="stats.js"></script>
+  <script type="module" src="stats.js?v=1.6.0"></script>
 </body>
 </html>
