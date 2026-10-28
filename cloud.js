@@ -1,5 +1,5 @@
 // Firebase(구글 로그인 + Firestore) 연결. 토큰과 재지급 횟수를 계정에 저장해서 기기가 바뀌어도 이어진다.
-import { firebaseConfig } from './firebase-config.js'
+import { firebaseConfig } from './firebase-config.js?v=1.6.0'
 
 const SDK = 'https://www.gstatic.com/firebasejs/12.19.0/'
 // 로컬 테스트용: localhost에서 ?emu 를 붙이면 Firebase 에뮬레이터에 연결
@@ -47,14 +47,73 @@ export const uid = () => auth?.currentUser?.uid || null
 // stats_days/{YYYY-MM-DD}/rooms/{id}: 그날 만든 방 (최대 인원, 플레이한 판 수)
 export const dayKey = (t = Date.now()) => new Date(t + 9 * 3600e3).toISOString().slice(0, 10) // 한국 날짜
 
-export async function recordVisit() {
+// isNew: 오늘 처음 가입했는지, via: 초대 링크로 들어왔는지 ('invite' | 'direct')
+export async function recordVisit({ isNew = false, via = 'direct' } = {}) {
   const u = uid()
   if (!u) return
   const day = dayKey()
   const key = `p2pcasino.visit.${u}.${day}`
   try { if (localStorage.getItem(key)) return } catch {}
-  await F.setDoc(F.doc(db, 'stats_days', day, 'users', u), { at: F.serverTimestamp() })
+  await F.setDoc(F.doc(db, 'stats_days', day, 'users', u), { at: F.serverTimestamp(), isNew, via })
   try { localStorage.setItem(key, '1') } catch {}
+}
+
+// ---------- 공개 방 목록 ----------
+// lobby/{방코드}: 방장 닉네임, 사람 수, 봇 수, 게임 중인지, 방에 있는 사람들의 계정(방장 이어받기용), 버전
+const LOBBY_FRESH_MS = 75000 // 방장은 30초마다 갱신. 이보다 오래 갱신이 없으면 닫힌 방으로 봄
+
+export function publishRoom(code, info) {
+  return F.setDoc(F.doc(db, 'lobby', code), { ...info, at: F.serverTimestamp() })
+}
+export const unpublishRoom = code => F.deleteDoc(F.doc(db, 'lobby', code))
+
+const lobbyQuery = () => F.query(F.collection(db, 'lobby'), F.orderBy('at', 'desc'), F.limit(30))
+const freshRooms = snap => snap.docs
+  .map(d => ({ code: d.id, ...d.data({ serverTimestamps: 'estimate' }) }))
+  .filter(r => Date.now() - (r.at?.toMillis?.() ?? Date.now()) < LOBBY_FRESH_MS)
+
+export function watchLobby(cb) {
+  return F.onSnapshot(lobbyQuery(), snap => cb(freshRooms(snap)), err => console.warn('lobby', err))
+}
+export async function listRooms() {
+  return freshRooms(await F.getDocs(lobbyQuery()))
+}
+
+// ---------- 주간 시즌 랭킹 ----------
+// seasons/{그 주 월요일 날짜}/players/{uid}: 이번 주 순수익(net), 판 수, 이긴 판 수
+export function seasonKey(t = Date.now()) {
+  const kst = new Date(t + 9 * 3600e3)
+  const dow = (kst.getUTCDay() + 6) % 7 // 월요일 = 0
+  return new Date(kst.getTime() - dow * 86400e3).toISOString().slice(0, 10)
+}
+
+export async function recordHandResult(name, delta) {
+  const u = uid()
+  if (!u) return
+  await F.setDoc(F.doc(db, 'seasons', seasonKey(), 'players', u), {
+    name: String(name || '').slice(0, 12),
+    net: F.increment(delta),
+    hands: F.increment(1),
+    wins: F.increment(delta > 0 ? 1 : 0),
+    at: F.serverTimestamp(),
+  }, { merge: true })
+}
+
+export async function loadSeason(season = seasonKey(), n = 10) {
+  const col = F.collection(db, 'seasons', season, 'players')
+  const top = await F.getDocs(F.query(col, F.orderBy('net', 'desc'), F.limit(n)))
+  const rows = top.docs.map(d => ({ uid: d.id, ...d.data() }))
+  let me = null
+  const u = uid()
+  if (u) {
+    const mine = await F.getDoc(F.doc(col, u))
+    if (mine.exists()) {
+      const ahead = await F.getCountFromServer(F.query(col, F.where('net', '>', mine.data().net)))
+      me = { ...mine.data(), rank: ahead.data().count + 1 }
+    }
+  }
+  const total = (await F.getCountFromServer(col)).data().count
+  return { season, rows, me, total }
 }
 
 export async function recordRoom(code) {
@@ -76,7 +135,7 @@ export async function loadStats(days) {
       F.getDocs(F.collection(db, 'stats_days', day, 'users')),
       F.getDocs(F.collection(db, 'stats_days', day, 'rooms')),
     ])
-    return { day, users: users.docs.map(d => d.id), rooms: rooms.docs.map(d => d.data()) }
+    return { day, users: users.docs.map(d => ({ uid: d.id, ...d.data() })), rooms: rooms.docs.map(d => d.data()) }
   }))
 }
 
