@@ -4,7 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>P2P 카지노 · 포커</title>
-  <link rel="stylesheet" href="style.css">
+  <meta name="description" content="설치 없이 링크 하나로 친구와 바로 텍사스 홀덤. 연습용 토큰으로 즐기는 무료 포커.">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="P2P 카지노">
+  <meta property="og:title" content="포커 한 판 할래? · P2P 카지노">
+  <meta property="og:description" content="설치 없이 링크 하나로 친구와 바로 텍사스 홀덤. 연습용 토큰으로 즐기는 무료 포커.">
+  <meta property="og:url" content="https://lucete28.github.io/p2p-casino/">
+  <meta property="og:image" content="https://lucete28.github.io/p2p-casino/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:locale" content="ko_KR">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="style.css?v=1.6.0">
 </head>
 <body>
   <section id="lobby">
@@ -12,6 +23,7 @@
       <div class="logo">♠ ♥ ♦ ♣</div>
       <h1>P2P 카지노</h1>
       <p class="sub">텍사스 홀덤 · 서버 없이 친구와 바로 연결</p>
+      <div id="inapp" class="inapp" hidden></div>
       <p id="lobby-wallet" class="wallet"></p>
 
       <div id="invite" class="invite" hidden></div>
@@ -22,12 +34,20 @@
       </div>
 
       <label>닉네임 <input id="name" maxlength="12" placeholder="예: 포커왕" autocomplete="off"></label>
+      <div id="public-box" class="public-box" hidden>
+        <div class="pb-head"><b>🃏 열린 방</b><button id="quick" class="btn gold">⚡ 빠른 시작</button></div>
+        <ul id="room-list" class="room-list"><li class="empty">방 목록을 불러오는 중…</li></ul>
+      </div>
+
       <button id="create" class="btn gold big">방 만들기</button>
+      <label class="public-check"><input type="checkbox" id="public-check"> 공개 방으로 만들기 (누구나 들어올 수 있어요)</label>
 
       <div class="or"><span>또는</span></div>
 
       <label>방 코드 <input id="code" maxlength="8" placeholder="친구에게 받은 코드" autocomplete="off"></label>
       <button id="join" class="btn big">참가하기</button>
+
+      <div id="season-lobby" class="season-box" hidden></div>
 
       <p class="note">게임 토큰은 연습용이며 실제 돈과 무관합니다.<br>토큰이 바닥나면 기본 토큰을 다시 받을 수 있어요.</p>
       <p class="version" id="version"></p>
@@ -38,6 +58,7 @@
     <header>
       <div class="room">방 <b id="room-code"></b> <span id="headcount" class="chip count"></span> <button id="copy" class="chip">초대 링크 복사</button></div>
       <div class="me-info">🪙 <b id="my-tokens">0</b></div>
+      <button id="season-btn" class="chip" hidden>🏆 랭킹</button>
       <button id="ranks-btn" class="chip">족보</button>
       <button id="leave" class="chip">나가기</button>
     </header>
@@ -59,6 +80,7 @@
     <div class="controls">
       <button id="start" class="btn gold" hidden>게임 시작</button>
       <button id="refill-btn" class="btn gold" hidden>🪙 기본 토큰 받기</button>
+      <button id="bot-add" class="btn" hidden>🤖 봇 추가</button>
       <label id="sitout-wrap" class="sitout" hidden><input type="checkbox" id="sitout"> 다음 판부터 쉬기</label>
     </div>
     <div id="actions" class="actions" hidden></div>
@@ -85,6 +107,12 @@
       </div>
     </div>
   </div>
+  <div id="season" class="overlay" hidden>
+    <div class="overlay-box season-modal" role="dialog" aria-label="주간 랭킹">
+      <div class="ranks-head"><h2>주간 시즌 랭킹</h2><button id="season-close" class="chip">닫기</button></div>
+      <div id="season-body"></div>
+    </div>
+  </div>
   <div id="ranks" class="overlay" hidden>
     <div class="overlay-box ranks-box" role="dialog" aria-label="족보표">
       <div class="ranks-head"><h2>족보 (높은 순)</h2><button id="ranks-close" class="chip">닫기</button></div>
@@ -94,6 +122,6 @@
   </div>
   <div id="toast" class="toast"></div>
 
-  <script type="module" src="app.js"></script>
+  <script type="module" src="app.js?v=1.6.0"></script>
 </body>
 </html>
