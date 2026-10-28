@@ -1,10 +1,22 @@
 // P2P 연결 + 화면. 방을 만든 사람(호스트)이 딜러 역할을 하며 게임 상태를 결정한다.
-import { createNet, selfId } from './net.js'
-import { CONFIG, Table } from './poker.js'
-import * as cloud from './cloud.js'
-import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js'
+import { createNet, selfId } from './net.js?v=1.6.0'
+import { CONFIG, Table } from './poker.js?v=1.6.0'
+import * as cloud from './cloud.js?v=1.6.0'
+import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.6.0'
+import { botDecision, BOT_NAMES } from './bot.js?v=1.6.0'
 
-const VERSION = '1.5.0' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
+// 카카오톡·인스타그램 같은 앱 안 브라우저에서는 구글 로그인이 막혀서, 외부 브라우저로 열도록 유도
+const UA = navigator.userAgent
+const IN_APP = /KAKAOTALK|Instagram|FBAN|FBAV|NAVER\(inapp|DaumApps|everytimeApp|\bLine\//i.test(UA)
+const openExternal = () => { location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href) }
+if (/KAKAOTALK/i.test(UA)) openExternal()
+else if (/\bLine\//i.test(UA) && !new URLSearchParams(location.search).has('openExternalBrowser')) {
+  const u = new URL(location.href)
+  u.searchParams.set('openExternalBrowser', '1')
+  location.replace(u)
+}
+
+const VERSION = '1.6.0' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
 const APP_ID = 'p2p-casino-poker-v1'
 const STORE = 'p2pcasino.v1'
 const PHASES = { waiting: '대기 중', preflop: '프리플랍', flop: '플랍', turn: '턴', river: '리버', showdown: '결과' }
@@ -79,7 +91,7 @@ let turnTimer = null, timerSeq = -1, turnDeadline = 0, nextTimer = null
 let raiseTo = 0
 let roomCode = ''
 
-const myInfo = () => ({ name: wallet.name, tokens: wallet.tokens, sitOut })
+const myInfo = () => ({ name: wallet.name, tokens: wallet.tokens, sitOut, uid })
 
 // ---------- 로비 ----------
 const nameInput = $('#name'), codeInput = $('#code')
@@ -87,6 +99,18 @@ nameInput.value = wallet.name
 codeInput.value = location.hash.slice(1).toUpperCase()
 $('#version').textContent = $('#version-game').textContent = 'v' + VERSION
 const inviteCode = location.hash.slice(1).toUpperCase()
+if (IN_APP) {
+  $('#inapp').hidden = false
+  $('#inapp').innerHTML = `앱 안에서 열린 브라우저에서는 <b>구글 로그인이 안 될 수 있어요.</b><br>
+    오른쪽 위 메뉴(⋮)에서 <b>다른 브라우저로 열기</b>를 눌러 주세요.
+    <div class="inapp-btns">${/KAKAOTALK/i.test(UA) ? '<button id="inapp-open" class="btn gold">외부 브라우저로 열기</button>' : ''}
+    <button id="inapp-copy" class="btn">링크 복사</button></div>`
+  $('#inapp-open')?.addEventListener('click', openExternal)
+  $('#inapp-copy').onclick = async () => {
+    try { await navigator.clipboard.writeText(location.href); toast('링크를 복사했어요. 크롬이나 사파리에 붙여넣어 주세요.') }
+    catch { prompt('이 링크를 복사해서 크롬이나 사파리에서 열어 주세요', location.href) }
+  }
+}
 let autoJoined = false
 updateLobbyWallet()
 if (!cloud.enabled && canRefill()) openBankrupt()
@@ -135,10 +159,7 @@ function takeName() {
 
 $('#create').onclick = () => {
   if (!takeName()) return
-  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
-  let code = ''
-  for (let i = 0; i < 5; i++) code += chars[Math.floor(Math.random() * chars.length)]
-  enter(code, true)
+  enter(newCode(), true, { public: cloud.enabled && !!uid && $('#public-check').checked })
 }
 $('#join').onclick = () => {
   if (!takeName()) return
@@ -148,6 +169,53 @@ $('#join').onclick = () => {
 }
 codeInput.onkeydown = e => { if (e.key === 'Enter') $('#join').click() }
 nameInput.onkeydown = e => { if (e.key === 'Enter' && inviteCode) $('#join').click() } // 초대받았으면 닉네임 입력 후 Enter로 바로 입장
+
+// ---------- 공개 방 목록 · 빠른 시작 ----------
+let lobbyUnsub = null
+
+function newCode() {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+  let code = ''
+  for (let i = 0; i < 5; i++) code += chars[Math.floor(Math.random() * chars.length)]
+  return code
+}
+
+function startLobbyWatch() {
+  if (!cloud.enabled || !uid || lobbyUnsub || roomCode) return
+  $('#public-box').hidden = false
+  lobbyUnsub = cloud.watchLobby(renderRooms)
+}
+
+function renderRooms(rooms) {
+  const list = rooms.filter(r => r.v === VERSION) // 같은 버전끼리만 (다르면 서로 못 찾을 수 있음)
+  $('#room-list').innerHTML = list.length
+    ? list.map(r => `<li>
+        <div><b>${esc(r.name)}</b> 님의 방 <span class="rstate ${r.playing ? 'on' : ''}">${r.playing ? '게임 중' : '대기 중'}</span><br>
+        <small>👥 ${r.humans}명${r.bots ? ` · 🤖 봇 ${r.bots}` : ''} / ${CONFIG.MAX_SEATS}자리</small></div>
+        <button class="btn" data-room="${esc(r.code)}" ${r.humans >= CONFIG.MAX_SEATS ? 'disabled' : ''}>참가</button>
+      </li>`).join('')
+    : '<li class="empty">지금 열린 방이 없어요.<br><b>⚡ 빠른 시작</b>을 누르면 봇과 바로 시작해요!</li>'
+}
+
+$('#room-list').onclick = e => {
+  const b = e.target.closest('[data-room]')
+  if (b && takeName()) enter(b.dataset.room, false)
+}
+
+// 빈자리 있는 공개 방에 들어가고(사람 많은 방 우선), 없으면 공개 방을 만들어 봇과 바로 시작
+$('#quick').onclick = async () => {
+  if (!takeName()) return
+  $('#quick').disabled = true
+  let room = null
+  try {
+    const rooms = (await cloud.listRooms()).filter(r => r.v === VERSION && r.humans < CONFIG.MAX_SEATS)
+    rooms.sort((a, b) => b.humans - a.humans)
+    room = rooms[0] || null
+  } catch (err) { console.warn('lobby', err) }
+  $('#quick').disabled = false
+  if (room) enter(room.code, false, { quick: true })
+  else enter(newCode(), true, { public: true })
+}
 
 // ---------- 로그인 (Firebase 설정 시) ----------
 if (cloud.enabled) {
@@ -171,7 +239,7 @@ if (cloud.enabled) {
         saveWallet()
         nameInput.value = wallet.name
         if (canRefill()) openBankrupt()
-        cloud.recordVisit().catch(err => console.warn('stats', err))
+        cloud.recordVisit({ isNew: !saved, via: inviteCode ? 'invite' : 'direct' }).catch(err => console.warn('stats', err))
       } catch (err) {
         console.warn(err)
         toast('저장된 정보를 불러오지 못했어요.')
@@ -180,6 +248,7 @@ if (cloud.enabled) {
     }
     updateLobbyWallet()
     if (uid) tryAutoJoin()
+    if (!roomCode) { loadSeasonInto($('#season-lobby'), 5, false); startLobbyWatch() }
   }).catch(err => { console.warn(err); toast('Firebase에 연결하지 못했어요.') })
 }
 
@@ -188,9 +257,10 @@ const kicked = new Set() // 방장이 내보낸 사람 (이번 방에서 다시 
 let stateSeq = 0, lastStateSeq = 0
 let statRoom = null, statMax = 1 // 사용 통계: 이 방의 기록 문서와 최대 인원
 
-function enter(code, host) {
+function enter(code, host, { public: pub = false, quick = false } = {}) {
   roomCode = code
   isHost = host
+  if (lobbyUnsub) { lobbyUnsub(); lobbyUnsub = null }
   // 게스트만 주소에 방 코드를 남김 (새로고침하면 그 방으로 다시 들어감). 방장은 새로고침하면 로비로
   history.replaceState(null, '', location.pathname + location.search + (host ? '' : '#' + code))
   $('#lobby').hidden = true
@@ -203,12 +273,22 @@ function enter(code, host) {
     hostId = selfId
     table = new Table()
     table.addPlayer(selfId, wallet.name, wallet.tokens)
+    isPublic = autoBots = running = pub // 공개 방은 봇으로 채우고 바로 시작
+    maintainBots()
+    if (isPublic) startLobbyHeartbeat()
     if (cloud.enabled) cloud.recordRoom(code).then(ref => { statRoom = ref }).catch(err => console.warn('stats', err))
     window.addEventListener('beforeunload', e => { e.preventDefault(); e.returnValue = '' })
     afterChange()
   } else {
     render()
     watchConnection()
+    // 빠른 시작으로 들어간 방이 8초 안에 응답이 없으면(방장이 이미 나간 방) 새 공개 방을 만들어 바로 시작
+    if (quick) setTimeout(() => {
+      if (state || roomCode !== code) return
+      net.leave()
+      toast('그 방은 이미 닫혀서 새 방을 만들었어요.')
+      enter(newCode(), true, { public: true })
+    }, 8000)
   }
 }
 
@@ -219,10 +299,7 @@ function onPeerJoin(p) {
 
 function onPeerLeave(p) {
   if (isHost) { table.removePlayer(p); afterChange() }
-  else if (p === hostId) {
-    clearInvite()
-    showOverlay('방장이 나갔습니다', '방장이 나가면 게임이 끝납니다. 로비로 돌아가 새 방을 만들어 주세요.')
-  }
+  else if (p === hostId) migrateHost(p)
 }
 
 function onNetMessage(a, d, from) {
@@ -259,6 +336,11 @@ function watchConnection() {
 function kickPlayer(id) {
   const s = table.seat(id)
   if (!s || id === selfId) return
+  if (s.bot) {
+    autoBots = false
+    table.removePlayer(id, '자리를 비켜줬어요.')
+    return afterChange()
+  }
   if (!confirm(`${s.name} 님을 방에서 내보낼까요?`)) return
   kicked.add(id)
   net.send('kick', {}, id)
@@ -284,6 +366,140 @@ function sendInfo() {
   else if (hostId) net.send('info', myInfo(), hostId)
 }
 
+
+// ---------- 공개 방 등록 (방장) ----------
+let isPublic = false, autoBots = false, lobbyKey = '', lobbyTimer = null
+const uidOf = {} // 접속 ID → 계정 uid (방장 이어받기 권한용)
+
+function lobbyInfo() {
+  const humans = table.seats.filter(p => !p.bot && !p.left)
+  return {
+    name: String(table.seat(selfId)?.name || wallet.name || '방장').slice(0, 12),
+    humans: humans.length,
+    bots: table.seats.filter(p => p.bot).length,
+    playing: table.isBetting(),
+    members: [...new Set([uid, ...humans.map(p => uidOf[p.id]).filter(Boolean)])].slice(0, 6),
+    hostUid: uid,
+    v: VERSION,
+  }
+}
+
+function syncLobby(force) {
+  if (!isPublic || !isHost || !cloud.enabled || !uid) return
+  const info = lobbyInfo()
+  const key = JSON.stringify(info)
+  if (!force && key === lobbyKey) return
+  lobbyKey = key
+  cloud.publishRoom(roomCode, info).catch(err => console.warn('lobby', err))
+}
+
+function startLobbyHeartbeat() {
+  clearInterval(lobbyTimer)
+  lobbyTimer = setInterval(() => syncLobby(true), 30000)
+}
+// 방장이 탭을 닫으면 목록에서 내리기를 시도 (안 되더라도 75초 뒤엔 목록에서 사라짐)
+addEventListener('pagehide', () => { if (isHost && isPublic && cloud.enabled) cloud.unpublishRoom(roomCode).catch(() => {}) })
+
+// ---------- 봇 (방장 브라우저에서 운영) ----------
+let botTimerSeq = -1
+
+function addBot() {
+  if (table.seats.length >= CONFIG.MAX_SEATS) return false
+  const used = new Set(table.seats.map(p => p.name))
+  const name = BOT_NAMES.map(n => '🤖 ' + n).find(n => !used.has(n)) || '🤖 봇'
+  table.addPlayer('bot-' + Math.random().toString(36).slice(2, 8), name, CONFIG.START_TOKENS, { bot: true })
+  return true
+}
+
+function removeBot() {
+  const b = [...table.seats].reverse().find(p => p.bot && !(p.inHand && table.isBetting()))
+  if (b) table.removePlayer(b.id, '자리를 비켜줬어요.')
+  return !!b
+}
+
+// 공개 방: 사람이 3명이 안 되면 봇으로 3자리를 채우고, 사람이 늘면 봇이 비켜줌 (판 사이에만)
+function maintainBots() {
+  if (!autoBots || table.isBetting()) return
+  const humans = table.seats.filter(p => !p.bot && !p.left).length
+  const want = Math.max(0, 3 - humans)
+  let bots = table.seats.filter(p => p.bot).length
+  while (bots < want && addBot()) bots++
+  while (bots > want && removeBot()) bots--
+}
+
+function runBots() {
+  const id = table.toActId()
+  if (!id || !table.seat(id)?.bot || botTimerSeq === table.turnSeq) return
+  const seq = botTimerSeq = table.turnSeq
+  setTimeout(() => {
+    if (!isHost || table.turnSeq !== seq || table.toActId() !== id) return
+    const d = botDecision(table, id)
+    let r = table.act(id, d.type, d.amount)
+    if (!r.ok) { const s = table.seat(id); r = table.act(id, table.currentBet > s.bet ? 'call' : 'check') }
+    if (!r.ok) table.act(id, 'fold')
+    afterChange()
+  }, 700 + Math.random() * 1100)
+}
+
+$('#bot-add').onclick = () => {
+  if (!isHost) return
+  autoBots = false // 직접 조절하면 자동 채우기는 끔
+  if (!addBot()) toast('자리가 꽉 찼어요.')
+  afterChange()
+}
+
+// ---------- 방장 이어받기 ----------
+// 방장이 나가면 남은 사람 중 자리 순서상 첫 번째가 새 방장이 된다 (모두 같은 규칙으로 계산하므로 따로 정할 필요 없음)
+function migrateHost(oldHost) {
+  const prev = state
+  const next = prev?.seats.find(s => !s.bot && !s.left && s.id !== oldHost)
+  if (!next) {
+    clearInvite()
+    showOverlay('방장이 나갔습니다', '방에 남은 사람이 없어서 게임이 끝났어요. 로비로 돌아가 주세요.')
+    return
+  }
+  if (next.id === selfId) return becomeHost(prev, oldHost)
+  hostId = next.id
+  lastStateSeq = 0
+  toast(`방장이 나가서 ${next.name} 님이 방장을 이어받아요.`)
+  net.send('info', myInfo(), hostId)
+  setTimeout(() => {
+    if (hostId === next.id && state === prev) {
+      clearInvite()
+      showOverlay('방장이 나갔습니다', '새 방장과 연결되지 않았어요. 로비로 돌아가 다시 참가해 주세요.')
+    }
+  }, 15000)
+}
+
+function becomeHost(prev, oldHost) {
+  const aborted = BETTING.includes(prev.phase)
+  isHost = true
+  hostId = selfId
+  isPublic = !!prev.public
+  autoBots = !!prev.autoBots
+  running = !!prev.running
+  table = new Table()
+  table.seats = prev.seats.filter(p => p.id !== oldHost && !p.left).map(p => ({
+    id: p.id, name: p.name,
+    stack: p.stack + (aborted && p.inHand ? p.total || 0 : 0), // 진행 중이던 판에 건 토큰은 돌려줌
+    bet: 0, total: 0, folded: false, allIn: false, acted: false, inHand: false,
+    sitOut: p.sitOut, left: false, last: '', bot: !!p.bot,
+  }))
+  table.dealerId = prev.dealerId
+  table.handNo = prev.handNo
+  table.log = [...prev.log]
+  table.addLog(`방장이 나가서 ${table.seat(selfId)?.name || '내'} 님이 방장을 이어받았어요.`)
+  if (aborted) table.addLog('진행 중이던 판은 무효로 하고 건 토큰을 돌려줬어요.')
+  stateSeq = Math.max(stateSeq, prev.seq || 0)
+  kicked.clear()
+  timerSeq = -1
+  botTimerSeq = -1
+  window.addEventListener('beforeunload', e => { e.preventDefault(); e.returnValue = '' })
+  toast('방장이 나가서 내가 방장을 이어받았어요.')
+  if (isPublic) { startLobbyHeartbeat(); syncLobby(true) }
+  afterChange()
+}
+
 // ---------- 호스트 전용 ----------
 function publicState() {
   const s = table.publicState()
@@ -291,12 +507,16 @@ function publicState() {
   s.running = running
   s.turnLeft = turnDeadline ? Math.max(0, turnDeadline - Date.now()) : 0
   s.seq = ++stateSeq
+  s.public = isPublic
+  s.autoBots = autoBots
   return s
 }
 
 function onInfo(peerId, d) {
   if (!d || typeof d !== 'object') return
   const name = String(d.name || '손님').trim().slice(0, 12) || '손님'
+  if (typeof d.uid === 'string') uidOf[peerId] = d.uid.slice(0, 128)
+  if (!table.seat(peerId) && table.seats.length >= CONFIG.MAX_SEATS) removeBot()
   if (table.seat(peerId)) table.updateInfo(peerId, { name, sitOut: !!d.sitOut, tokens: d.tokens | 0 })
   else {
     table.addPlayer(peerId, name, Math.min(Math.max(0, d.tokens | 0), 1e9))
@@ -323,7 +543,9 @@ function afterChange() {
     } else turnDeadline = 0
   }
   if (running && !table.isBetting()) scheduleNext()
-  const present = table.seats.filter(p => !p.left).length
+  runBots()
+  syncLobby()
+  const present = table.seats.filter(p => !p.left && !p.bot).length
   if (statRoom && present > statMax) { statMax = present; cloud.recordPlayers(statRoom, present).catch(() => {}) }
   const s = publicState()
   net.send('state', s)
@@ -346,6 +568,8 @@ function scheduleNext() {
 }
 
 function tryStart() {
+  for (const p of table.seats) if (p.bot && p.stack <= 0) p.stack = CONFIG.START_TOKENS // 봇은 무한 충전
+  maintainBots()
   const holes = table.startHand()
   if (!holes) { const s = publicState(); net.send('state', s); onState(s); return }
   for (const [id, cards] of Object.entries(holes)) {
@@ -372,6 +596,7 @@ function onState(s) {
       openBankrupt()
     }
   }
+  trackHandResult(s, me)
   render()
 }
 
@@ -432,6 +657,7 @@ function render() {
     const turn = p.id === state.toActId
     const tags = [
       p.id === state.hostId ? '<i class="tag">방장</i>' : '',
+      p.bot ? '<i class="tag">봇</i>' : '',
       p.left ? '<i class="tag">나감</i>' : p.sitOut ? '<i class="tag">쉬는 중</i>' : '',
       !p.inHand && p.stack <= 0 ? '<i class="tag">토큰 없음</i>' : '',
     ].join('')
@@ -442,7 +668,7 @@ function render() {
       <div class="cards">${cards}</div>
       <div class="plate">
         ${p.id === state.dealerId ? '<b class="dealer">D</b>' : ''}
-        ${isHost && p.id !== selfId && !p.left ? `<button class="kick-btn" data-kick="${esc(p.id)}" title="내보내기" aria-label="${esc(p.name)} 내보내기">✕</button>` : ''}
+        ${isHost && p.id !== selfId && !p.left ? `<button class="kick-btn" data-kick="${esc(p.id)}" title="${p.bot ? '봇 빼기' : '내보내기'}" aria-label="${esc(p.name)} ${p.bot ? '빼기' : '내보내기'}">✕</button>` : ''}
         <div class="pname">${esc(p.name)}${tags}</div>
         <div class="stack">🪙 ${p.stack.toLocaleString()}</div>
         ${turn ? '<div class="timer"><i></i></div>' : ''}
@@ -509,27 +735,29 @@ function render() {
 }
 
 // ---------- 대기 인원 ----------
-const WAIT_ICON = { ready: '✅', sitout: '💤', broke: '💸', left: '🚪' }
+const WAIT_ICON = { ready: '✅', sitout: '💤', broke: '💸', left: '🚪', bot: '🤖' }
 
 function renderWaiting(seats) {
-  $('#headcount').textContent = `👥 ${seats.length}/${CONFIG.MAX_SEATS}`
+  const humans = seats.filter(p => !p.bot).length, bots = seats.length - humans
+  $('#headcount').textContent = `👥 ${humans}${bots ? ` · 🤖 ${bots}` : ''} / ${CONFIG.MAX_SEATS}`
+  $('#bot-add').hidden = !(isHost && seats.length < CONFIG.MAX_SEATS)
   const waiting = !BETTING.includes(state.phase) && (state.phase === 'waiting' || !state.running)
   $('#waiting').hidden = !waiting
   $('#board').hidden = waiting
   $('#result').hidden = waiting
   if (!waiting) return
-  const kind = p => (p.left ? 'left' : p.sitOut ? 'sitout' : p.stack <= 0 ? 'broke' : 'ready')
-  const ready = seats.filter(p => kind(p) === 'ready').length
+  const kind = p => (p.left ? 'left' : p.bot ? 'bot' : p.sitOut ? 'sitout' : p.stack <= 0 ? 'broke' : 'ready')
+  const ready = seats.filter(p => kind(p) === 'ready' || kind(p) === 'bot').length
   const need = Math.max(0, 2 - ready)
   const sub = need > 0 ? `<b>${need}명</b> 더 모이면 시작할 수 있어요`
     : !state.running ? (isHost ? '준비됐어요! 아래 <b>게임 시작</b>을 눌러 주세요' : '방장이 시작하길 기다리는 중')
     : '곧 다음 판이 시작됩니다'
-  const label = { ready: '참가', sitout: '쉬는 중', broke: '토큰 없음', left: '나감' }
+  const label = { ready: '참가', sitout: '쉬는 중', broke: '토큰 없음', left: '나감', bot: '봇' }
   $('#waiting').innerHTML = `
-    <div class="wait-count">👥 <b>${seats.length}</b><span>/ ${CONFIG.MAX_SEATS}명</span></div>
+    <div class="wait-count">👥 <b>${humans}</b><span>명${bots ? ` · 🤖 봇 ${bots}` : ''} / ${CONFIG.MAX_SEATS}자리</span></div>
     <div class="wait-sub">${sub}</div>
     <div class="wait-list">${seats.map(p => `<span class="wchip ${kind(p)}" title="${label[kind(p)]}">${WAIT_ICON[kind(p)]} ${esc(p.name)}</span>`).join('')}</div>
-    ${seats.length < CONFIG.MAX_SEATS ? '<div class="wait-hint">위쪽 <b>초대 링크 복사</b>로 친구를 불러 보세요</div>' : ''}`
+    ${seats.length < CONFIG.MAX_SEATS ? `<div class="wait-hint">위쪽 <b>초대 링크 복사</b>로 친구를 부르거나${isHost ? ' 아래 <b>🤖 봇 추가</b>로 자리를 채워 보세요' : ''}</div>` : ''}`
 }
 
 // ---------- 파산 안내 ----------
@@ -729,6 +957,81 @@ function openRanks() {
   $('#ranks').hidden = false
 }
 $('#ranks-btn').onclick = openRanks
+
+// ---------- 주간 시즌 랭킹 ----------
+let handTrack = { hand: 0, start: 0, done: true }
+
+// 내가 참여한 판이 끝나면 그 판의 손익을 이번 주 시즌 기록에 더함
+function trackHandResult(s, me) {
+  if (!cloud.enabled || !uid || !me) return
+  if (me.inHand && BETTING.includes(s.phase) && handTrack.hand !== s.handNo) {
+    handTrack = { hand: s.handNo, start: me.stack + me.bet, done: false }
+  }
+  if (handTrack.hand === s.handNo && !handTrack.done && s.phase === 'showdown' && s.result) {
+    handTrack.done = true
+    cloud.recordHandResult(wallet.name, me.stack - handTrack.start).catch(err => console.warn('season', err))
+  }
+}
+
+function seasonRange(key) {
+  const s = new Date(key + 'T00:00:00Z'), e = new Date(s.getTime() + 6 * 86400e3)
+  const f = d => `${d.getUTCMonth() + 1}/${d.getUTCDate()}`
+  return `${f(s)} ~ ${f(e)}`
+}
+function seasonLeft() {
+  const ms = Date.parse(cloud.seasonKey() + 'T00:00:00+09:00') + 7 * 86400e3 - Date.now()
+  const d = Math.floor(ms / 86400e3), h = Math.floor((ms % 86400e3) / 3600e3)
+  return d ? `${d}일 ${h}시간` : `${h}시간`
+}
+const signed = n => (n > 0 ? '+' : '') + n.toLocaleString()
+const MEDAL = ['🥇', '🥈', '🥉']
+
+function seasonList(rows, myUid) {
+  return `<ol class="season-list">${rows.map((r, i) => `
+    <li class="${r.uid === myUid ? 'me' : ''}">
+      <span class="rk">${MEDAL[i] || i + 1}</span>
+      <span class="nm">${esc(r.name || '이름 없음')}${r.uid === myUid ? ' <i>나</i>' : ''}</span>
+      <span class="net ${r.net > 0 ? 'up' : r.net < 0 ? 'down' : ''}">${signed(r.net || 0)}</span>
+      <span class="hd">${(r.hands || 0).toLocaleString()}판</span>
+    </li>`).join('')}</ol>`
+}
+
+async function loadSeasonInto(el, n, withPrev) {
+  if (!cloud.enabled || !uid) { el.hidden = true; return }
+  el.hidden = false
+  el.innerHTML = '<p class="season-note">랭킹 불러오는 중…</p>'
+  try {
+    const cur = await cloud.loadSeason(cloud.seasonKey(), n)
+    let html = `<div class="season-head"><b>🏆 이번 주 랭킹</b><span>${seasonRange(cur.season)} · 끝까지 ${seasonLeft()}</span></div>`
+    html += cur.rows.length ? seasonList(cur.rows, uid)
+      : '<p class="season-note">아직 이번 주 기록이 없어요. 첫 판을 쳐서 1위를 차지해 보세요!</p>'
+    if (cur.me && !cur.rows.some(r => r.uid === uid)) {
+      html += `<p class="season-me">내 순위 <b>${cur.me.rank}위</b> / ${cur.total}명 · ${signed(cur.me.net)}</p>`
+    }
+    if (withPrev) {
+      const prev = await cloud.loadSeason(cloud.seasonKey(Date.now() - 7 * 86400e3), 3)
+      if (prev.rows.length) {
+        html += `<div class="season-prev"><b>지난 시즌 TOP 3</b><br>${prev.rows.map((r, i) =>
+          `${MEDAL[i]} ${esc(r.name || '이름 없음')} ${signed(r.net)}`).join(' · ')}</div>`
+      }
+      html += '<p class="season-note">이번 주에 딴 토큰에서 잃은 토큰을 뺀 순수익으로 순위를 매겨요. 기본 토큰 재지급은 들어가지 않아요. 매주 월요일 0시(한국 시간)에 새 시즌이 시작돼요.</p>'
+    }
+    el.innerHTML = html
+  } catch (err) {
+    console.warn('season', err)
+    el.innerHTML = '<p class="season-note">랭킹을 불러오지 못했어요.</p>'
+  }
+}
+
+function openSeason() {
+  $('#season').hidden = false
+  loadSeasonInto($('#season-body'), 10, true)
+}
+$('#season-btn').hidden = !cloud.enabled
+$('#season-btn').onclick = openSeason
+$('#season-close').onclick = () => { $('#season').hidden = true }
+$('#season').onclick = e => { if (e.target.id === 'season') $('#season').hidden = true }
+addEventListener('keydown', e => { if (e.key === 'Escape') $('#season').hidden = true })
 $('#ranks-close').onclick = () => { $('#ranks').hidden = true }
 $('#ranks').onclick = e => { if (e.target.id === 'ranks') $('#ranks').hidden = true }
 addEventListener('keydown', e => { if (e.key === 'Escape') $('#ranks').hidden = true })
@@ -834,8 +1137,9 @@ $('#copy').onclick = async () => {
   try { await navigator.clipboard.writeText(url); toast('초대 링크를 복사했어요!') }
   catch { prompt('이 링크를 친구에게 보내세요', url) }
 }
-$('#leave').onclick = () => {
+$('#leave').onclick = async () => {
   if (state?.toActId && !confirm('게임 중에 나가면 이번 판에 건 토큰은 잃습니다. 나갈까요?')) return
+  if (isHost && isPublic && cloud.enabled) await cloud.unpublishRoom(roomCode).catch(() => {})
   net?.leave()
   location.hash = ''
   location.reload()
