@@ -119,13 +119,13 @@ export class Table {
     if (this.log.length > 40) this.log.shift()
   }
 
-  addPlayer(id, name, stack) {
+  addPlayer(id, name, stack, { bot = false } = {}) {
     if (this.seat(id)) return true
     if (this.seats.length >= this.cfg.MAX_SEATS) return false
     this.seats.push({
       id, name, stack: Math.max(0, Math.floor(stack) || 0),
       bet: 0, total: 0, folded: false, allIn: false, acted: false, inHand: false,
-      sitOut: false, left: false, last: '',
+      sitOut: false, left: false, last: '', bot,
     })
     this.addLog(`${name} 님이 입장했습니다.`)
     return true
@@ -264,7 +264,7 @@ export class Table {
       bb: this.cfg.BB,
       seats: this.seats.map(s => ({
         id: s.id, name: s.name, stack: s.stack, bet: s.bet, folded: s.folded, allIn: s.allIn,
-        inHand: s.inHand, sitOut: s.sitOut, left: s.left, last: s.last,
+        inHand: s.inHand, sitOut: s.sitOut, left: s.left, last: s.last, bot: s.bot, total: s.total,
         cards: shown[s.id]?.cards || null,
       })),
     }
