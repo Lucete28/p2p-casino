@@ -47,8 +47,55 @@ service cloud.firestore {
     match /stats_days/{day}/users/{uid} {
       allow read: if isAdmin();
       allow create, update: if request.auth != null && request.auth.uid == uid && day.size() == 10
-        && request.resource.data.keys().hasOnly(['at'])
-        && request.resource.data.at == request.time;
+        && request.resource.data.keys().hasOnly(['at', 'isNew', 'via'])
+        && request.resource.data.at == request.time
+        && request.resource.data.get('isNew', false) is bool
+        && request.resource.data.get('via', 'direct') in ['invite', 'direct'];
+    }
+
+    // ---------- 공개 방 목록 (방장만 올리고, 방장이 나가면 그 방에 있던 사람이 이어받음) ----------
+    function lobbyShape(d) {
+      return d.keys().hasOnly(['name', 'humans', 'bots', 'playing', 'members', 'hostUid', 'v', 'at'])
+        && d.name is string && d.name.size() <= 12
+        && d.humans is int && d.humans >= 0 && d.humans <= 6
+        && d.bots is int && d.bots >= 0 && d.bots <= 6
+        && d.playing is bool
+        && d.members is list && d.members.size() <= 6
+        && d.v is string && d.v.size() <= 10
+        && d.hostUid == request.auth.uid
+        && request.auth.uid in d.members
+        && d.at == request.time;
+    }
+    match /lobby/{code} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && code.size() <= 8 && lobbyShape(request.resource.data);
+      allow update: if request.auth != null && lobbyShape(request.resource.data)
+        && request.auth.uid in resource.data.members;
+      allow delete: if request.auth != null && resource.data.hostUid == request.auth.uid;
+    }
+
+    // ---------- 주간 시즌 랭킹 (로그인하면 누구나 보기, 기록은 자기 것만 한 판씩) ----------
+    function seasonShape(d) {
+      return d.keys().hasOnly(['name', 'net', 'hands', 'wins', 'at'])
+        && d.name is string && d.name.size() <= 12
+        && d.net is int && d.hands is int && d.wins is int
+        && d.at == request.time;
+    }
+    match /seasons/{season}/players/{uid} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.auth.uid == uid && season.size() == 10
+        && seasonShape(request.resource.data)
+        && request.resource.data.hands == 1
+        && request.resource.data.wins >= 0 && request.resource.data.wins <= 1
+        && request.resource.data.net >= -10000000 && request.resource.data.net <= 10000000;
+      allow update: if request.auth != null && request.auth.uid == uid
+        && seasonShape(request.resource.data)
+        && request.resource.data.hands == resource.data.hands + 1
+        && request.resource.data.wins >= resource.data.wins
+        && request.resource.data.wins <= resource.data.wins + 1
+        && request.resource.data.net - resource.data.net >= -10000000
+        && request.resource.data.net - resource.data.net <= 10000000;
+      allow delete: if false;
     }
     match /stats_days/{day}/rooms/{id} {
       allow read: if isAdmin();
