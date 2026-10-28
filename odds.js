@@ -1,6 +1,6 @@
 // 내 패 분석: 리버까지 갔을 때 완성될 족보별 확률과 예상 승률.
 // 내 카드와 바닥 카드만 사용한다(상대 카드는 모르는 것으로 보고 무작위로 가정).
-import { evaluate, newDeck, compareScore } from './poker.js'
+import { evaluate, newDeck, compareScore } from './poker.js?v=1.6.0'
 
 // 낮은 족보 → 높은 족보 순. 인덱스 9 = 로열 플러시
 export const HAND_RANKS = ['하이카드', '원 페어', '투 페어', '트리플', '스트레이트', '플러시', '풀하우스', '포카드', '스트레이트 플러시', '로열 플러시']
