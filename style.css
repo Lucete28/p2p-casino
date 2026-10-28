@@ -217,6 +217,48 @@ header .me-info b { color: var(--gold); }
 .presets .chip.active { background: var(--gold); color: #1b1300; border-color: var(--gold); font-weight: 700; }
 .presets .chip:disabled { opacity: .3; cursor: not-allowed; }
 
+/* 공개 방 목록 */
+.public-box { background: #0d1117; border: 1px solid #33507d; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.pb-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pb-head b { font-size: 15px; }
+.pb-head .btn { padding: 8px 14px; }
+.room-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 240px; overflow-y: auto; }
+.room-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; line-height: 1.5; }
+.room-list li small { color: var(--muted); }
+.room-list li .btn { padding: 6px 12px; flex: none; }
+.room-list li.empty { display: block; text-align: center; color: var(--muted); background: transparent; border-style: dashed; }
+.room-list li.empty b { color: var(--gold); }
+.rstate { font-size: 11px; padding: 1px 6px; border-radius: 999px; margin-left: 4px; color: var(--muted); border: 1px solid var(--line); }
+.rstate.on { color: #3fb950; border-color: #2f6b47; }
+label.public-check { flex-direction: row; align-items: center; gap: 6px; font-size: 12px; margin-top: -6px; }
+.wchip.bot { border-color: #33507d; }
+
+/* 앱 안 브라우저 안내 */
+.inapp { padding: 12px; border-radius: 10px; font-size: 13px; line-height: 1.6; background: #3a2a10; border: 1px solid var(--gold-dark); text-align: center; }
+.inapp b { color: var(--gold); }
+.inapp-btns { display: flex; gap: 6px; justify-content: center; margin-top: 8px; }
+
+/* 주간 시즌 랭킹 */
+.season-box { background: #0d1117; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.season-modal { max-width: 440px; width: 100%; text-align: left; max-height: 90vh; overflow-y: auto; }
+.season-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.season-head b { font-size: 14px; }
+.season-head span { font-size: 11px; color: var(--muted); }
+.season-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.season-list li { display: grid; grid-template-columns: 26px 1fr auto 44px; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 8px; font-size: 13px; }
+.season-list li.me { background: #e3b3411a; outline: 1px solid var(--gold-dark); }
+.season-list .rk { text-align: center; color: var(--muted); font-weight: 700; }
+.season-list .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.season-list .nm i { font-style: normal; font-size: 10px; color: #1b1300; background: var(--gold); border-radius: 4px; padding: 0 4px; }
+.season-list .net { font-weight: 700; font-variant-numeric: tabular-nums; }
+.season-list .net.up { color: #3fb950; }
+.season-list .net.down { color: #f0883e; }
+.season-list .hd { text-align: right; color: var(--muted); font-size: 11px; }
+.season-me { margin: 6px 0 0; font-size: 13px; text-align: center; }
+.season-me b { color: var(--gold); }
+.season-prev { margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: #ffffff08; font-size: 12px; line-height: 1.7; }
+.season-note { margin: 8px 0 0; font-size: 11px; color: var(--muted); line-height: 1.6; }
+
 /* 초대 / 연결 상태 / 추방 */
 .invite {
   text-align: center; padding: 10px; border-radius: 10px; font-size: 14px; line-height: 1.6;
