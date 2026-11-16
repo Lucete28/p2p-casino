@@ -1,9 +1,9 @@
 ﻿// P2P 연결 + 화면. 방을 만든 사람(호스트)이 딜러 역할을 하며 게임 상태를 결정한다.
-import { createNet, selfId } from './net.js?v=1.7.3'
-import { CONFIG, Table } from './poker.js?v=1.7.3'
-import * as cloud from './cloud.js?v=1.7.3'
-import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.7.3'
-import { botDecision, BOT_NAMES } from './bot.js?v=1.7.3'
+import { createNet, selfId } from './net.js?v=1.7.4'
+import { CONFIG, Table } from './poker.js?v=1.7.4'
+import * as cloud from './cloud.js?v=1.7.4'
+import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.7.4'
+import { botDecision, BOT_NAMES } from './bot.js?v=1.7.4'
 
 // 카카오톡·인스타그램 같은 앱 안 브라우저에서는 구글 로그인이 막혀서, 외부 브라우저로 열도록 유도
 const UA = navigator.userAgent
@@ -16,7 +16,7 @@ else if (/\bLine\//i.test(UA) && !new URLSearchParams(location.search).has('open
   location.replace(u)
 }
 
-const VERSION = '1.7.3' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
+const VERSION = '1.7.4' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
 const APP_ID = 'p2p-casino-poker-v1'
 const STORE = 'casino:wallet'
 
@@ -212,7 +212,7 @@ function renderRooms(rooms) {
   $('#room-list').innerHTML = list.length
     ? list.map(r => `<li>
         <div><b>${esc(r.name)}</b> 님의 방 <span class="rstate ${r.playing ? 'on' : ''}">${r.playing ? '게임 중' : '대기 중'}</span><br>
-        <small>👥 ${r.humans}명${r.bots ? ` · 🤖 봇 ${r.bots}` : ''} / ${CONFIG.MAX_SEATS}자리</small></div>
+        <small>👥 ${r.humans}명${r.bots ? ` (봇 ${r.bots})` : ''} / ${CONFIG.MAX_SEATS}자리</small></div>
         <button class="btn" data-room="${esc(r.code)}" ${r.humans >= CONFIG.MAX_SEATS ? 'disabled' : ''}>참가</button>
       </li>`).join('')
     : '<li class="empty">지금 열린 방이 없어요.<br><b>⚡ 빠른 시작</b>을 누르면 봇과 바로 시작해요!</li>'
@@ -299,7 +299,7 @@ function enter(code, host, { public: pub = false, quick = false } = {}) {
     maintainBots()
     if (isPublic) startLobbyHeartbeat()
     if (cloud.enabled) cloud.recordRoom(code).then(ref => { statRoom = ref }).catch(err => console.warn('stats', err))
-    window.addEventListener('beforeunload', e => { e.preventDefault(); e.returnValue = '' })
+    window.addEventListener('beforeunload', warnUnload)
     afterChange()
   } else {
     render()
@@ -442,7 +442,7 @@ let botTimerSeq = -1
 function addBot() {
   if (table.seats.length >= CONFIG.MAX_SEATS) return false
   const used = new Set(table.seats.map(p => p.name))
-  const name = BOT_NAMES.map(n => '🤖 ' + n).find(n => !used.has(n)) || '🤖 봇'
+  const name = BOT_NAMES.find(n => !used.has(n)) || '봇' // 이름이 '~봇'으로 끝나서 따로 아이콘·표시를 붙이지 않음
   table.addPlayer('bot-' + Math.random().toString(36).slice(2, 8), name, CONFIG.START_TOKENS, { bot: true })
   return true
 }
@@ -537,7 +537,7 @@ function becomeHost(prev, gone) {
   kicked.clear()
   timerSeq = -1
   botTimerSeq = -1
-  window.addEventListener('beforeunload', e => { e.preventDefault(); e.returnValue = '' })
+  window.addEventListener('beforeunload', warnUnload)
   toast('방장이 나가서 내가 방장을 이어받았어요.')
   if (isPublic) { startLobbyHeartbeat(); syncLobby(true) }
   afterChange()
@@ -795,7 +795,6 @@ function render() {
     const turn = p.id === state.toActId
     const tags = [
       p.id === state.hostId ? '<i class="tag">방장</i>' : '',
-      p.bot ? '<i class="tag">봇</i>' : '',
       p.left ? '<i class="tag">나감</i>' : p.sitOut ? '<i class="tag">자리 비움</i>' : '',
       !p.inHand && p.stack <= 0 ? '<i class="tag">토큰 없음</i>' : '',
     ].join('')
@@ -874,11 +873,12 @@ function render() {
 }
 
 // ---------- 대기 인원 ----------
-const WAIT_ICON = { ready: '✅', sitout: '💤', broke: '💸', left: '🚪', bot: '🤖' }
+const WAIT_ICON = { ready: '✅', sitout: '💤', broke: '💸', left: '🚪', bot: '✅' } // 봇도 참가자와 같은 표시
 
 function renderWaiting(seats) {
   const humans = seats.filter(p => !p.bot).length, bots = seats.length - humans
-  $('#headcount').textContent = `👥 ${humans}${bots ? ` · 🤖 ${bots}` : ''} / ${CONFIG.MAX_SEATS}`
+  $('#headcount').textContent = `👥 ${humans + bots} / ${CONFIG.MAX_SEATS}`
+  $('#headcount').title = `사람 ${humans}명${bots ? ` · 봇 ${bots}` : ''}`
   $('#bot-add').hidden = !(isHost && seats.length < CONFIG.MAX_SEATS)
   const waiting = !BETTING.includes(state.phase) && (state.phase === 'waiting' || !state.running)
   $('#waiting').hidden = !waiting
@@ -893,10 +893,10 @@ function renderWaiting(seats) {
     : '곧 다음 판이 시작됩니다'
   const label = { ready: '참가', sitout: '자리 비움', broke: '토큰 없음', left: '나감', bot: '봇' }
   $('#waiting').innerHTML = `
-    <div class="wait-count">👥 <b>${humans}</b><span>명${bots ? ` · 🤖 봇 ${bots}` : ''} / ${CONFIG.MAX_SEATS}자리</span></div>
+    <div class="wait-count">👥 <b>${humans}</b><span>명${bots ? ` (봇 ${bots})` : ''} / ${CONFIG.MAX_SEATS}자리</span></div>
     <div class="wait-sub">${sub}</div>
     <div class="wait-list">${seats.map(p => `<span class="wchip ${kind(p)}" title="${label[kind(p)]}">${WAIT_ICON[kind(p)]} ${esc(p.name)}</span>`).join('')}</div>
-    ${seats.length < CONFIG.MAX_SEATS ? `<div class="wait-hint">위쪽 <b>초대 링크 복사</b>로 친구를 부르거나${isHost ? ' 아래 <b>🤖 봇 추가</b>로 자리를 채워 보세요' : ''}</div>` : ''}`
+    ${seats.length < CONFIG.MAX_SEATS ? `<div class="wait-hint">위쪽 <b>초대 링크 복사</b>로 친구를 부르거나${isHost ? ' 아래 <b>봇 추가</b>로 자리를 채워 보세요' : ''}</div>` : ''}`
 }
 
 // ---------- 파산 안내 ----------
@@ -1032,45 +1032,57 @@ let oddsKey = '', oddsResult = null
 let oddsOpen = true
 try { oddsOpen = localStorage.getItem('casino:odds') !== 'closed' } catch {}
 
+// 깜박이지 않게: 게임이 시작되면 판 사이에도 창을 계속 띄워 두고, 줄(족보 10개)도 항상 같게.
+// 새로 계산하는 동안은 이전 숫자를 흐리게 남겨 두고, 내 카드가 없으면 0%로 둔다. 폴드해도 내 카드 기준으로 계속 보여 준다
+let oddsCalc = false
+const myHandLive = () => !!(myHole && state && myHole.handNo === state.handNo && ['preflop', 'flop', 'turn', 'river', 'showdown'].includes(state.phase))
+
 function renderOdds(me, hasMyHole) {
   const box = $('#odds')
-  const active = me && hasMyHole && me.inHand && !me.folded && BETTING.includes(state.phase)
-  if (!active) { box.hidden = true; oddsKey = ''; return }
+  const show = !!me && (state.running || state.phase !== 'waiting')
+  $('#game').classList.toggle('side', show) // 넓은 PC 화면에서 오른쪽 칸을 쓸지 (게임 전에는 테이블을 가운데로)
+  if (!show) { box.hidden = true; return }
   box.hidden = false
-  const opponents = state.seats.filter(p => p.inHand && !p.folded && p.id !== selfId).length
-  const key = [myHole.handNo, ...myHole.cards, ...state.board, opponents].join(',')
-  if (key !== oddsKey) {
-    oddsKey = key
-    oddsResult = null
-    analyze(myHole.cards, state.board, opponents, () => oddsKey !== key)
-      .then(res => { if (res && oddsKey === key) { oddsResult = res; drawOdds() } })
-  }
+  if (hasMyHole && myHandLive()) {
+    const opponents = state.seats.filter(p => p.inHand && !p.folded && p.id !== selfId).length
+    const key = [myHole.handNo, ...myHole.cards, ...state.board, opponents].join(',')
+    if (key !== oddsKey) {
+      oddsKey = key
+      oddsCalc = true // 이전 결과는 지우지 않고 흐리게
+      analyze(myHole.cards, state.board, opponents, () => oddsKey !== key)
+        .then(res => { if (res && oddsKey === key) { oddsResult = res; oddsCalc = false; drawOdds() } })
+    }
+  } else if (oddsKey) { oddsKey = ''; oddsResult = null; oddsCalc = false } // 다음 판 카드를 받기 전: 0%
   drawOdds()
 }
 
-const pct = p => (p >= 0.9995 ? '100%' : p > 0 && p < 0.001 ? '<0.1%' : (p * 100).toFixed(1) + '%')
+const pct = p => (!p ? '0%' : p >= 0.9995 ? '100%' : p < 0.001 ? '<0.1%' : (p * 100).toFixed(1) + '%')
 
 function drawOdds() {
-  const cur = currentHand(myHole.cards, state.board)
+  const me = state.seats.find(p => p.id === selfId)
+  const live = myHandLive()
+  const cur = live ? currentHand(myHole.cards, state.board) : null
+  const eq = oddsResult?.equity
   const head = `<button class="odds-head" id="odds-toggle" aria-expanded="${oddsOpen}">
-      <span>지금 내 족보 <b>${esc(cur.detail || HAND_RANKS[cur.cat])}</b></span>
-      <span class="eq">${oddsResult ? (oddsResult.equity != null ? `예상 승률 <b>${pct(oddsResult.equity)}</b>` : '') : '계산 중…'}</span>
+      <span>지금 내 족보 <b>${cur ? esc(cur.detail || HAND_RANKS[cur.cat]) : '—'}</b>${live && me?.folded ? ' <small class="folded-note">폴드함</small>' : ''}</span>
+      <span class="eq">예상 승률 <b>${eq != null ? pct(eq) : '0%'}</b></span>
       <span class="caret">${oddsOpen ? '▾' : '▸'}</span>
     </button>`
   let body = ''
-  if (oddsOpen && oddsResult) {
+  if (oddsOpen) {
     const rows = []
     for (let c = 9; c >= 0; c--) {
-      const p = oddsResult.dist[c]
-      if (!p) continue
-      rows.push(`<div class="odds-row ${c === cur.cat ? 'now' : ''}">
-        <span class="nm">${HAND_RANKS[c]}${c === cur.cat ? ' <i>현재</i>' : ''}</span>
-        <span class="bar"><i style="width:${Math.max(1, p * 100)}%"></i></span>
+      const p = oddsResult?.dist[c] || 0
+      const now = cur && c === cur.cat
+      rows.push(`<div class="odds-row ${now ? 'now' : ''}">
+        <span class="nm">${HAND_RANKS[c]}${now ? ' <i>현재</i>' : ''}</span>
+        <span class="bar"><i style="width:${p * 100}%"></i></span>
         <span class="pc">${pct(p)}</span></div>`)
     }
     body = `<div class="odds-rows">${rows.join('')}</div>
-      <p class="odds-note">${state.board.length === 5 ? '최종 족보' : '리버까지 갔을 때 완성될 확률'} · 승률은 상대 패를 모른다고 가정한 추정치</p>`
+      <p class="odds-note">${!live ? '카드를 받으면 계산해요' : state.board.length === 5 ? '최종 족보' : '리버까지 갔을 때 완성될 확률'} · 승률은 상대 패를 모른다고 가정한 추정치</p>`
   }
+  $('#odds').classList.toggle('calc', oddsCalc)
   $('#odds').innerHTML = head + body
   $('#odds-toggle').onclick = () => {
     oddsOpen = !oddsOpen
@@ -1449,18 +1461,24 @@ $('#copy').onclick = async () => {
 }
 $('#leave').onclick = async () => {
   if (state?.toActId && !confirm('게임 중에 나가면 이번 판에 건 토큰은 잃습니다. 나갈까요?')) return
+  leaving = true
   if (isHost && isPublic && cloud.enabled) await cloud.unpublishRoom(roomCode).catch(() => {})
   net?.leave()
   location.hash = ''
   location.reload()
 }
 
+// 방장은 실수로 탭을 닫지 않게 브라우저의 '사이트를 떠나시겠습니까?'를 띄운다.
+// 다만 나가기 버튼 등으로 스스로 나갈 때는 이미 확인했으므로 두 번 묻지 않는다
+var leaving = false
+function warnUnload(e) { if (leaving) return; e.preventDefault(); e.returnValue = '' }
+
 function showOverlay(title, msg) {
   $('#overlay').hidden = false
   $('#overlay-title').textContent = title
   $('#overlay-msg').textContent = msg
 }
-$('#overlay-btn').onclick = () => { net?.leave(); clearInvite(); location.reload() }
+$('#overlay-btn').onclick = () => { leaving = true; net?.leave(); clearInvite(); location.reload() }
 
 let toastTimer
 function toast(msg) {

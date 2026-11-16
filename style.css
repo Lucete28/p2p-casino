@@ -471,6 +471,23 @@ label.public-check { flex-direction: row; align-items: center; gap: 6px; font-si
 .odds-row.now .nm, .odds-row.now .pc { color: var(--text); font-weight: 700; }
 .odds-note { margin: 4px 12px 10px; font-size: 11px; color: var(--muted); }
 
+/* 넓은 PC 화면: 내 패 분석(승률)을 테이블 오른쪽에 붙여서 위아래로 스크롤하지 않고 같이 보게 */
+.odds.calc .odds-rows, .odds.calc .eq b { opacity: .55; transition: opacity .15s; } /* 새로 계산하는 동안 이전 숫자를 흐리게 */
+.odds-head .folded-note { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; margin-left: 4px; }
+@media (min-width: 1180px) {
+  #game.side:not([hidden]) { /* 게임이 시작된 뒤에만 오른쪽 칸 (시작 전에는 테이블을 가운데로) */
+    max-width: 1340px; display: grid; column-gap: 20px; align-items: start;
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+  #game > * { grid-column: 1; }
+  #game > header { grid-column: 1 / -1; }
+  #game > .odds {
+    grid-column: 2; grid-row: 2 / span 5; margin-top: 46px; /* 테이블 위쪽 여백과 맞춤 */
+    position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto;
+  }
+  #game > .odds .odds-row { grid-template-columns: 8.5em 1fr 3.6em; }
+}
+
 /* 족보표 */
 .ranks-box { max-width: 460px; width: 100%; text-align: left; max-height: 90vh; overflow-y: auto; }
 .ranks-head { display: flex; align-items: center; justify-content: space-between; }
