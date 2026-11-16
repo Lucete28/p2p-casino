@@ -1,9 +1,9 @@
 // P2P 연결 + 화면. 방을 만든 사람(호스트)이 딜러 역할을 하며 게임 상태를 결정한다.
-import { createNet, selfId } from './net.js?v=1.6.0'
-import { CONFIG, Table } from './poker.js?v=1.6.0'
-import * as cloud from './cloud.js?v=1.6.0'
-import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.6.0'
-import { botDecision, BOT_NAMES } from './bot.js?v=1.6.0'
+import { createNet, selfId } from './net.js?v=1.6.1'
+import { CONFIG, Table } from './poker.js?v=1.6.1'
+import * as cloud from './cloud.js?v=1.6.1'
+import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.6.1'
+import { botDecision, BOT_NAMES } from './bot.js?v=1.6.1'
 
 // 카카오톡·인스타그램 같은 앱 안 브라우저에서는 구글 로그인이 막혀서, 외부 브라우저로 열도록 유도
 const UA = navigator.userAgent
@@ -16,7 +16,7 @@ else if (/\bLine\//i.test(UA) && !new URLSearchParams(location.search).has('open
   location.replace(u)
 }
 
-const VERSION = '1.6.0' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
+const VERSION = '1.6.1' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
 const APP_ID = 'p2p-casino-poker-v1'
 const STORE = 'p2pcasino.v1'
 const PHASES = { waiting: '대기 중', preflop: '프리플랍', flop: '플랍', turn: '턴', river: '리버', showdown: '결과' }
@@ -303,20 +303,34 @@ function onPeerLeave(p) {
 }
 
 function onNetMessage(a, d, from) {
+  if (a === 'state' && d?.hostId === from && from !== selfId) {
+    const ep = d.epoch || 0
+    if (isHost) {
+      if (ep > hostEpoch || (ep === hostEpoch && from < selfId)) stepDown(from, d)
+      return
+    }
+    if (from !== hostId) {
+      if (hostId && ep <= hostEpoch) return // 옛 방장이 보낸 상태는 무시
+      hostId = from
+      lastStateSeq = 0
+    }
+    if (d.seq && d.seq <= lastStateSeq) return // 늦게 도착한 옛 상태
+    lastStateSeq = d.seq || 0
+    hostEpoch = ep
+    lastHostMsg = Date.now()
+    migrating = null
+    return onState(d)
+  }
   if (isHost) {
     if (kicked.has(from)) return
     if (a === 'info') onInfo(from, d)
     else if (a === 'move') hostMove(from, d)
     return
   }
-  if (a === 'state') {
-    if (!d || d.hostId !== from || (hostId && hostId !== from)) return
-    if (d.seq && d.seq <= lastStateSeq) return // 늦게 도착한 옛 상태
-    lastStateSeq = d.seq || 0
-    hostId = from
-    onState(d)
-  } else if (a === 'hole' && from === hostId) onHole(d)
-  else if (a === 'kick' && from === hostId) onKicked()
+  if (from !== hostId) return
+  lastHostMsg = Date.now()
+  if (a === 'hole') onHole(d)
+  else if (a === 'kick') onKicked()
 }
 
 // ---------- 연결 상태 ----------
@@ -398,7 +412,7 @@ function startLobbyHeartbeat() {
   lobbyTimer = setInterval(() => syncLobby(true), 30000)
 }
 // 방장이 탭을 닫으면 목록에서 내리기를 시도 (안 되더라도 75초 뒤엔 목록에서 사라짐)
-addEventListener('pagehide', () => { if (isHost && isPublic && cloud.enabled) cloud.unpublishRoom(roomCode).catch(() => {}) })
+addEventListener('pagehide', () => { if (isHost && isPublic && cloud.enabled) cloud.unpublishRoom(roomCode, { unload: true }).catch(() => {}) })
 
 // ---------- 봇 (방장 브라우저에서 운영) ----------
 let botTimerSeq = -1
@@ -449,41 +463,48 @@ $('#bot-add').onclick = () => {
 }
 
 // ---------- 방장 이어받기 ----------
-// 방장이 나가면 남은 사람 중 자리 순서상 첫 번째가 새 방장이 된다 (모두 같은 규칙으로 계산하므로 따로 정할 필요 없음)
-function migrateHost(oldHost) {
+// 방장이 나가거나(탭 닫기) 한동안 아무 신호가 없으면(화면 켜짐 25초, 꺼짐 75초), 남은 사람 중 자리 순서상 첫 번째가 새 방장이 된다.
+// 모두 같은 규칙으로 계산하므로 따로 정할 필요 없음. 방장이 바뀔 때마다 epoch를 1씩 올려서,
+// 휴대폰 화면이 꺼지는 등 잠깐 멈췄던 옛 방장이 돌아와도 더 높은 epoch를 보면 스스로 일반 참가자로 내려온다.
+let hostEpoch = 0, lastHostMsg = Date.now(), migrating = null
+// 방장 화면이 켜져 있으면 25초, 꺼져 있다고 알려 왔으면(크롬은 숨겨진 탭의 타이머를 1분에 한 번까지 늦춤) 75초
+const HOST_SILENT_MS = 25000, HOST_HIDDEN_SILENT_MS = 75000
+
+function migrateHost(goneId, gone = new Set()) {
+  gone.add(goneId)
   const prev = state
-  const next = prev?.seats.find(s => !s.bot && !s.left && s.id !== oldHost)
+  const next = prev?.seats.find(s => !s.bot && !s.left && !gone.has(s.id))
   if (!next) {
+    migrating = null
     clearInvite()
     showOverlay('방장이 나갔습니다', '방에 남은 사람이 없어서 게임이 끝났어요. 로비로 돌아가 주세요.')
     return
   }
-  if (next.id === selfId) return becomeHost(prev, oldHost)
+  if (next.id === selfId) { migrating = null; return becomeHost(prev, gone) }
+  migrating = next.id
   hostId = next.id
   lastStateSeq = 0
+  lastHostMsg = Date.now()
   toast(`방장이 나가서 ${next.name} 님이 방장을 이어받아요.`)
   net.send('info', myInfo(), hostId)
-  setTimeout(() => {
-    if (hostId === next.id && state === prev) {
-      clearInvite()
-      showOverlay('방장이 나갔습니다', '새 방장과 연결되지 않았어요. 로비로 돌아가 다시 참가해 주세요.')
-    }
-  }, 15000)
+  // 이어받을 사람도 응답이 없으면 그다음 사람으로
+  setTimeout(() => { if (migrating === next.id && state === prev) migrateHost(next.id, gone) }, 12000)
 }
 
-function becomeHost(prev, oldHost) {
+function becomeHost(prev, gone) {
   const aborted = BETTING.includes(prev.phase)
   isHost = true
   hostId = selfId
+  hostEpoch = (prev.epoch || 0) + 1
   isPublic = !!prev.public
   autoBots = !!prev.autoBots
   running = !!prev.running
   table = new Table()
-  table.seats = prev.seats.filter(p => p.id !== oldHost && !p.left).map(p => ({
+  table.seats = prev.seats.filter(p => !gone.has(p.id) && !p.left).map(p => ({
     id: p.id, name: p.name,
     stack: p.stack + (aborted && p.inHand ? p.total || 0 : 0), // 진행 중이던 판에 건 토큰은 돌려줌
     bet: 0, total: 0, folded: false, allIn: false, acted: false, inHand: false,
-    sitOut: p.sitOut, left: false, last: '', bot: !!p.bot,
+    sitOut: false, left: false, last: '', bot: !!p.bot,
   }))
   table.dealerId = prev.dealerId
   table.handNo = prev.handNo
@@ -500,6 +521,45 @@ function becomeHost(prev, oldHost) {
   afterChange()
 }
 
+// 내가 방장인데 더 새로운 방장의 상태가 오면(내가 잠깐 멈춘 사이 이어받음) 일반 참가자로 내려옴
+function stepDown(from, d) {
+  isHost = false
+  hostId = from
+  hostEpoch = d.epoch || 0
+  running = isPublic = autoBots = false
+  statRoom = null
+  table = null
+  turnDeadline = 0
+  clearTimeout(turnTimer)
+  clearTimeout(nextTimer)
+  nextTimer = null
+  clearInterval(lobbyTimer)
+  toast('잠시 연결이 끊긴 사이 다른 사람이 방장을 이어받았어요.')
+  net.send('info', myInfo(), from)
+  lastStateSeq = d.seq || 0
+  lastHostMsg = Date.now()
+  onState(d)
+}
+
+// 방장은 10초마다 최신 상태를 보내 살아 있음을 알리고, 참가자는 한동안 소식이 없으면 이어받기 시작
+setInterval(() => {
+  if (!net || !state) return
+  if (isHost) net.send('state', publicState())
+  else if (hostId && migrating === null && Date.now() - lastHostMsg > (state.hidden ? HOST_HIDDEN_SILENT_MS : HOST_SILENT_MS)) migrateHost(hostId)
+}, 10000)
+// 내 화면이 잠깐 꺼졌다 켜진 경우엔 방장이 멈춘 걸로 착각하지 않도록 시간을 다시 잼
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) lastHostMsg = Date.now()
+  if (isHost && net && state) net.send('state', publicState()) // 내 화면이 꺼지거나 켜졌다는 걸 바로 알림
+})
+// 탭을 닫으면 바로 연결을 정리해서 다른 사람들이 곧바로 알아채게 함
+addEventListener('pagehide', e => { if (!e.persisted) net?.leave({ unload: true }) })
+
+// 로컬 테스트용 (localhost에서 ?debug): 방장 이어받기를 강제로 일으킴
+if (['localhost', '127.0.0.1'].includes(location.hostname) && new URLSearchParams(location.search).has('debug')) {
+  window.__debug = { takeover: () => migrateHost(hostId), info: () => ({ isHost, hostId, hostEpoch, selfId }) }
+}
+
 // ---------- 호스트 전용 ----------
 function publicState() {
   const s = table.publicState()
@@ -508,6 +568,8 @@ function publicState() {
   s.turnLeft = turnDeadline ? Math.max(0, turnDeadline - Date.now()) : 0
   s.seq = ++stateSeq
   s.public = isPublic
+  s.hidden = document.hidden
+  s.epoch = hostEpoch
   s.autoBots = autoBots
   return s
 }
@@ -725,10 +787,6 @@ function render() {
   $('#start').hidden = !(isHost && !state.running)
   const busyMe = me && me.inHand && BETTING.includes(state.phase)
   $('#refill-btn').hidden = !(me && me.stack === 0 && !busyMe && !refillPending && canRefill())
-  $('#sitout').checked = sitOut
-  $('#sitout-wrap').hidden = !me
-  $('#log').innerHTML = state.log.map(l => `<div>${esc(l)}</div>`).join('')
-  $('#log').scrollTop = 1e9
 
   renderActions(me)
   renderOdds(me, hasMyHole)
@@ -1131,7 +1189,6 @@ setInterval(() => {
 }, 200)
 
 $('#start').onclick = () => { running = true; tryStart() }
-$('#sitout').onchange = e => { sitOut = e.target.checked; sendInfo() }
 $('#copy').onclick = async () => {
   const url = location.href.split('#')[0] + '#' + roomCode
   try { await navigator.clipboard.writeText(url); toast('초대 링크를 복사했어요!') }
