@@ -1,7 +1,7 @@
 // 연결 계층: P2P(WebRTC)로 먼저 연결하고, 직접 연결이 안 되는 상대와는 Firebase(Firestore)로 중계한다.
 // 서로 다른 통신사/회사 와이파이처럼 직접 연결이 막히는 경우에도 같은 방에서 게임할 수 있게 하기 위함.
 import { joinRoom, selfId } from 'https://cdn.jsdelivr.net/npm/trystero@0.25.4/+esm'
-import * as cloud from './cloud.js?v=1.6.0'
+import * as cloud from './cloud.js?v=1.6.1'
 
 export { selfId }
 
@@ -65,9 +65,10 @@ export function createNet(appId, code, { onJoin, onLeave, onMessage }) {
       }
     },
     relayOn: !!relayLink,
-    leave() {
+    // unload: 탭이 닫히는 중이면 끝까지 전송되는 방식으로 방에서 나감
+    leave({ unload = false } = {}) {
       room?.leave()
-      relayLink?.leave()
+      relayLink?.leave(unload)
     },
   }
 }
