@@ -1,5 +1,5 @@
 // Firebase(구글 로그인 + Firestore) 연결. 토큰과 재지급 횟수를 계정에 저장해서 기기가 바뀌어도 이어진다.
-import { firebaseConfig } from './firebase-config.js?v=1.7.0'
+import { firebaseConfig } from './firebase-config.js?v=1.7.1'
 
 const SDK = 'https://www.gstatic.com/firebasejs/12.19.0/'
 // 로컬 테스트용: localhost에서 ?emu 를 붙이면 Firebase 에뮬레이터에 연결
@@ -68,7 +68,13 @@ export async function recordVisit({ isNew = false, via = 'direct' } = {}) {
   const u = uid()
   if (!u) return
   const day = dayKey()
-  const key = `p2pcasino.visit.${u}.${day}`
+  const key = `casino:visit.${u}.${day}` // 지난 날짜 표시는 남기지 않음 (오늘 것만 있으면 됨)
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i)
+      if (k?.startsWith('casino:visit.') && !k.endsWith('.' + day)) localStorage.removeItem(k)
+    }
+  } catch {}
   try { if (localStorage.getItem(key)) return } catch {}
   await F.setDoc(F.doc(db, 'stats_days', day, 'users', u), { at: F.serverTimestamp(), isNew, via })
   try { localStorage.setItem(key, '1') } catch {}

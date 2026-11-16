@@ -1,5 +1,5 @@
 // 컴퓨터 플레이어(봇). 방장 브라우저에서만 돌아가며, 대략적인 승률과 팟 오즈로 행동을 정한다.
-import { evaluate, newDeck, compareScore } from './poker.js?v=1.7.0'
+import { evaluate, newDeck, compareScore } from './poker.js?v=1.7.1'
 
 export const BOT_NAMES = ['포카봇', '블러프봇', '신중봇', '럭키봇', '올인봇', '계산봇']
 

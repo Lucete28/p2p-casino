@@ -1,5 +1,5 @@
 // 관리자 전용 사용 통계. 보안 규칙에서 admins/{uid} 문서가 있는 계정만 데이터를 읽을 수 있다.
-import * as cloud from './cloud.js?v=1.7.0'
+import * as cloud from './cloud.js?v=1.7.1'
 
 const $ = s => document.querySelector(s)
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`)

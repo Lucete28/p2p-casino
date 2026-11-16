@@ -354,6 +354,10 @@ label.public-check { flex-direction: row; align-items: center; gap: 6px; font-si
 
 /* 버전 */
 .version { margin: 0; text-align: center; font-size: 11px; color: var(--muted); letter-spacing: .5px; }
+/* JMTT로 돌아가는 링크 (시작 화면 맨 아래) */
+.jmtt-links { margin: -4px 0 0; text-align: center; font-size: 12px; color: var(--muted); }
+.jmtt-links a { color: var(--muted); text-decoration: none; padding: 4px 2px; }
+.jmtt-links a:hover, .jmtt-links a:focus-visible { color: var(--text); text-decoration: underline; }
 #version-game { margin-top: 8px; }
 
 /* 행동 효과: 자리 앞 말풍선 + 퍼지는 고리 */

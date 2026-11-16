@@ -12,4 +12,5 @@ set-version.py
 firebase.json
 firestore.rules
 *.md
+보고.md
 casino.webp

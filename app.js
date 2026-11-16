@@ -1,9 +1,9 @@
-// P2P 연결 + 화면. 방을 만든 사람(호스트)이 딜러 역할을 하며 게임 상태를 결정한다.
-import { createNet, selfId } from './net.js?v=1.7.0'
-import { CONFIG, Table } from './poker.js?v=1.7.0'
-import * as cloud from './cloud.js?v=1.7.0'
-import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.7.0'
-import { botDecision, BOT_NAMES } from './bot.js?v=1.7.0'
+﻿// P2P 연결 + 화면. 방을 만든 사람(호스트)이 딜러 역할을 하며 게임 상태를 결정한다.
+import { createNet, selfId } from './net.js?v=1.7.1'
+import { CONFIG, Table } from './poker.js?v=1.7.1'
+import * as cloud from './cloud.js?v=1.7.1'
+import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.7.1'
+import { botDecision, BOT_NAMES } from './bot.js?v=1.7.1'
 
 // 카카오톡·인스타그램 같은 앱 안 브라우저에서는 구글 로그인이 막혀서, 외부 브라우저로 열도록 유도
 const UA = navigator.userAgent
@@ -16,9 +16,30 @@ else if (/\bLine\//i.test(UA) && !new URLSearchParams(location.search).has('open
   location.replace(u)
 }
 
-const VERSION = '1.7.0' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
+const VERSION = '1.7.1' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
 const APP_ID = 'p2p-casino-poker-v1'
-const STORE = 'p2pcasino.v1'
+const STORE = 'casino:wallet'
+
+// JMTT의 모든 앱이 같은 주소라 브라우저 저장소를 함께 쓴다. 그래서 저장 키는 'casino:'로 시작한다 (v1.7.1).
+// 예전 키(p2pcasino.*)에 있던 값은 새 키로 옮기고 지운다
+;(function migrateKeys() {
+  try {
+    for (const [from, to] of [['p2pcasino.v1', STORE], ['p2pcasino.odds', 'casino:odds'], ['p2pcasino.raise', 'casino:raise']]) {
+      const v = localStorage.getItem(from)
+      if (v === null) continue
+      if (localStorage.getItem(to) === null) localStorage.setItem(to, v)
+      localStorage.removeItem(from)
+    }
+    // 하루 한 번 접속 기록 표시: 오늘 것만 새 이름으로 옮기고 지난 날짜 것은 지움
+    const today = cloud.dayKey()
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i)
+      if (!k?.startsWith('p2pcasino.visit.')) continue
+      if (k.endsWith('.' + today)) localStorage.setItem('casino:visit.' + k.slice('p2pcasino.visit.'.length), '1')
+      localStorage.removeItem(k)
+    }
+  } catch {}
+})()
 const PHASES = { waiting: '대기 중', preflop: '프리플랍', flop: '플랍', turn: '턴', river: '리버', showdown: '결과' }
 const SUIT = { s: '♠', h: '♥', d: '♦', c: '♣' }
 const BETTING = ['preflop', 'flop', 'turn', 'river']
@@ -949,7 +970,7 @@ function confetti() {
 // ---------- 내 패 분석 (족보 + 확률) ----------
 let oddsKey = '', oddsResult = null
 let oddsOpen = true
-try { oddsOpen = localStorage.getItem('p2pcasino.odds') !== 'closed' } catch {}
+try { oddsOpen = localStorage.getItem('casino:odds') !== 'closed' } catch {}
 
 function renderOdds(me, hasMyHole) {
   const box = $('#odds')
@@ -993,7 +1014,7 @@ function drawOdds() {
   $('#odds').innerHTML = head + body
   $('#odds-toggle').onclick = () => {
     oddsOpen = !oddsOpen
-    try { localStorage.setItem('p2pcasino.odds', oddsOpen ? 'open' : 'closed') } catch {}
+    try { localStorage.setItem('casino:odds', oddsOpen ? 'open' : 'closed') } catch {}
     drawOdds()
   }
 }
@@ -1103,7 +1124,7 @@ addEventListener('keydown', e => { if (e.key === 'Escape') $('#ranks').hidden = 
 
 let actionKey = ''
 let raisePref = '최소' // 레이즈 버튼을 그냥 눌렀을 때 쓸 옵션 (마지막으로 고른 것)
-try { raisePref = localStorage.getItem('p2pcasino.raise') || '최소' } catch {}
+try { raisePref = localStorage.getItem('casino:raise') || '최소' } catch {}
 let customSeq = -1 // '직접 입력'을 연 차례 번호
 
 // ---------- 미리 선택 (내 차례가 아닐 때 다음 행동을 골라 두기) ----------
@@ -1272,7 +1293,7 @@ function renderActions(me) {
   function pick(opt) {
     if (opt.hasAttribute('data-custom')) { customSeq = state.turnSeq; raiseTo = def.to; actionKey = ''; renderActions(me); return }
     raisePref = opt.dataset.name
-    try { localStorage.setItem('p2pcasino.raise', raisePref) } catch {}
+    try { localStorage.setItem('casino:raise', raisePref) } catch {}
     act('raise', +opt.dataset.p)
   }
   menu.querySelectorAll('.rm-opt').forEach(b => b.onclick = () => pick(b))
