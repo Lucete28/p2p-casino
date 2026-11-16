@@ -179,9 +179,29 @@ header .me-info b { color: var(--gold); }
 .timer i { display: block; height: 100%; width: 100%; background: var(--gold); transition: width .2s linear; }
 .last { font-size: 11px; margin-top: 3px; padding: 1px 8px; border-radius: 999px; background: #000a; color: #cdd9e5; white-space: nowrap; }
 .bet {
-  margin-top: 3px; font-size: 12px; font-weight: 700; color: #1b1300;
-  background: var(--gold); border-radius: 999px; padding: 1px 8px;
+  margin-top: 3px; font-size: 12px; font-weight: 700; color: var(--gold);
+  background: #000b; border-radius: 999px; padding: 1px 8px 1px 4px;
+  display: flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums;
 }
+
+/* 칩: 색 원판 + 가장자리 흰 줄무늬 + 안쪽 고리. --i는 쌓인 순서(0이 맨 아래) */
+.chip-stack { position: relative; display: inline-block; flex: none; width: 16px; height: calc(16px + (var(--n) - 1) * 3px); }
+.tchip {
+  position: absolute; left: 0; bottom: calc(var(--i) * 3px); width: 16px; height: 16px; border-radius: 50%;
+  background: var(--c); border: 2px dashed #ffffffcc; box-sizing: border-box;
+  box-shadow: 0 1px 0 #0009, inset 0 0 0 2px var(--c), inset 0 0 0 3px #ffffff66;
+}
+.tchip.white { --c: #e6e6e6; border-color: #4a6fa5aa; }
+.tchip.red { --c: #d64545; }
+.tchip.green { --c: #2f9e5b; }
+.tchip.black { --c: #2b2f36; }
+.tchip.purple { --c: #7d4cc2; }
+.tchip.gold { --c: #e3a81f; }
+.pot { display: flex; align-items: flex-end; justify-content: center; gap: 8px; }
+.pot-chips { display: flex; align-items: flex-end; gap: 3px; }
+.pot-chips .chip-stack, .pot-chips .tchip { width: 18px; }
+.pot-chips .tchip { height: 18px; }
+.pot-chips .chip-stack { height: calc(18px + (var(--n) - 1) * 3px); }
 
 .status { text-align: center; color: var(--muted); font-size: 14px; min-height: 1.4em; margin-top: 4px; }
 .controls { display: flex; justify-content: center; align-items: center; gap: 16px; margin: 10px 0; flex-wrap: wrap; }
@@ -195,12 +215,38 @@ header .me-info b { color: var(--gold); }
 }
 .actions .row { display: flex; gap: 8px; flex-wrap: wrap; }
 .actions .row .btn { flex: 1; min-width: 90px; }
+/* 행동 줄: 미리 선택 줄과 내 차례 줄의 버튼 자리를 같게 (PC 4칸 한 줄, 모바일 2칸 두 줄)
+   [폴드 자리][체크·콜 자리][레이즈 자리][올인 자리] — 미리 선택에서는 레이즈·올인 자리를 비워 둠 */
+.actions .row.slots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.actions .row.slots > * { min-height: 54px; min-width: 0; }
+.actions .row.slots .btn { min-width: 0; padding-left: 6px; padding-right: 6px; }
+.slot-split { display: flex; gap: 6px; }
+.slot-split .btn { flex: 1; min-width: 0; font-size: 13px; padding-left: 4px; padding-right: 4px; }
+.slot-blank {
+  grid-column: span 2; display: flex; align-items: center; justify-content: center; text-align: center;
+  border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); font-size: 12px; opacity: .7;
+}
+.actions .raise-wrap + .slot-blank, .actions .row.slots > .slot-blank:not(:last-child) { grid-column: span 1; }
+.bar-head { font-size: 12px; font-weight: 700; color: var(--muted); line-height: 16px; height: 16px; overflow: hidden; white-space: nowrap; }
+.bar-head span { font-weight: 400; margin-left: 6px; font-size: 11px; }
+.turn-head { color: var(--gold); }
+/* 줄이 막 바뀐 직후 (입력을 잠깐 받지 않는 동안) */
+.actions.locked .row { opacity: .55; transition: opacity .1s; }
+@media (max-width: 520px) {
+  .actions .row.slots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bar-head span { display: none; }
+}
 .bet-box { display: flex; flex-direction: column; gap: 6px; }
 /* 레이즈 버튼 + 옵션 메뉴 (PC는 마우스 올리기, 모바일은 길게 눌러 끌기) */
 .raise-wrap { flex: 1; min-width: 90px; position: relative; display: flex; }
 .raise-wrap .btn.raise { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; line-height: 1.15;
   touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-.btn.raise .rn { font-size: 11px; font-weight: 600; color: #9fb7e0; }
+/* 지금 누르면 나갈 옵션 (지난번에 고른 것) */
+.btn.raise .rn { font-style: normal; font-size: 12px; font-weight: 800; color: #1b1300; background: #9fc2ff; border-radius: 5px; padding: 0 5px; margin-right: 2px; vertical-align: 1px; }
+.btn.raise .rn[hidden] { display: none; }
+.btn.raise .rhint { font-size: 10px; font-weight: 500; color: #9fb7e0; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.rhint .h-mouse { display: none; }
+@media (hover: hover) and (pointer: fine) { .rhint .h-mouse { display: inline; } .rhint .h-touch { display: none; } }
 .btn.raise.open { border-color: var(--gold); }
 .raise-menu {
   position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); z-index: 30;
@@ -225,18 +271,14 @@ header .me-info b { color: var(--gold); }
 .rm-custom small { color: var(--muted); font-weight: 400; }
 
 /* 미리 선택 (내 차례가 아닐 때) */
-.actions.pre { border-color: var(--line); box-shadow: 0 6px 18px #0007; padding: 10px 12px; gap: 8px; }
-.pre-head { font-size: 12px; color: var(--muted); font-weight: 700; }
-.pre-head span { font-weight: 400; margin-left: 6px; font-size: 11px; }
-.pre-btn { background: #161b22; border-color: var(--line); color: var(--muted); font-size: 14px; padding: 9px 6px; }
+.actions.pre { border-color: var(--line); box-shadow: 0 6px 18px #0007; } /* 크기·여백은 내 차례 줄과 같게 (색만 다름) */
+.pre-btn { background: #161b22; border-color: var(--line); color: var(--muted); font-size: 14px; padding: 9px 6px; line-height: 1.2; white-space: normal; word-break: keep-all; }
 .pre-btn::before { content: ''; display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -1px; border: 1.5px solid currentColor; border-radius: 3px; }
 .pre-btn.on { background: #e3b3411f; border-color: var(--gold); color: var(--gold); }
 .pre-btn.on::before { background: var(--gold); border-color: var(--gold); box-shadow: inset 0 0 0 2px #161b22; }
-.actions .row .pre-btn { white-space: nowrap; }
-@media (max-width: 420px) {
-  .actions .row .pre-btn { min-width: 0; font-size: 13px; padding: 9px 4px; }
+@media (max-width: 520px) {
+  .actions .row .pre-btn { font-size: 13px; padding: 6px 4px; }
   .pre-btn::before { margin-right: 4px; }
-  .pre-head span { display: none; }
 }
 .amount-row { display: flex; align-items: center; gap: 6px; }
 .amount-row .step {

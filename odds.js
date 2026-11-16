@@ -1,6 +1,6 @@
 // 내 패 분석: 리버까지 갔을 때 완성될 족보별 확률과 예상 승률.
 // 내 카드와 바닥 카드만 사용한다(상대 카드는 모르는 것으로 보고 무작위로 가정).
-import { evaluate, newDeck, compareScore } from './poker.js?v=1.7.2'
+import { evaluate, newDeck, compareScore, handDetail } from './poker.js?v=1.7.3'
 
 // 낮은 족보 → 높은 족보 순. 인덱스 9 = 로열 플러시
 export const HAND_RANKS = ['하이카드', '원 페어', '투 페어', '트리플', '스트레이트', '플러시', '풀하우스', '포카드', '스트레이트 플러시', '로열 플러시']
@@ -10,9 +10,12 @@ export const category = score => (score[0] === 8 && score[1] === 14 ? 9 : score[
 export function currentHand(hole, board) {
   if (board.length >= 3) {
     const e = evaluate([...hole, ...board])
-    return { cat: category(e.score), cards: e.cards }
+    return { cat: category(e.score), cards: e.cards, detail: e.detail }
   }
-  return { cat: hole[0][0] === hole[1][0] ? 1 : 0, cards: hole }
+  // 바닥 카드가 나오기 전: 손패 두 장으로 "Q 원 페어" 또는 "A 하이카드"
+  const rs = hole.map(c => '23456789TJQKA'.indexOf(c[0]) + 2).sort((a, b) => b - a)
+  const pair = rs[0] === rs[1]
+  return { cat: pair ? 1 : 0, cards: hole, detail: handDetail([pair ? 1 : 0, rs[0]]) }
 }
 
 const tick = () => new Promise(r => setTimeout(r, 0))

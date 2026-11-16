@@ -1,9 +1,9 @@
 ﻿// P2P 연결 + 화면. 방을 만든 사람(호스트)이 딜러 역할을 하며 게임 상태를 결정한다.
-import { createNet, selfId } from './net.js?v=1.7.2'
-import { CONFIG, Table } from './poker.js?v=1.7.2'
-import * as cloud from './cloud.js?v=1.7.2'
-import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.7.2'
-import { botDecision, BOT_NAMES } from './bot.js?v=1.7.2'
+import { createNet, selfId } from './net.js?v=1.7.3'
+import { CONFIG, Table } from './poker.js?v=1.7.3'
+import * as cloud from './cloud.js?v=1.7.3'
+import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.7.3'
+import { botDecision, BOT_NAMES } from './bot.js?v=1.7.3'
 
 // 카카오톡·인스타그램 같은 앱 안 브라우저에서는 구글 로그인이 막혀서, 외부 브라우저로 열도록 유도
 const UA = navigator.userAgent
@@ -16,7 +16,7 @@ else if (/\bLine\//i.test(UA) && !new URLSearchParams(location.search).has('open
   location.replace(u)
 }
 
-const VERSION = '1.7.2' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
+const VERSION = '1.7.3' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
 const APP_ID = 'p2p-casino-poker-v1'
 const STORE = 'casino:wallet'
 
@@ -106,13 +106,13 @@ let state = null          // 화면에 그릴 공개 상태
 let myHole = null
 let refillPending = false
 let bustPrompted = null
-let sitOut = false
 let running = false
 let turnTimer = null, timerSeq = -1, turnDeadline = 0, nextTimer = null
 let raiseTo = 0
 let roomCode = ''
 
-const myInfo = () => ({ name: wallet.name, tokens: wallet.tokens, sitOut, uid })
+// hidden: 내 탭이 뒤로 가 있는지 (방장이 자리 비움을 더 빨리 판단하는 데 씀). 자리 비움 여부 자체는 방장이 정함
+const myInfo = () => ({ name: wallet.name, tokens: wallet.tokens, uid, hidden: document.hidden })
 
 // ---------- 로비 ----------
 const nameInput = $('#name'), codeInput = $('#code')
@@ -572,6 +572,7 @@ setInterval(() => {
 // 내 화면이 잠깐 꺼졌다 켜진 경우엔 방장이 멈춘 걸로 착각하지 않도록 시간을 다시 잼
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) lastHostMsg = Date.now()
+  if (!isHost && hostId && net) net.send('info', myInfo(), hostId) // 탭이 뒤로 갔는지 방장에게 알림 (자리 비움 판단용)
   if (isHost && net && state) net.send('state', publicState()) // 내 화면이 꺼지거나 켜졌다는 걸 바로 알림
 })
 // 탭을 닫으면 바로 연결을 정리해서 다른 사람들이 곧바로 알아채게 함
@@ -601,17 +602,40 @@ function onInfo(peerId, d) {
   const name = String(d.name || '손님').trim().slice(0, 12) || '손님'
   if (typeof d.uid === 'string') uidOf[peerId] = d.uid.slice(0, 128)
   if (!table.seat(peerId) && table.seats.length >= CONFIG.MAX_SEATS) removeBot()
-  if (table.seat(peerId)) table.updateInfo(peerId, { name, sitOut: !!d.sitOut, tokens: d.tokens | 0 })
-  else {
-    table.addPlayer(peerId, name, Math.min(Math.max(0, d.tokens | 0), 1e9))
-    table.updateInfo(peerId, { sitOut: !!d.sitOut })
-  }
+  hiddenOf[peerId] = !!d.hidden
+  if (table.seat(peerId)) table.updateInfo(peerId, { name, tokens: d.tokens | 0 }) // 자리 비움은 방장이 정하므로 여기서 바꾸지 않음
+  else table.addPlayer(peerId, name, Math.min(Math.max(0, d.tokens | 0), 1e9))
   afterChange()
 }
 
 function hostMove(id, d) {
+  if (d?.type === 'back') return comeBack(id)
   const r = table.act(id, d?.type, d?.amount)
   if (!r.ok) { if (id === selfId) toast(r.error); return }
+  timeoutsOf[id] = 0 // 직접 행동했으면 시간 초과 횟수를 다시 셈
+  afterChange()
+}
+
+// ---------- 자리 비움 (방장이 판단) ----------
+// 다른 탭에 가 있는 사람 때문에 매번 30초씩 기다리지 않도록, 시간 초과로 자동 행동이 연속 AWAY_AFTER번이면
+// (탭이 뒤로 가 있으면 1번만으로) '자리 비움'으로 바꿔 다음 판부터 뺀다. 본인이 '다시 참여'를 누르면 돌아온다
+const AWAY_AFTER = 2
+const timeoutsOf = {}, hiddenOf = {}
+function markAway(s) {
+  if (s.bot || s.sitOut) return
+  timeoutsOf[s.id] = (timeoutsOf[s.id] || 0) + 1
+  const hidden = s.id === selfId ? document.hidden : hiddenOf[s.id]
+  if (timeoutsOf[s.id] < (hidden ? 1 : AWAY_AFTER)) return
+  s.sitOut = true
+  timeoutsOf[s.id] = 0
+  table.addLog(`${s.name} 님이 자리를 비워 다음 판부터 빠져요.`)
+}
+function comeBack(id) {
+  const s = table.seat(id)
+  if (!s || !s.sitOut) return
+  s.sitOut = false
+  timeoutsOf[id] = 0
+  table.addLog(`${s.name} 님이 돌아왔어요.`)
   afterChange()
 }
 
@@ -642,6 +666,7 @@ function timeout(id) {
   table.act(id, table.currentBet > s.bet ? 'fold' : 'check')
   s.last += ' (시간 초과)'
   if (table.lastAction?.id === id) table.lastAction.label = s.last
+  markAway(s)
   afterChange()
 }
 
@@ -654,6 +679,8 @@ function scheduleNext() {
 function tryStart() {
   for (const p of table.seats) if (p.bot && p.stack <= 0) p.stack = CONFIG.START_TOKENS // 봇은 무한 충전
   maintainBots()
+  // 사람이 모두 자리를 비웠으면 봇끼리 돌리지 않고 기다림 (누군가 돌아오면 다시 시작)
+  if (!table.seats.some(p => !p.bot && !p.left && !p.sitOut && p.stack > 0)) { const s = publicState(); net.send('state', s); onState(s); return }
   const holes = table.startHand()
   if (!holes) { const s = publicState(); net.send('state', s); onState(s); return }
   for (const [id, cards] of Object.entries(holes)) {
@@ -681,8 +708,12 @@ function onState(s) {
     }
   }
   trackHandResult(s, me)
+  // 자리 비움으로 바뀐 순간 한 번 알림 (돌아왔을 때 화면에서 바로 보이게)
+  if (me && me.sitOut && !wasAway) toast('시간 안에 행동하지 않아 자리 비움이 됐어요. 다시 참여를 누르면 돌아와요.')
+  wasAway = !!me?.sitOut
   render()
 }
+let wasAway = false
 
 function onHole(d) {
   myHole = d
@@ -692,6 +723,29 @@ function onHole(d) {
 function sendMove(type, amount) {
   if (isHost) hostMove(selfId, { type, amount })
   else net.send('move', { type, amount }, hostId)
+}
+
+// ---------- 칩 그림 ----------
+// 금액을 큰 칩부터 나눠 색 칩으로 쌓아 보여 준다 (그림 파일 없이 CSS로 그림)
+const CHIPS = [[1000, 'gold'], [500, 'purple'], [100, 'black'], [25, 'green'], [5, 'red'], [1, 'white']]
+function chipBreakdown(amount) {
+  const out = []
+  for (const [v, c] of CHIPS) {
+    const n = Math.floor(amount / v)
+    if (n) { out.push([c, n]); amount -= n * v }
+  }
+  return out // [[색, 개수], ...] 큰 칩부터
+}
+// 한 줄 더미: 큰 칩이 아래로, 최대 max개
+function chipStack(amount, max = 5) {
+  const chips = []
+  for (const [c, n] of chipBreakdown(amount)) for (let i = 0; i < n && chips.length < max; i++) chips.push(c)
+  return `<span class="chip-stack" style="--n:${chips.length}" aria-hidden="true">${chips.map((c, i) => `<i class="tchip ${c}" style="--i:${i}"></i>`).join('')}</span>`
+}
+// 판돈: 색깔별로 따로 쌓은 더미 여러 개 (최대 4더미, 더미당 최대 6개)
+function chipColumns(amount) {
+  return chipBreakdown(amount).slice(0, 4).map(([c, n]) =>
+    `<span class="chip-stack" style="--n:${Math.min(n, 6)}" aria-hidden="true">${Array.from({ length: Math.min(n, 6) }, (_, i) => `<i class="tchip ${c}" style="--i:${i}"></i>`).join('')}</span>`).join('')
 }
 
 // ---------- 화면 ----------
@@ -742,7 +796,7 @@ function render() {
     const tags = [
       p.id === state.hostId ? '<i class="tag">방장</i>' : '',
       p.bot ? '<i class="tag">봇</i>' : '',
-      p.left ? '<i class="tag">나감</i>' : p.sitOut ? '<i class="tag">쉬는 중</i>' : '',
+      p.left ? '<i class="tag">나감</i>' : p.sitOut ? '<i class="tag">자리 비움</i>' : '',
       !p.inHand && p.stack <= 0 ? '<i class="tag">토큰 없음</i>' : '',
     ].join('')
     const win = state.result?.winners.find(w => w.id === p.id)
@@ -758,7 +812,7 @@ function render() {
         ${turn ? '<div class="timer"><i></i></div>' : ''}
       </div>
       ${p.last ? `<div class="last">${esc(p.last)}</div>` : ''}
-      ${p.bet ? `<div class="bet">${p.bet}</div>` : ''}
+      ${p.bet ? `<div class="bet">${chipStack(p.bet)}<span>${p.bet.toLocaleString()}</span></div>` : ''}
     </div>`
   }).join('')
 
@@ -775,7 +829,7 @@ function render() {
     ? cardHtml(state.board[i], `${i >= fresh ? 'deal' : ''} ${mark(state.board[i])}`)
     : '<div class="card slot"></div>').join('')
   const potTotal = state.pot + seats.reduce((a, p) => a + p.bet, 0)
-  $('#pot').textContent = potTotal ? `팟 ${potTotal.toLocaleString()}` : ''
+  $('#pot').innerHTML = potTotal ? `<span class="pot-chips">${chipColumns(potTotal)}</span><span>팟 ${potTotal.toLocaleString()}</span>` : ''
   renderWaiting(seats)
 
   // 결과 배너 (내용이 바뀔 때만 다시 그려서 애니메이션이 한 번만 나오게)
@@ -798,9 +852,13 @@ function render() {
     const ready = seats.filter(p => !p.left && !p.sitOut && p.stack > 0).length
     if (!state.running) status += ready < 2 ? '' : isHost ? ' · 시작 버튼을 누르세요' : ' · 방장이 시작하길 기다리는 중'
     else if (ready < 2) status += ' · 참여 가능한 플레이어가 2명 이상 필요합니다'
+    else if (!seats.some(p => !p.bot && !p.left && !p.sitOut && p.stack > 0)) status += ' · 모두 자리를 비워 기다리는 중'
     else if (state.phase === 'showdown') status += ' · 곧 다음 판이 시작됩니다'
   }
   if (!me) status += ' · 자리가 꽉 차서 관전 중'
+  else if (me.sitOut && !me.inHand) {
+    status = '<span class="out">자리 비움 · 시간 안에 행동하지 않아 다음 판부터 빠졌어요. <b>다시 참여</b>를 누르면 다음 판부터 함께해요.</span>'
+  }
   else if (me.stack === 0 && !me.inHand && outForToday()) {
     status = '<span class="out">오늘 받을 수 있는 토큰을 모두 썼어요. 내일 다시 참여할 수 있어요. (관전은 계속 가능)</span>'
   }
@@ -809,6 +867,7 @@ function render() {
   $('#start').hidden = !(isHost && !state.running)
   const busyMe = me && me.inHand && BETTING.includes(state.phase)
   $('#refill-btn').hidden = !(me && me.stack === 0 && !busyMe && !refillPending && canRefill())
+  $('#back-btn').hidden = !(me && me.sitOut && !me.left)
 
   renderActions(me)
   renderOdds(me, hasMyHole)
@@ -832,7 +891,7 @@ function renderWaiting(seats) {
   const sub = need > 0 ? `<b>${need}명</b> 더 모이면 시작할 수 있어요`
     : !state.running ? (isHost ? '준비됐어요! 아래 <b>게임 시작</b>을 눌러 주세요' : '방장이 시작하길 기다리는 중')
     : '곧 다음 판이 시작됩니다'
-  const label = { ready: '참가', sitout: '쉬는 중', broke: '토큰 없음', left: '나감', bot: '봇' }
+  const label = { ready: '참가', sitout: '자리 비움', broke: '토큰 없음', left: '나감', bot: '봇' }
   $('#waiting').innerHTML = `
     <div class="wait-count">👥 <b>${humans}</b><span>명${bots ? ` · 🤖 봇 ${bots}` : ''} / ${CONFIG.MAX_SEATS}자리</span></div>
     <div class="wait-sub">${sub}</div>
@@ -994,7 +1053,7 @@ const pct = p => (p >= 0.9995 ? '100%' : p > 0 && p < 0.001 ? '<0.1%' : (p * 100
 function drawOdds() {
   const cur = currentHand(myHole.cards, state.board)
   const head = `<button class="odds-head" id="odds-toggle" aria-expanded="${oddsOpen}">
-      <span>지금 내 족보 <b>${HAND_RANKS[cur.cat]}</b></span>
+      <span>지금 내 족보 <b>${esc(cur.detail || HAND_RANKS[cur.cat])}</b></span>
       <span class="eq">${oddsResult ? (oddsResult.equity != null ? `예상 승률 <b>${pct(oddsResult.equity)}</b>` : '') : '계산 중…'}</span>
       <span class="caret">${oddsOpen ? '▾' : '▸'}</span>
     </button>`
@@ -1128,6 +1187,27 @@ let raisePref = '최소' // 레이즈 버튼을 그냥 눌렀을 때 쓸 옵션 
 try { raisePref = localStorage.getItem('casino:raise') || '최소' } catch {}
 let customSeq = -1 // '직접 입력'을 연 차례 번호
 
+// ---------- 줄이 바뀐 직후 잠깐 입력 막기 ----------
+// 미리 선택 줄 ↔ 내 차례 줄이 바뀌는 순간 누른 손가락이 새 버튼을 누르지 않게 LOCK_MS 동안 클릭을 무시
+const LOCK_MS = 500
+let barMode = '', lockUntil = 0, lockTimer = 0
+function setBarMode(mode) {
+  if (mode === barMode) return
+  const bar = $('#actions')
+  if (barMode && mode) { // 줄이 보이는 상태에서 다른 줄로 바뀔 때만 (새로 나타날 때는 누르던 중이 아님)
+    lockUntil = Date.now() + LOCK_MS
+    bar.classList.add('locked')
+    clearTimeout(lockTimer)
+    lockTimer = setTimeout(() => bar.classList.remove('locked'), LOCK_MS)
+  }
+  barMode = mode
+}
+for (const type of ['pointerdown', 'pointerup', 'click']) {
+  $('#actions').addEventListener(type, e => {
+    if (Date.now() < lockUntil) { e.stopPropagation(); e.preventDefault() }
+  }, true)
+}
+
 // ---------- 미리 선택 (내 차례가 아닐 때 다음 행동을 골라 두기) ----------
 // kind: 'checkfold'(체크, 누가 걸면 폴드) / 'check'(체크만, 누가 걸면 취소) / 'call'(그 금액 콜, 금액이 바뀌면 취소) / 'callany'(얼마든 콜)
 let pre = null // { hand, kind, amt }
@@ -1151,17 +1231,24 @@ function renderPre(me, bar) {
   if (pre?.kind === 'check' && toCall > 0) pre = null
   if (pre?.kind === 'call' && toCall !== pre.amt) pre = null
   bar.classList.add('pre')
+  setBarMode('pre')
   const key = ['pre', state.handNo, toCall, pre?.kind || ''].join(',')
   if (key === actionKey) return
   actionKey = key
-  const opts = toCall <= 0
-    ? [['checkfold', '체크/폴드'], ['check', '체크'], ['callany', '아무거나 콜']]
-    : [['checkfold', '폴드'], ['call', `콜 ${toCall.toLocaleString()}`], ['callany', '아무거나 콜']]
+  // 버튼 자리를 내 차례 줄과 맞춤: [폴드 자리] [체크·콜 자리] [레이즈·올인 자리 = 비워 둠]
+  // 차례가 바뀌는 순간 누르더라도 같은 자리에는 비슷한 행동만 오게 (레이즈·올인이 잘못 눌리지 않게)
+  const btn = (k, label) => `<button class="btn pre-btn ${pre?.kind === k ? 'on' : ''}" data-pre="${k}" aria-pressed="${pre?.kind === k}">${label}</button>`
   bar.hidden = false
   bar.innerHTML = `
-    <div class="pre-head">미리 선택 <span>내 차례가 되면 바로 실행돼요</span></div>
-    <div class="row">${opts.map(([k, label]) =>
-      `<button class="btn pre-btn ${pre?.kind === k ? 'on' : ''}" data-pre="${k}" aria-pressed="${pre?.kind === k}">${label}</button>`).join('')}</div>`
+    <div class="bar-head">미리 선택 <span>내 차례가 되면 바로 실행돼요</span></div>
+    <div class="row slots">
+      ${btn('checkfold', toCall <= 0 ? '체크/폴드' : '폴드')}
+      <div class="slot-split">
+        ${toCall <= 0 ? btn('check', '체크') : btn('call', `콜 ${toCall.toLocaleString()}`)}
+        ${btn('callany', '아무거나 콜')}
+      </div>
+      <div class="slot-blank" aria-hidden="true">레이즈 · 올인은 내 차례에</div>
+    </div>`
   bar.querySelectorAll('[data-pre]').forEach(b => b.onclick = () => {
     const k = b.dataset.pre
     pre = pre?.kind === k ? null : { hand: state.handNo, kind: k, amt: toCall }
@@ -1178,6 +1265,7 @@ function renderActions(me) {
     // 판에 남아 있고 아직 행동할 수 있으면 미리 선택 버튼을 보여 줌
     if (me && me.inHand && !me.folded && !me.allIn && me.stack > 0 && BETTING.includes(state.phase)) { renderPre(me, bar); return }
     pre = null
+    setBarMode('')
     bar.innerHTML = ''; bar.hidden = true; actionKey = ''; return
   }
   // 내 차례: 미리 고른 행동이 지금 상황에 맞으면 바로 실행
@@ -1185,11 +1273,13 @@ function renderActions(me) {
   pre = null
   if (auto && autoSeq !== state.turnSeq) {
     const seq = autoSeq = state.turnSeq
+    setBarMode('')
     bar.innerHTML = ''; bar.hidden = true; actionKey = 'auto,' + seq
     setTimeout(() => { if (state.toActId === selfId && state.turnSeq === seq) sendMove(auto) }, 250)
     return
   }
   if (actionKey === 'auto,' + state.turnSeq) return
+  setBarMode('turn')
   // 같은 차례 안에서는 다시 그리지 않음 (입력 중인 금액과 포커스 유지)
   const key = [state.turnSeq, me.stack, me.bet, state.currentBet, state.minRaise, state.pot].join(',')
   if (key === actionKey) return
@@ -1228,7 +1318,8 @@ function renderActions(me) {
   if (!custom) raiseTo = def.to
 
   bar.innerHTML = `
-    <div class="row">
+    <div class="bar-head turn-head">내 차례예요</div>
+    <div class="row slots">
       <button class="btn fold" data-a="fold">폴드</button>
       ${toCall <= 0
         ? '<button class="btn check" data-a="check">체크</button>'
@@ -1239,8 +1330,8 @@ function renderActions(me) {
           ${presets.map(p => `<button class="rm-opt ${!custom && p.name === def.name ? 'def' : ''}" data-p="${p.to}" data-name="${p.name}" title="${p.tip}" role="menuitem"><b>${p.name}</b><small>${p.to.toLocaleString()}</small></button>`).join('')}
           <button class="rm-opt rm-custom" data-custom role="menuitem"><b>직접</b><small>입력</small></button>
         </div>
-        <button class="btn raise" data-a="raise" aria-haspopup="menu"><span class="rv"><span id="raise-verb">${verb}</span> <b id="raise-val"></b></span><small class="rn" id="raise-name"></small></button>
-      </div>` : ''}
+        <button class="btn raise" data-a="raise" aria-haspopup="menu"><span class="rv"><em class="rn" id="raise-name"></em> <span id="raise-verb">${verb}</span> <b id="raise-val"></b></span><small class="rhint"><span class="h-mouse">▴ 마우스를 올리면 다른 금액</span><span class="h-touch">▴ 길게 누르면 다른 금액</span></small></button>
+      </div>` : '<div class="slot-blank" aria-hidden="true">레이즈 불가</div>'}
       <button class="btn allin" data-a="allin">올인 ${maxTo.toLocaleString()}</button>
     </div>
     ${canRaise && custom ? `
@@ -1273,7 +1364,9 @@ function renderActions(me) {
     if (input && !fromInput) input.value = raiseTo
     $('#raise-verb').textContent = raiseTo >= maxTo ? '올인' : verb
     $('#raise-val').textContent = raiseTo.toLocaleString()
-    $('#raise-name').textContent = custom ? '직접 입력' : `${def.name} ▴`
+    // 지금 누르면 어떤 옵션으로 나가는지 버튼 앞에 꼬리표로 (지난번에 고른 옵션)
+    $('#raise-name').textContent = custom ? '직접' : raiseTo >= maxTo ? '' : def.name
+    $('#raise-name').hidden = !$('#raise-name').textContent
     if (custom) $('#raise-extra').innerHTML = `추가로 <b>${(raiseTo - me.bet).toLocaleString()}</b> 냄`
   }
   setRaise(raiseTo)
@@ -1348,6 +1441,7 @@ setInterval(() => {
 }, 200)
 
 $('#start').onclick = () => { running = true; tryStart() }
+$('#back-btn').onclick = () => { $('#back-btn').hidden = true; sendMove('back') } // 자리 비움에서 돌아오기
 $('#copy').onclick = async () => {
   const url = location.href.split('#')[0] + '#' + roomCode
   try { await navigator.clipboard.writeText(url); toast('초대 링크를 복사했어요!') }

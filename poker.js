@@ -85,7 +85,24 @@ export function evaluate(cards) {
             if (!best || compareScore(s, best) > 0) { best = s; bestCards = five }
           }
   const name = best[0] === 8 && best[1] === 14 ? '로열 플러시' : HAND_NAMES[best[0]]
-  return { score: best, name, cards: bestCards }
+  return { score: best, name, detail: handDetail(best), cards: bestCards }
+}
+
+// 숫자까지 넣은 족보 이름: "3 원 페어", "K·7 투 페어", "A·4 풀하우스", "Q 하이 스트레이트"
+export const rankLabel = r => ({ 14: 'A', 13: 'K', 12: 'Q', 11: 'J' })[r] || String(r)
+export function handDetail(score) {
+  const [cat, a, b] = score, A = rankLabel(a), B = rankLabel(b)
+  switch (cat) {
+    case 8: return a === 14 ? '로열 플러시' : `${A} 하이 스트레이트 플러시`
+    case 7: return `${A} 포카드`
+    case 6: return `${A}·${B} 풀하우스`
+    case 5: return `${A} 하이 플러시`
+    case 4: return `${A} 하이 스트레이트`
+    case 3: return `${A} 트리플`
+    case 2: return `${A}·${B} 투 페어`
+    case 1: return `${A} 원 페어`
+    default: return `${A} 하이카드`
+  }
 }
 
 export class Table {
@@ -365,7 +382,7 @@ export class Table {
     const shown = {}
     for (const s of live) {
       evals[s.id] = evaluate([...this.holes[s.id], ...this.board])
-      shown[s.id] = { cards: this.holes[s.id], hand: evals[s.id].name }
+      shown[s.id] = { cards: this.holes[s.id], hand: evals[s.id].detail }
     }
     // 딜러 다음 자리부터 순서대로(나머지 칩 배분 순서)
     const dealer = this.seats.findIndex(s => s.id === this.dealerId)
@@ -396,8 +413,8 @@ export class Table {
     for (const s of order) {
       if (!won[s.id]) continue
       s.stack += won[s.id]
-      winners.push({ id: s.id, name: s.name, amount: won[s.id], hand: evals[s.id].name, best: evals[s.id].cards })
-      this.addLog(`${s.name} 님이 ${evals[s.id].name}(으)로 ${won[s.id]} 토큰 획득!`)
+      winners.push({ id: s.id, name: s.name, amount: won[s.id], hand: evals[s.id].detail, best: evals[s.id].cards })
+      this.addLog(`${s.name} 님이 ${evals[s.id].detail}(으)로 ${won[s.id]} 토큰 획득!`)
     }
     this.result = { winners, shown }
     this._endHand()
