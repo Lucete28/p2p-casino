@@ -1,9 +1,26 @@
 # P2P 카지노 · 포커
 
 서버 없이 브라우저끼리 직접 연결(WebRTC, [Trystero](https://github.com/dmotz/trystero))되는 텍사스 홀덤입니다.
-GitHub Pages에 그대로 올리면 동작합니다.
+빌드 과정 없는 정적 파일이라 nginx 같은 웹 서버에 그대로 올리면 동작합니다.
 
-**플레이: https://lucete28.github.io/p2p-casino/** (카카오톡 안에서 열면 구글 로그인이 막히니 크롬/사파리로 여세요)
+**플레이: https://justmadethisthat.com/casino/** (카카오톡 안에서 열면 구글 로그인이 막히니 크롬/사파리로 여세요)
+
+## 홈서버 배포 정보
+[home-server](https://github.com/Lucete28/home-server) 규칙에 맞춘 정보입니다.
+
+| 항목 | 값 |
+|---|---|
+| 저장소 | https://github.com/Lucete28/p2p-casino (`main` 브랜치) |
+| 주소 | `https://justmadethisthat.com/casino/` (터널이 `/casino` 경로를 그대로 넘김) |
+| 컨테이너 포트 | `3000` (`Dockerfile` + `nginx.conf`, nginx가 `/casino/` 아래로 파일을 내보냄) |
+| 환경변수 | 없음 |
+| DB | 없음 (서버에 저장하는 데이터 없음) |
+| 외부 의존성 | Firebase(구글 로그인, Firestore: 토큰·중계·통계·랭킹), Nostr 공개 릴레이(P2P 연결 신호), jsdelivr CDN(Trystero, Firebase SDK) |
+| 메인 화면 스크린샷 | `casino.webp` (1600×1000, 이미지 안에서만 쓰고 컨테이너에는 안 들어감) |
+
+- Firebase 콘솔 → Authentication → 설정 → **승인된 도메인**에 `justmadethisthat.com`이 있어야 구글 로그인이 됩니다.
+- 모든 응답에 `Cache-Control: no-store`를 붙여 Cloudflare가 옛 파일을 들고 있지 않게 했습니다.
+- 로컬에서 컨테이너 확인: `docker build -t casino . && docker run --rm -p 3000:3000 casino` → `http://localhost:3000/casino/`
 
 ## 파일
 - `index.html`, `style.css` — 화면
@@ -27,11 +44,8 @@ GitHub Pages에 그대로 올리면 동작합니다.
 
 토큰을 모두 잃으면 기본 토큰을 자동으로 다시 받습니다. 하루 10번을 다 쓴 사람에게만 "내일 다시 참여할 수 있어요"라고 안내합니다.
 
-## GitHub Pages 배포
-1. GitHub에서 새 저장소를 만듭니다. 예를 들어 `<아이디>.github.io`로 만들면 주소가 `https://<아이디>.github.io`가 됩니다.
-2. 이 파일들(`index.html`, `style.css`, `app.js`, `poker.js`, `cloud.js`, `firebase-config.js`)을 업로드합니다.
-3. Settings → Pages → Branch를 `main`으로 지정하고 저장합니다.
-4. 1~2분 뒤 접속 → **방 만들기** → **초대 링크 복사**로 친구에게 링크를 보냅니다.
+## 배포
+`main`에 올리면 홈서버가 1분 안에 가져가서 다시 띄웁니다(위 표 참고). 올리기 전에 버전을 올려 주세요(아래 '버전 기록').
 
 로컬에서 테스트할 때는 파일을 더블클릭하지 말고 간단한 서버로 여세요 (예: `python -m http.server`).
 
@@ -43,23 +57,24 @@ GitHub Pages에 그대로 올리면 동작합니다.
 2. 프로젝트 홈에서 **웹 앱 추가(`</>` 아이콘)** → 앱 이름 입력 → 화면에 나오는 `firebaseConfig = { ... }` 값을
    `firebase-config.js`의 `export const firebaseConfig = null` 자리에 붙여넣습니다.
 3. 왼쪽 메뉴 **Authentication** → 시작하기 → 로그인 방법에서 **Google** 사용 설정 → 저장.
-4. Authentication → **설정** → **승인된 도메인**에 `<아이디>.github.io`를 추가합니다.
+4. Authentication → **설정** → **승인된 도메인**에 사이트 도메인(`justmadethisthat.com`)을 추가합니다.
 5. 왼쪽 메뉴 **Firestore Database** → 데이터베이스 만들기 → 위치는 `asia-northeast3 (서울)` → **프로덕션 모드**로 시작.
 6. Firestore → **규칙** 탭 → 내용을 모두 지우고 `firestore.rules` 파일 내용을 붙여넣고 **게시**.
 7. 바뀐 `firebase-config.js`를 GitHub에 다시 올리면 끝입니다.
+(이 프로젝트는 이미 설정되어 있어요: 프로젝트 `p2p-casino-d3fef`)
 
 무료 플랜(Spark) 한도(하루 쓰기 2만 회 등) 안에서 충분히 돌아가며, 한도를 넘어도 요금이 청구되지 않고 그날만 저장이 멈춥니다.
 
 ## 구조와 한계
 - 방을 만든 사람(방장)의 브라우저가 딜러 역할을 합니다. 카드를 섞고, 각자의 카드는 **그 사람에게만** 보냅니다.
-- 방장이 나가면 그 방은 끝납니다.
+- 방장이 나가면 남은 사람 중 한 명이 이어받아 계속 진행합니다.
 - Firebase 보안 규칙(`firestore.rules`)이 막는 것: 남의 토큰 수정, 하루 10회 넘는 재지급, 재지급 횟수 되돌리기, 날짜 조작.
   다만 게임 결과(토큰 증감)는 각자 브라우저가 저장하므로, 작정하고 조작하는 것까지 100% 막지는 못합니다.
   (막으려면 서버 코드가 필요하고, 이는 Firebase 유료 플랜에서만 가능)
 - 실제 돈과는 무관한 게임 토큰입니다.
 
 ## 사용 통계 (나만 보기)
-- 주소: `https://lucete28.github.io/p2p-casino/stats.html` (게임 화면에는 링크가 없어요. 즐겨찾기 해 두세요)
+- 주소: `https://justmadethisthat.com/casino/stats.html` (게임 화면에는 링크가 없어요. 즐겨찾기 해 두세요)
 - 보여주는 것: 오늘/최근 7일 접속자(중복 제외), 총 가입자, 날짜별 접속자·플레이한 판 수 그래프, 최근 14일 표(방 수, 판 수, 방 평균 인원), 토큰 순위 상위 10명
 - 관리자 등록: 통계 페이지에 로그인하면 내 계정 ID가 나와요. Firebase 콘솔 → Firestore → `admins` 컬렉션에 그 ID로 문서를 하나 만들면 볼 수 있어요. (앱에서는 스스로 관리자가 될 수 없게 막혀 있어요)
 - 기록은 날짜별 숫자만 남기고(하루 한 번 접속 기록, 방·판마다 한 번), 누가 어떤 패를 들었는지 같은 게임 내용은 저장하지 않아요.
