@@ -1,5 +1,5 @@
 // Firebase(구글 로그인 + Firestore) 연결. 토큰과 재지급 횟수를 계정에 저장해서 기기가 바뀌어도 이어진다.
-import { firebaseConfig } from './firebase-config.js?v=1.7.1'
+import { firebaseConfig } from './firebase-config.js?v=1.7.2'
 
 const SDK = 'https://www.gstatic.com/firebasejs/12.19.0/'
 // 로컬 테스트용: localhost에서 ?emu 를 붙이면 Firebase 에뮬레이터에 연결

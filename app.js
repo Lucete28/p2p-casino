@@ -1,9 +1,9 @@
 ﻿// P2P 연결 + 화면. 방을 만든 사람(호스트)이 딜러 역할을 하며 게임 상태를 결정한다.
-import { createNet, selfId } from './net.js?v=1.7.1'
-import { CONFIG, Table } from './poker.js?v=1.7.1'
-import * as cloud from './cloud.js?v=1.7.1'
-import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.7.1'
-import { botDecision, BOT_NAMES } from './bot.js?v=1.7.1'
+import { createNet, selfId } from './net.js?v=1.7.2'
+import { CONFIG, Table } from './poker.js?v=1.7.2'
+import * as cloud from './cloud.js?v=1.7.2'
+import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.7.2'
+import { botDecision, BOT_NAMES } from './bot.js?v=1.7.2'
 
 // 카카오톡·인스타그램 같은 앱 안 브라우저에서는 구글 로그인이 막혀서, 외부 브라우저로 열도록 유도
 const UA = navigator.userAgent
@@ -16,7 +16,7 @@ else if (/\bLine\//i.test(UA) && !new URLSearchParams(location.search).has('open
   location.replace(u)
 }
 
-const VERSION = '1.7.1' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
+const VERSION = '1.7.2' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
 const APP_ID = 'p2p-casino-poker-v1'
 const STORE = 'casino:wallet'
 
@@ -286,6 +286,7 @@ function enter(code, host, { public: pub = false, quick = false } = {}) {
   history.replaceState(null, '', location.pathname + location.search + (host ? '' : '#' + code))
   $('#lobby').hidden = true
   $('#game').hidden = false
+  window.JMTT?.badge?.hide() // 게임 중에는 JMTT 배지를 숨김 (로비로 돌아올 때는 새로고침이라 다시 보임)
   $('#room-code').textContent = code
 
   net = createNet(APP_ID, code, { onJoin: onPeerJoin, onLeave: onPeerLeave, onMessage: onNetMessage })
