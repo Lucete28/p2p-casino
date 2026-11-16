@@ -1,5 +1,5 @@
 // Firebase(구글 로그인 + Firestore) 연결. 토큰과 재지급 횟수를 계정에 저장해서 기기가 바뀌어도 이어진다.
-import { firebaseConfig } from './firebase-config.js?v=1.6.1'
+import { firebaseConfig } from './firebase-config.js?v=1.7.0'
 
 const SDK = 'https://www.gstatic.com/firebasejs/12.19.0/'
 // 로컬 테스트용: localhost에서 ?emu 를 붙이면 Firebase 에뮬레이터에 연결
@@ -96,12 +96,17 @@ export async function listRooms() {
   return freshRooms(await F.getDocs(lobbyQuery()))
 }
 
-// ---------- 주간 시즌 랭킹 ----------
-// seasons/{그 주 월요일 날짜}/players/{uid}: 이번 주 순수익(net), 판 수, 이긴 판 수
+// ---------- 월간 시즌 랭킹 ----------
+// seasons/{그 달 1일 날짜, 예: 2026-11-01}/players/{uid}: 이번 달 순수익(net), 판 수, 이긴 판 수
+// (v1.6까지는 주간이라 그 주 월요일 날짜를 썼음. 형식이 같아서 보안 규칙은 그대로)
 export function seasonKey(t = Date.now()) {
-  const kst = new Date(t + 9 * 3600e3)
-  const dow = (kst.getUTCDay() + 6) % 7 // 월요일 = 0
-  return new Date(kst.getTime() - dow * 86400e3).toISOString().slice(0, 10)
+  return new Date(t + 9 * 3600e3).toISOString().slice(0, 8) + '01'
+}
+// 지난달 시즌 키
+export function prevSeasonKey(key = seasonKey()) {
+  const d = new Date(key + 'T00:00:00Z')
+  d.setUTCMonth(d.getUTCMonth() - 1)
+  return d.toISOString().slice(0, 10)
 }
 
 export async function recordHandResult(name, delta) {

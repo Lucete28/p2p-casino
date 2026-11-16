@@ -1,5 +1,5 @@
 // 관리자 전용 사용 통계. 보안 규칙에서 admins/{uid} 문서가 있는 계정만 데이터를 읽을 수 있다.
-import * as cloud from './cloud.js?v=1.6.1'
+import * as cloud from './cloud.js?v=1.7.0'
 
 const $ = s => document.querySelector(s)
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`)
@@ -99,10 +99,10 @@ function render(days, players, season) {
     ? players.top.map((p, i) => `<li><span class="r">${i + 1}</span><span>${esc(p.name || '이름 없음')}</span><span class="t">🪙 ${num(p.tokens || 0)}</span></li>`).join('')
     : '<li class="muted">아직 가입자가 없어요.</li>'
 
-  $('#season-title').textContent = `이번 주 시즌 랭킹 (${season.season.slice(5).replace('-', '/')} 시작 · 참가 ${season.total}명)`
+  $('#season-title').textContent = `${+season.season.slice(5, 7)}월 시즌 랭킹 (참가 ${season.total}명)`
   $('#season-top').innerHTML = season.rows.length
     ? season.rows.map((p, i) => `<li><span class="r">${i + 1}</span><span>${esc(p.name || '이름 없음')} <span class="muted">${num(p.hands || 0)}판</span></span><span class="t">${signed(p.net || 0)}</span></li>`).join('')
-    : '<li class="muted">아직 이번 주 기록이 없어요.</li>'
+    : '<li class="muted">아직 이번 달 기록이 없어요.</li>'
 
   $('#gate').hidden = true
   $('#board').hidden = false

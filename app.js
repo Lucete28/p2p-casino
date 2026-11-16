@@ -1,9 +1,9 @@
 // P2P 연결 + 화면. 방을 만든 사람(호스트)이 딜러 역할을 하며 게임 상태를 결정한다.
-import { createNet, selfId } from './net.js?v=1.6.1'
-import { CONFIG, Table } from './poker.js?v=1.6.1'
-import * as cloud from './cloud.js?v=1.6.1'
-import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.6.1'
-import { botDecision, BOT_NAMES } from './bot.js?v=1.6.1'
+import { createNet, selfId } from './net.js?v=1.7.0'
+import { CONFIG, Table } from './poker.js?v=1.7.0'
+import * as cloud from './cloud.js?v=1.7.0'
+import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.7.0'
+import { botDecision, BOT_NAMES } from './bot.js?v=1.7.0'
 
 // 카카오톡·인스타그램 같은 앱 안 브라우저에서는 구글 로그인이 막혀서, 외부 브라우저로 열도록 유도
 const UA = navigator.userAgent
@@ -16,7 +16,7 @@ else if (/\bLine\//i.test(UA) && !new URLSearchParams(location.search).has('open
   location.replace(u)
 }
 
-const VERSION = '1.6.1' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
+const VERSION = '1.7.0' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
 const APP_ID = 'p2p-casino-poker-v1'
 const STORE = 'p2pcasino.v1'
 const PHASES = { waiting: '대기 중', preflop: '프리플랍', flop: '플랍', turn: '턴', river: '리버', showdown: '결과' }
@@ -1016,10 +1016,10 @@ function openRanks() {
 }
 $('#ranks-btn').onclick = openRanks
 
-// ---------- 주간 시즌 랭킹 ----------
+// ---------- 월간 시즌 랭킹 ----------
 let handTrack = { hand: 0, start: 0, done: true }
 
-// 내가 참여한 판이 끝나면 그 판의 손익을 이번 주 시즌 기록에 더함
+// 내가 참여한 판이 끝나면 그 판의 손익을 이번 달 시즌 기록에 더함
 function trackHandResult(s, me) {
   if (!cloud.enabled || !uid || !me) return
   if (me.inHand && BETTING.includes(s.phase) && handTrack.hand !== s.handNo) {
@@ -1031,13 +1031,20 @@ function trackHandResult(s, me) {
   }
 }
 
+// 다음 달 1일 0시(한국 시간)
+function seasonEnd(key) {
+  const d = new Date(key + 'T00:00:00Z')
+  d.setUTCMonth(d.getUTCMonth() + 1)
+  return Date.parse(d.toISOString().slice(0, 10) + 'T00:00:00+09:00')
+}
 function seasonRange(key) {
-  const s = new Date(key + 'T00:00:00Z'), e = new Date(s.getTime() + 6 * 86400e3)
+  const s = new Date(key + 'T00:00:00Z'), e = new Date(seasonEnd(key) + 9 * 3600e3 - 86400e3)
   const f = d => `${d.getUTCMonth() + 1}/${d.getUTCDate()}`
   return `${f(s)} ~ ${f(e)}`
 }
+const seasonMonth = key => `${+key.slice(5, 7)}월`
 function seasonLeft() {
-  const ms = Date.parse(cloud.seasonKey() + 'T00:00:00+09:00') + 7 * 86400e3 - Date.now()
+  const ms = seasonEnd(cloud.seasonKey()) - Date.now()
   const d = Math.floor(ms / 86400e3), h = Math.floor((ms % 86400e3) / 3600e3)
   return d ? `${d}일 ${h}시간` : `${h}시간`
 }
@@ -1060,19 +1067,19 @@ async function loadSeasonInto(el, n, withPrev) {
   el.innerHTML = '<p class="season-note">랭킹 불러오는 중…</p>'
   try {
     const cur = await cloud.loadSeason(cloud.seasonKey(), n)
-    let html = `<div class="season-head"><b>🏆 이번 주 랭킹</b><span>${seasonRange(cur.season)} · 끝까지 ${seasonLeft()}</span></div>`
+    let html = `<div class="season-head"><b>🏆 ${seasonMonth(cur.season)} 랭킹</b><span>${seasonRange(cur.season)} · 끝까지 ${seasonLeft()}</span></div>`
     html += cur.rows.length ? seasonList(cur.rows, uid)
-      : '<p class="season-note">아직 이번 주 기록이 없어요. 첫 판을 쳐서 1위를 차지해 보세요!</p>'
+      : '<p class="season-note">아직 이번 달 기록이 없어요. 첫 판을 쳐서 1위를 차지해 보세요!</p>'
     if (cur.me && !cur.rows.some(r => r.uid === uid)) {
       html += `<p class="season-me">내 순위 <b>${cur.me.rank}위</b> / ${cur.total}명 · ${signed(cur.me.net)}</p>`
     }
     if (withPrev) {
-      const prev = await cloud.loadSeason(cloud.seasonKey(Date.now() - 7 * 86400e3), 3)
+      const prev = await cloud.loadSeason(cloud.prevSeasonKey(), 3)
       if (prev.rows.length) {
-        html += `<div class="season-prev"><b>지난 시즌 TOP 3</b><br>${prev.rows.map((r, i) =>
+        html += `<div class="season-prev"><b>지난달(${seasonMonth(prev.season)}) TOP 3</b><br>${prev.rows.map((r, i) =>
           `${MEDAL[i]} ${esc(r.name || '이름 없음')} ${signed(r.net)}`).join(' · ')}</div>`
       }
-      html += '<p class="season-note">이번 주에 딴 토큰에서 잃은 토큰을 뺀 순수익으로 순위를 매겨요. 기본 토큰 재지급은 들어가지 않아요. 매주 월요일 0시(한국 시간)에 새 시즌이 시작돼요.</p>'
+      html += '<p class="season-note">이번 달에 딴 토큰에서 잃은 토큰을 뺀 순수익으로 순위를 매겨요. 기본 토큰 재지급은 들어가지 않아요. 매달 1일 0시(한국 시간)에 새 시즌이 시작돼요.</p>'
     }
     el.innerHTML = html
   } catch (err) {
@@ -1095,10 +1102,72 @@ $('#ranks').onclick = e => { if (e.target.id === 'ranks') $('#ranks').hidden = t
 addEventListener('keydown', e => { if (e.key === 'Escape') $('#ranks').hidden = true })
 
 let actionKey = ''
+let raisePref = '최소' // 레이즈 버튼을 그냥 눌렀을 때 쓸 옵션 (마지막으로 고른 것)
+try { raisePref = localStorage.getItem('p2pcasino.raise') || '최소' } catch {}
+let customSeq = -1 // '직접 입력'을 연 차례 번호
+
+// ---------- 미리 선택 (내 차례가 아닐 때 다음 행동을 골라 두기) ----------
+// kind: 'checkfold'(체크, 누가 걸면 폴드) / 'check'(체크만, 누가 걸면 취소) / 'call'(그 금액 콜, 금액이 바뀌면 취소) / 'callany'(얼마든 콜)
+let pre = null // { hand, kind, amt }
+let autoSeq = -1
+
+function preDecision(toCall) {
+  if (!pre || pre.hand !== state.handNo) return null
+  switch (pre.kind) {
+    case 'checkfold': return toCall <= 0 ? 'check' : 'fold'
+    case 'check': return toCall <= 0 ? 'check' : null
+    case 'call': return toCall === pre.amt ? 'call' : null
+    case 'callany': return toCall <= 0 ? 'check' : 'call'
+  }
+  return null
+}
+
+function renderPre(me, bar) {
+  const toCall = Math.min(state.currentBet - me.bet, me.stack)
+  if (pre && pre.hand !== state.handNo) pre = null
+  // 상황이 바뀌어 더는 맞지 않는 선택은 풀어 줌
+  if (pre?.kind === 'check' && toCall > 0) pre = null
+  if (pre?.kind === 'call' && toCall !== pre.amt) pre = null
+  bar.classList.add('pre')
+  const key = ['pre', state.handNo, toCall, pre?.kind || ''].join(',')
+  if (key === actionKey) return
+  actionKey = key
+  const opts = toCall <= 0
+    ? [['checkfold', '체크/폴드'], ['check', '체크'], ['callany', '아무거나 콜']]
+    : [['checkfold', '폴드'], ['call', `콜 ${toCall.toLocaleString()}`], ['callany', '아무거나 콜']]
+  bar.hidden = false
+  bar.innerHTML = `
+    <div class="pre-head">미리 선택 <span>내 차례가 되면 바로 실행돼요</span></div>
+    <div class="row">${opts.map(([k, label]) =>
+      `<button class="btn pre-btn ${pre?.kind === k ? 'on' : ''}" data-pre="${k}" aria-pressed="${pre?.kind === k}">${label}</button>`).join('')}</div>`
+  bar.querySelectorAll('[data-pre]').forEach(b => b.onclick = () => {
+    const k = b.dataset.pre
+    pre = pre?.kind === k ? null : { hand: state.handNo, kind: k, amt: toCall }
+    actionKey = ''
+    renderActions(me)
+  })
+}
 
 function renderActions(me) {
   const bar = $('#actions')
-  if (!me || state.toActId !== selfId) { bar.innerHTML = ''; bar.hidden = true; actionKey = ''; return }
+  const myTurn = me && state.toActId === selfId
+  bar.classList.remove('pre')
+  if (!myTurn) {
+    // 판에 남아 있고 아직 행동할 수 있으면 미리 선택 버튼을 보여 줌
+    if (me && me.inHand && !me.folded && !me.allIn && me.stack > 0 && BETTING.includes(state.phase)) { renderPre(me, bar); return }
+    pre = null
+    bar.innerHTML = ''; bar.hidden = true; actionKey = ''; return
+  }
+  // 내 차례: 미리 고른 행동이 지금 상황에 맞으면 바로 실행
+  const auto = preDecision(Math.min(state.currentBet - me.bet, me.stack))
+  pre = null
+  if (auto && autoSeq !== state.turnSeq) {
+    const seq = autoSeq = state.turnSeq
+    bar.innerHTML = ''; bar.hidden = true; actionKey = 'auto,' + seq
+    setTimeout(() => { if (state.toActId === selfId && state.turnSeq === seq) sendMove(auto) }, 250)
+    return
+  }
+  if (actionKey === 'auto,' + state.turnSeq) return
   // 같은 차례 안에서는 다시 그리지 않음 (입력 중인 금액과 포커스 유지)
   const key = [state.turnSeq, me.stack, me.bet, state.currentBet, state.minRaise, state.pot].join(',')
   if (key === actionKey) return
@@ -1115,15 +1184,26 @@ function renderActions(me) {
   const clamp = v => Math.min(maxTo, Math.max(minTo, Math.round(v)))
   raiseTo = clamp(raiseTo || minTo)
 
-  // 빠른 금액: [이름, 올릴 총액]
+  // 빠른 금액: [이름, 올릴 총액, 설명]. 금액이 같은 버튼은 하나만 남김
   const potTo = f => state.currentBet + (potTotal + toCall) * f
-  const presets = [
-    ['최소', minTo],
-    [state.currentBet ? '3배' : '3BB', state.currentBet ? state.currentBet * 3 : bb * 3],
-    ['½팟', potTo(0.5)],
-    ['¾팟', potTo(0.75)],
-    ['팟', potTo(1)],
-  ]
+  const snap = v => clamp(Math.round(v / (bb / 2)) * (bb / 2))
+  const presets = [], byName = {}
+  for (const [name, v, tip] of [
+    ['최소', minTo, '올릴 수 있는 가장 적은 금액'],
+    ['따당', state.currentBet * 2, '앞 사람이 건 금액의 두 배'],
+    ['쿼터', potTo(0.25), '판돈의 1/4만큼 더'],
+    ['하프', potTo(0.5), '판돈의 절반만큼 더'],
+    ['풀', potTo(1), '판돈만큼 더'],
+  ]) {
+    if (v <= 0 || v > maxTo) continue // 가진 토큰보다 크면 안 보여줌 (올인 버튼으로)
+    const to = snap(v)
+    byName[name] = to
+    if (!presets.some(p => p.to === to)) presets.push({ name, to, tip })
+  }
+  // 레이즈 버튼을 그냥 누르면: 지난번에 고른 옵션(없으면 최소)
+  const def = byName[raisePref] ? { name: raisePref, to: byName[raisePref] } : { name: '최소', to: minTo }
+  const custom = customSeq === state.turnSeq // 이번 차례에 '직접 입력'을 열었는지
+  if (!custom) raiseTo = def.to
 
   bar.innerHTML = `
     <div class="row">
@@ -1131,10 +1211,17 @@ function renderActions(me) {
       ${toCall <= 0
         ? '<button class="btn check" data-a="check">체크</button>'
         : `<button class="btn call" data-a="call">콜 ${Math.min(toCall, me.stack).toLocaleString()}</button>`}
-      ${canRaise ? `<button class="btn raise" data-a="raise"><span id="raise-verb">${verb}</span> <b id="raise-val"></b></button>` : ''}
+      ${canRaise ? `
+      <div class="raise-wrap">
+        <div class="raise-menu" role="menu" hidden>
+          ${presets.map(p => `<button class="rm-opt ${!custom && p.name === def.name ? 'def' : ''}" data-p="${p.to}" data-name="${p.name}" title="${p.tip}" role="menuitem"><b>${p.name}</b><small>${p.to.toLocaleString()}</small></button>`).join('')}
+          <button class="rm-opt rm-custom" data-custom role="menuitem"><b>직접</b><small>입력</small></button>
+        </div>
+        <button class="btn raise" data-a="raise" aria-haspopup="menu"><span class="rv"><span id="raise-verb">${verb}</span> <b id="raise-val"></b></span><small class="rn" id="raise-name"></small></button>
+      </div>` : ''}
       <button class="btn allin" data-a="allin">올인 ${maxTo.toLocaleString()}</button>
     </div>
-    ${canRaise ? `
+    ${canRaise && custom ? `
     <div class="bet-box">
       <div class="amount-row">
         <button class="step" data-step="-1" aria-label="${bb}만큼 줄이기">−</button>
@@ -1144,43 +1231,93 @@ function renderActions(me) {
       </div>
       <input type="range" id="raise" min="${minTo}" max="${maxTo}" step="1" aria-label="${verb} 금액 슬라이더">
       <div class="range-labels"><span>최소 ${minTo.toLocaleString()}</span><span>최대 ${maxTo.toLocaleString()}</span></div>
-      <div class="presets">
-        ${presets.map(([name, v]) => `<button class="chip" data-p="${clamp(Math.round(v / (bb / 2)) * (bb / 2))}" ${v > maxTo ? 'disabled' : ''}>${name}</button>`).join('')}
-      </div>
     </div>` : ''}`
 
+  let sent = false // 한 차례에 두 번 보내지 않게
+  function act(type, amount) {
+    if (sent) return
+    sent = true
+    sendMove(type, amount)
+    raiseTo = 0
+  }
+  bar.querySelectorAll('[data-a]:not([data-a=raise])').forEach(b => b.onclick = () => act(b.dataset.a))
+  if (!canRaise) return
+
   const slider = $('#raise'), input = $('#raise-input')
+  const rbtn = bar.querySelector('[data-a=raise]'), menu = bar.querySelector('.raise-menu'), wrap = bar.querySelector('.raise-wrap')
   function setRaise(v, fromInput) {
     raiseTo = clamp(v)
     if (slider) slider.value = raiseTo
     if (input && !fromInput) input.value = raiseTo
-    const allIn = raiseTo >= maxTo
-    $('#raise-verb').textContent = allIn ? '올인' : verb
+    $('#raise-verb').textContent = raiseTo >= maxTo ? '올인' : verb
     $('#raise-val').textContent = raiseTo.toLocaleString()
-    $('#raise-extra').innerHTML = `추가로 <b>${(raiseTo - me.bet).toLocaleString()}</b> 냄`
-    let marked = false // 같은 금액인 빠른 버튼이 여럿이면 첫 번째만 표시
-    bar.querySelectorAll('[data-p]').forEach(b => {
-      const on = !marked && +b.dataset.p === raiseTo
-      if (on) marked = true
-      b.classList.toggle('active', on)
-    })
+    $('#raise-name').textContent = custom ? '직접 입력' : `${def.name} ▴`
+    if (custom) $('#raise-extra').innerHTML = `추가로 <b>${(raiseTo - me.bet).toLocaleString()}</b> 냄`
   }
-  if (canRaise) {
-    setRaise(raiseTo)
+  setRaise(raiseTo)
+  if (custom) {
     slider.oninput = () => setRaise(+slider.value)
     // 직접 입력: 입력 중에는 범위를 강제하지 않고, 칸을 벗어나거나 Enter를 누를 때 맞춤
     input.oninput = () => { if (input.value !== '') setRaise(+input.value, true) }
     input.onchange = () => setRaise(+input.value || minTo)
-    input.onkeydown = e => { if (e.key === 'Enter') { setRaise(+input.value || minTo); bar.querySelector('[data-a=raise]').click() } }
+    input.onkeydown = e => { if (e.key === 'Enter') { setRaise(+input.value || minTo); act('raise', raiseTo) } }
     bar.querySelectorAll('[data-step]').forEach(b => b.onclick = () => setRaise(raiseTo + bb * +b.dataset.step))
-    bar.querySelectorAll('[data-p]').forEach(b => b.onclick = () => setRaise(+b.dataset.p))
   }
-  bar.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
-    const a = b.dataset.a
-    sendMove(a, a === 'raise' ? raiseTo : undefined)
-    raiseTo = 0
-  })
+
+  // ---- 레이즈 옵션 메뉴: PC는 마우스를 올리면, 모바일은 길게 누르면 열림 ----
+  const hot = el => menu.querySelectorAll('.rm-opt').forEach(b => b.classList.toggle('hot', b === el))
+  const openMenu = () => { menu.hidden = false; rbtn.classList.add('open') }
+  const closeMenu = () => { menu.hidden = true; rbtn.classList.remove('open'); hot(null) }
+  const optAt = (x, y) => document.elementFromPoint(x, y)?.closest('.raise-menu .rm-opt')
+  function pick(opt) {
+    if (opt.hasAttribute('data-custom')) { customSeq = state.turnSeq; raiseTo = def.to; actionKey = ''; renderActions(me); return }
+    raisePref = opt.dataset.name
+    try { localStorage.setItem('p2pcasino.raise', raisePref) } catch {}
+    act('raise', +opt.dataset.p)
+  }
+  menu.querySelectorAll('.rm-opt').forEach(b => b.onclick = () => pick(b))
+
+  // 짧게 누르기(클릭): 지난번 옵션(또는 직접 입력한 금액)으로 바로 레이즈
+  let holdTimer = 0, held = false, skipClick = false
+  rbtn.onclick = () => {
+    if (skipClick) { skipClick = false; return }
+    act('raise', custom ? raiseTo : def.to)
+  }
+  // 길게 누르기: 옵션이 뜨고, 손가락을 끌어 원하는 옵션 위에서 떼면 선택. 버튼 위에서 떼면 메뉴가 열린 채로 남아 눌러서 고를 수 있음
+  rbtn.oncontextmenu = e => e.preventDefault()
+  rbtn.onpointerdown = e => {
+    if (e.pointerType === 'mouse') return
+    held = false
+    clearTimeout(holdTimer)
+    holdTimer = setTimeout(() => { held = true; openMenu(); navigator.vibrate?.(12) }, 280)
+  }
+  rbtn.onpointermove = e => { if (held) hot(optAt(e.clientX, e.clientY)) }
+  rbtn.onpointerup = e => {
+    if (e.pointerType === 'mouse') return
+    clearTimeout(holdTimer)
+    if (!held) return
+    held = false
+    skipClick = true
+    setTimeout(() => { skipClick = false }, 400)
+    const opt = optAt(e.clientX, e.clientY)
+    hot(null)
+    if (opt) pick(opt)
+  }
+  rbtn.onpointercancel = () => { clearTimeout(holdTimer); held = false; hot(null) }
+  // PC: 마우스를 올리면 열리고, 벗어나면 닫힘
+  let leaveTimer = 0
+  wrap.onpointerenter = e => { if (e.pointerType === 'mouse') { clearTimeout(leaveTimer); openMenu() } }
+  wrap.onpointerleave = e => { if (e.pointerType === 'mouse') leaveTimer = setTimeout(closeMenu, 250) }
+  // 키보드: ↑로 메뉴 열기, Esc로 닫기
+  rbtn.onkeydown = e => { if (e.key === 'ArrowUp') { e.preventDefault(); openMenu(); menu.querySelector('.rm-opt')?.focus() } }
+  menu.onkeydown = e => { if (e.key === 'Escape') { closeMenu(); rbtn.focus() } }
 }
+
+// 레이즈 메뉴 밖을 누르면 닫기
+document.addEventListener('pointerdown', e => {
+  const m = document.querySelector('.raise-menu:not([hidden])')
+  if (m && !e.target.closest('.raise-wrap')) { m.hidden = true; document.querySelector('.btn.raise')?.classList.remove('open') }
+})
 
 // 차례 타이머 막대
 setInterval(() => {

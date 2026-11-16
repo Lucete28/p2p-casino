@@ -196,6 +196,48 @@ header .me-info b { color: var(--gold); }
 .actions .row { display: flex; gap: 8px; flex-wrap: wrap; }
 .actions .row .btn { flex: 1; min-width: 90px; }
 .bet-box { display: flex; flex-direction: column; gap: 6px; }
+/* 레이즈 버튼 + 옵션 메뉴 (PC는 마우스 올리기, 모바일은 길게 눌러 끌기) */
+.raise-wrap { flex: 1; min-width: 90px; position: relative; display: flex; }
+.raise-wrap .btn.raise { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; line-height: 1.15;
+  touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.btn.raise .rn { font-size: 11px; font-weight: 600; color: #9fb7e0; }
+.btn.raise.open { border-color: var(--gold); }
+.raise-menu {
+  position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); z-index: 30;
+  min-width: max(100%, 120px); display: flex; flex-direction: column-reverse; gap: 4px; padding: 6px;
+  background: #0d1117; border: 1px solid var(--gold-dark); border-radius: 12px; box-shadow: 0 10px 30px #000c;
+  animation: rm-in .12s ease-out;
+}
+.raise-menu[hidden] { display: none; }
+.raise-menu::after { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 10px; } /* 버튼과 메뉴 사이를 지날 때 닫히지 않게 */
+@keyframes rm-in { from { opacity: 0; transform: translate(-50%, 6px); } }
+.rm-opt {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 9px 12px;
+  background: #1f2d45; border: 1px solid #33507d; border-radius: 8px; color: var(--text); font: inherit; cursor: pointer; white-space: nowrap;
+  -webkit-user-select: none; user-select: none;
+}
+.rm-opt b { font-size: 14px; }
+.rm-opt small { font-size: 13px; color: var(--gold); font-variant-numeric: tabular-nums; font-weight: 700; }
+.rm-opt.def { border-color: var(--gold-dark); }
+.rm-opt:hover, .rm-opt:focus-visible, .rm-opt.hot { background: var(--gold); border-color: var(--gold); color: #1b1300; outline: none; }
+.rm-opt:hover small, .rm-opt:focus-visible small, .rm-opt.hot small { color: #1b1300; }
+.rm-custom { background: #161b22; border-color: var(--line); }
+.rm-custom small { color: var(--muted); font-weight: 400; }
+
+/* 미리 선택 (내 차례가 아닐 때) */
+.actions.pre { border-color: var(--line); box-shadow: 0 6px 18px #0007; padding: 10px 12px; gap: 8px; }
+.pre-head { font-size: 12px; color: var(--muted); font-weight: 700; }
+.pre-head span { font-weight: 400; margin-left: 6px; font-size: 11px; }
+.pre-btn { background: #161b22; border-color: var(--line); color: var(--muted); font-size: 14px; padding: 9px 6px; }
+.pre-btn::before { content: ''; display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -1px; border: 1.5px solid currentColor; border-radius: 3px; }
+.pre-btn.on { background: #e3b3411f; border-color: var(--gold); color: var(--gold); }
+.pre-btn.on::before { background: var(--gold); border-color: var(--gold); box-shadow: inset 0 0 0 2px #161b22; }
+.actions .row .pre-btn { white-space: nowrap; }
+@media (max-width: 420px) {
+  .actions .row .pre-btn { min-width: 0; font-size: 13px; padding: 9px 4px; }
+  .pre-btn::before { margin-right: 4px; }
+  .pre-head span { display: none; }
+}
 .amount-row { display: flex; align-items: center; gap: 6px; }
 .amount-row .step {
   width: 40px; height: 40px; border-radius: 10px; border: 1px solid #33507d; background: #1f2d45;
@@ -212,9 +254,12 @@ header .me-info b { color: var(--gold); }
 .amount-row .extra b { color: var(--text); }
 .actions input[type=range] { width: 100%; accent-color: var(--gold); margin: 2px 0 0; }
 .range-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: -4px; }
-.presets { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
-.presets .chip { padding: 7px 0; font-size: 13px; color: var(--text); }
-.presets .chip.active { background: var(--gold); color: #1b1300; border-color: var(--gold); font-weight: 700; }
+.presets { display: flex; gap: 6px; }
+.presets .chip { flex: 1; min-width: 0; padding: 5px 0; font-size: 13px; color: var(--text); display: flex; flex-direction: column; align-items: center; gap: 1px; line-height: 1.2; }
+.presets .chip b { font-weight: 700; }
+.presets .chip small { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.presets .chip.active { background: var(--gold); color: #1b1300; border-color: var(--gold); }
+.presets .chip.active small { color: #1b1300cc; }
 .presets .chip:disabled { opacity: .3; cursor: not-allowed; }
 
 /* 공개 방 목록 */
