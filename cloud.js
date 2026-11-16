@@ -1,5 +1,5 @@
 // Firebase(구글 로그인 + Firestore) 연결. 토큰과 재지급 횟수를 계정에 저장해서 기기가 바뀌어도 이어진다.
-import { firebaseConfig } from './firebase-config.js?v=1.6.0'
+import { firebaseConfig } from './firebase-config.js?v=1.6.1'
 
 const SDK = 'https://www.gstatic.com/firebasejs/12.19.0/'
 // 로컬 테스트용: localhost에서 ?emu 를 붙이면 Firebase 에뮬레이터에 연결
@@ -27,7 +27,23 @@ export async function initCloud(onUser) {
     A.connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true })
     F.connectFirestoreEmulator(db, '127.0.0.1', 8080)
   }
-  A.onAuthStateChanged(auth, onUser)
+  A.onAuthStateChanged(auth, user => { refreshToken(); onUser(user) })
+  setInterval(refreshToken, 20 * 60000) // 로그인 토큰은 1시간짜리라 미리 갱신
+}
+
+// ---------- 탭이 닫히는 순간에도 끝까지 가는 삭제 요청 ----------
+// 일반 SDK 요청은 탭이 닫히면 중간에 끊길 수 있어서, 브라우저가 닫힌 뒤에도 보내 주는 keepalive 요청을 씀
+let idToken = null
+async function refreshToken() {
+  try { idToken = (await auth.currentUser?.getIdToken()) || null } catch { idToken = null }
+}
+const restBase = () => (EMU
+  ? 'http://127.0.0.1:8080/v1/projects/demo-poker/databases/(default)/documents'
+  : `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents`)
+function deleteOnUnload(path) {
+  if (!idToken) return
+  fetch(`${restBase()}/${path}`, { method: 'DELETE', keepalive: true, headers: { Authorization: 'Bearer ' + idToken } })
+    .catch(() => {})
 }
 
 export const login = () => A.signInWithPopup(auth, new A.GoogleAuthProvider())
@@ -65,7 +81,8 @@ const LOBBY_FRESH_MS = 75000 // 방장은 30초마다 갱신. 이보다 오래 �
 export function publishRoom(code, info) {
   return F.setDoc(F.doc(db, 'lobby', code), { ...info, at: F.serverTimestamp() })
 }
-export const unpublishRoom = code => F.deleteDoc(F.doc(db, 'lobby', code))
+export const unpublishRoom = (code, { unload = false } = {}) =>
+  unload ? (deleteOnUnload(`lobby/${code}`), Promise.resolve()) : F.deleteDoc(F.doc(db, 'lobby', code))
 
 const lobbyQuery = () => F.query(F.collection(db, 'lobby'), F.orderBy('at', 'desc'), F.limit(30))
 const freshRooms = snap => snap.docs
@@ -209,12 +226,13 @@ export function joinRelay(code, selfId, { onPeers, onMessage }) {
       addDoc(msgsCol, { to: toId, toUid, from: selfId, fromUid: me, a, d: JSON.stringify(data), n: ++n, t: serverTimestamp() })
         .catch(err => console.warn('relay send', err))
     },
-    leave() {
+    leave(unload = false) {
       clearInterval(beatTimer)
       clearInterval(staleTimer)
       unsubPeers()
       unsubMsgs()
-      deleteDoc(myPeer).catch(() => {})
+      if (unload) deleteOnUnload(`rooms/${code}/peers/${selfId}`)
+      else deleteDoc(myPeer).catch(() => {})
     },
   }
 }
