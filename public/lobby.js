@@ -120,11 +120,10 @@ function slots() {
   let s = ''
   for (const v of [130, 242]) s += slotLeft(v)
   for (const u of [110, 222, 334, 446, 558, 670]) s += slotRight(u)
-  const [sx, sy] = iso(250, 0, 232) // 오른쪽 벽 간판
-  const wallSign = `<g transform="matrix(${C} ${S} 0 1 ${r1(sx)} ${r1(sy)})"><text class="wall-t" x="0" y="0" filter="url(#glow)" style="font-size:54px">SLOT MACHINES</text></g>`
+  // 간판은 다른 테이블과 같은 어두운 판(이름 + 상태). 벽의 네온 글씨는 'JMTT CASINO'와 헷갈려서 쓰지 않음
   const [px, py] = iso(420, 70, 0)
-  const [qx, qy] = iso(450, 0, 214) // 상태 알약은 벽 간판 아래
-  return zone('slots', `${spot(px + 40, py - 10, 380, 70)}<g class="art">${s}${wallSign}</g>${sign(r1(qx), r1(qy - 10), 'slots', { name: false })}`)
+  const [qx, qy] = iso(450, 40, 215) // 슬롯머신 줄 가운데 위
+  return zone('slots', `${spot(px + 40, py - 10, 380, 70)}<g class="art">${s}</g>${sign(r1(qx), r1(qy), 'slots')}`)
 }
 
 // ───────── 텍사스 홀덤 (가운데) ─────────
