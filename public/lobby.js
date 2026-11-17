@@ -216,9 +216,9 @@ function cashier() {
   for (let i = 0; i < 9; i++) art += R(x - 110 + i * 27.5, y0 - 148, 3, 70, 'var(--trim)', 'opacity=".55"')
   art += R(x - 150, y0 - 92, 300, 26, 'var(--trim)', 'rx="4"')
   art += R(x - 150, y0 - 66, 300, 66, 'var(--rail)', 'rx="4"')
-  art += `<text x="${r1(x)}" y="${r1(y0 - 24)}" text-anchor="middle" font-family="Pretendard,sans-serif" font-weight="800" font-size="25" fill="#ffe39b">코인 · 출석</text>`
+  art += `<text x="${r1(x)}" y="${r1(y0 - 24)}" text-anchor="middle" font-family="Pretendard,sans-serif" font-weight="800" font-size="25" fill="#ffe39b">코인 · 지원금</text>`
   art += chips(x - 90, y0 - 92, '#e8c26a', 4) + chips(x - 56, y0 - 92, '#d0283a', 2)
-  return `<a class="g cashier" href="#cashier" data-cashier aria-label="캐셔: 코인 확인과 출석">${spot(x, y0 + 10, 230, 70)}<g class="art">${art}</g></a>`
+  return `<a class="g cashier" href="#cashier" data-cashier aria-label="캐셔: 코인 확인과 파산 지원금">${spot(x, y0 + 10, 230, 70)}<g class="art">${art}</g></a>`
 }
 
 // ───────── 장식: 샹들리에 ─────────
@@ -289,8 +289,9 @@ async function loadLobby() {
   } catch {}
 }
 
-// ───────── 코인 · 로그인 · 출석 (JMTT) ─────────
+// ───────── 코인 · 로그인 (JMTT) ─────────
 let me = null
+const setCoins = n => { if (me) me.coins = n; document.querySelectorAll('.bal-v').forEach(b => { b.textContent = fmt(n) }) }
 async function loadMe() {
   try {
     const r = await fetch('/auth/me?optional=1', { credentials: 'same-origin', cache: 'no-store' })
@@ -298,38 +299,71 @@ async function loadMe() {
   } catch { me = null }
   $('coins').hidden = !me
   $('login').hidden = !!me
-  document.querySelectorAll('.bal-v').forEach(b => { b.textContent = fmt(me?.coins) })
+  setCoins(me?.coins)
 }
-function openCashier() {
-  const ci = $('checkin')
+
+// ───────── 캐셔: 파산 지원금 (코인을 모두 잃으면 1,000코인, 하루 10번) ─────────
+// 받을 수 있는지는 서버가 정한다 (GET/POST api/refill). 화면은 서버가 준 상태만 보여 준다
+let refillState = null
+async function loadRefill() {
+  refillState = null
+  try {
+    const r = await fetch('api/refill', { cache: 'no-store' })
+    if (r.ok) refillState = await r.json()
+  } catch {}
+  if (refillState) setCoins(refillState.coins)
+  return refillState
+}
+function paintRefill() {
+  const btn = $('refill'), note = $('refill-note'), s = refillState
+  btn.hidden = !me; note.hidden = !me
+  if (!me) return
+  if (!s) { btn.disabled = true; note.textContent = '지금은 지원금 상태를 불러오지 못했어요. 잠시 뒤 다시 열어 주세요.'; return }
+  btn.textContent = `${fmt(s.amount)}코인 받기`
+  btn.disabled = !s.can
+  const left = `오늘 <b>${s.left}번</b> 남았어요`
+  note.innerHTML = s.why === 'daily_limit' ? `오늘 받을 수 있는 지원금을 다 받았어요 (하루 ${s.perDay}번). 내일 다시 받을 수 있어요.`
+    : s.why === 'seated' ? `<b>${s.seat.title}</b>에 칩이 남아 있어요. 그 게임에서 칩을 코인으로 바꾼 뒤 받을 수 있어요. · ${left}`
+    : s.why === 'has_coins' ? `코인을 모두 잃으면 여기서 <b>${fmt(s.amount)}코인</b>을 받을 수 있어요. · ${left}`
+    : `코인을 모두 잃었네요. <b>${fmt(s.amount)}코인</b>을 받아 다시 해 보세요. · ${left}`
+}
+async function openCashier() {
   $('cashier-bal').hidden = !me
   $('cashier-login').hidden = !!me
-  ci.hidden = !me
   $('cashier-note').textContent = me ? '모든 게임이 같은 JMTT 코인을 써요' : '로그인하면 코인을 받고 게임에 앉을 수 있어요'
-  if (me) { ci.disabled = !!me.checkedIn; ci.textContent = me.checkedIn ? '오늘 출석 완료' : '오늘 출석 +100' }
+  if (me) { $('refill').disabled = true; $('refill-note').hidden = false; $('refill-note').textContent = '확인하는 중…' }
   $('cashier').showModal()
+  if (me) { await loadRefill(); paintRefill() } else paintRefill()
 }
 $('coins').onclick = openCashier
 $('close-cashier').onclick = () => $('cashier').close()
-$('checkin').onclick = async e => {
+$('refill').onclick = async e => {
   e.target.disabled = true
-  try {
-    const r = await fetch('/auth/coin/attendance', { method: 'POST', credentials: 'same-origin' })
-    const d = await r.json()
-    if (r.ok && d.ok) {
-      me.coins = d.balance; me.checkedIn = true
-      document.querySelectorAll('.bal-v').forEach(b => { b.textContent = fmt(d.balance) })
-      e.target.textContent = '오늘 출석 완료'
-      toast(d.already ? '오늘은 이미 출석했어요' : `+${fmt(d.gained)} 코인 출석 보상`)
-      window.JMTT?.badge?.refresh?.()
-    } else { e.target.disabled = false; toast('출석하지 못했어요. 잠시 뒤 다시 해 주세요.') }
-  } catch { e.target.disabled = false; toast('출석하지 못했어요. 잠시 뒤 다시 해 주세요.') }
+  let d = null, r = null
+  try { r = await fetch('api/refill', { method: 'POST' }); d = await r.json() } catch {}
+  if (r?.ok && d?.ok) {
+    setCoins(d.balance)
+    toast(`+${fmt(d.amount)} 코인 지원금을 받았어요`)
+    window.JMTT?.badge?.refresh?.()
+  } else {
+    toast(d?.error === 'not_ready' ? '지원금은 곧 열려요. 조금만 기다려 주세요.'
+      : d?.error === 'daily_limit' ? '오늘 받을 수 있는 지원금을 다 받았어요.'
+      : d?.error === 'has_coins' ? '코인이 남아 있으면 받을 수 없어요.'
+      : d?.error === 'seated' ? `${d.seat?.title || '다른 게임'}에 칩이 남아 있어요.`
+      : '지원금을 받지 못했어요. 잠시 뒤 다시 해 주세요.')
+  }
+  await loadRefill(); paintRefill()
 }
 
 // 옛 홀덤 초대 링크(/casino/#방코드): 처음 열 때는 index.html이 바로 넘기고, 열린 로비에 붙여 넣은 경우는 여기서
 addEventListener('hashchange', () => { if (/^#[A-Za-z0-9]{4,8}$/.test(location.hash)) location.replace('holdem/' + location.hash) })
 
 render()
-loadMe()
 loadLobby()
+// 로그인했는데 코인을 모두 잃은 사람: 캐셔를 바로 열어 지원금을 안내
+loadMe().then(async () => {
+  if (!me || me.coins > 0) return
+  const s = await loadRefill()
+  if (s?.can) openCashier()
+})
 setInterval(loadLobby, 20000) // 인원 숫자 새로고침

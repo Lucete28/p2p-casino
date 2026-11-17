@@ -1,8 +1,8 @@
 // 화면 + 카지노 서버 연결. 카드 섞기·판 진행·봇·코인 정산은 서버가 하고, 브라우저는 행동만 보내고 상태만 받는다 (v1.8.0~)
-import { connect } from './net.js?v=1.9.0'
-import { CONFIG } from './poker.js?v=1.9.0'
-import * as cloud from './cloud.js?v=1.9.0'
-import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.9.0'
+import { connect } from './net.js?v=1.9.1'
+import { CONFIG } from './poker.js?v=1.9.1'
+import * as cloud from './cloud.js?v=1.9.1'
+import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.9.1'
 
 // 카카오톡·라인 같은 앱 안 브라우저는 외부 브라우저로 (Google 로그인이 막혀 있음. 로그인 화면도 따로 안내함)
 const UA = navigator.userAgent
@@ -15,7 +15,7 @@ else if (/\bLine\//i.test(UA) && !new URLSearchParams(location.search).has('open
   location.replace(u)
 }
 
-const VERSION = '1.9.0' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
+const VERSION = '1.9.1' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
 
 // 연습 토큰 시절의 브라우저 저장값 정리 (토큰은 코인으로 바뀜. 닉네임만 이어 씀)
 const NAME_KEY = 'casino:name'
@@ -221,7 +221,7 @@ function onServer(d) {
       toast(`${d.why ? d.why + ' · ' : ''}코인 ${d.amount.toLocaleString()}개를 돌려받았어요.`)
       window.JMTT?.badge?.refresh?.()
       return render()
-    case 'nocoins': return showOverlay('코인이 없어요', '앉으려면 코인이 필요해요. JMTT 배지에서 출석하면 하루 100코인을 받을 수 있어요. 지금은 구경만 할 수 있어요.', true)
+    case 'nocoins': return showOverlay('코인이 없어요', '앉으려면 코인이 필요해요. 카지노 로비의 캐셔에서 1,000코인을 받을 수 있어요 (하루 10번). 지금은 구경만 할 수 있어요.', true)
     case 'nojoin': toast(d.msg); clearInvite(); return
     case 'kicked': clearInvite(); return showOverlay('방에서 나가게 됐어요', '방장이 이 방에서 내보냈어요. 맡긴 코인은 남은 칩만큼 돌려받았어요.')
     case 'left': return backToLobby()

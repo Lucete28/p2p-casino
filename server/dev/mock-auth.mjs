@@ -43,6 +43,8 @@ const server = http.createServer((req, res) => {
       if (req.headers.authorization !== 'Bearer test') return json(res, 403, { error: 'forbidden' })
       const op = p.slice('/auth/internal/coin/'.length)
       if (op.startsWith('balance')) return json(res, 200, { balance: bal(url.searchParams.get('user')) })
+      // 메인에서 카지노 earn 권한이 아직 없는 상태 흉내: MOCK_NO_EARN=1
+      if (op === 'earn' && process.env.MOCK_NO_EARN === '1') return json(res, 403, { error: 'earn_not_allowed' })
       let body = ''
       req.on('data', c => body += c)
       req.on('end', () => {

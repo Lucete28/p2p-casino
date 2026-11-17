@@ -11,6 +11,7 @@ import * as jmtt from './core/jmtt.mjs'
 import { openWallet } from './core/wallet.mjs'
 import { houseKit } from './core/house.mjs'
 import { GAMES } from './core/registry.mjs'
+import { refillKit } from './core/refill.mjs'
 import { BASE, send, redirect, deviceOf, newDevice, deviceCookie, resolveStatic, sendFile } from './core/http.mjs'
 
 const PORT = +process.env.PORT || 3000
@@ -47,7 +48,8 @@ for (const meta of GAMES) {
     g.status = 'down'
   }
 }
-const summaryOf = g => { try { return g.host ? g.host.summary() : g.mod?.summary?.() || null } catch { return null } }
+const refill = refillKit(store, titleOf) // 로비 캐셔의 파산 지원금
+const summaryOf = g =>{ try { return g.host ? g.host.summary() : g.mod?.summary?.() || null } catch { return null } }
 
 // 이 사람이 이 게임 주소를 열 수 있나 (wip·down은 관리자만)
 const canOpen = (g, who) => g.status === 'live' || isAdmin(who)
@@ -71,6 +73,17 @@ async function route(req, res) {
       games: [...games.values()].map(g => ({ id: g.meta.id, title: g.meta.title, status: g.status, open: canOpen(g, who), ...(summaryOf(g) || {}) })),
       seat: seat ? seat.game : null,
     })
+  }
+
+  // 로비 캐셔: 파산 지원금 상태(GET)·받기(POST). 로그인한 사람만
+  if (rel === '/api/refill') {
+    const who = await identify(req)
+    if (who === undefined) return send(res, 503, { error: 'auth_unavailable' })
+    if (!who) return send(res, 401, { error: 'not_logged_in' })
+    try {
+      if (req.method === 'POST') { const r = await refill.claim(who.id); return send(res, r.code, r.body) }
+      return send(res, 200, await refill.status(who.id))
+    } catch (err) { console.warn('refill', err.message); return send(res, 503, { error: 'auth_unavailable' }) }
   }
 
   // 옛 주소 (v1.8 홀덤이 /casino/에 있던 때). 한 달쯤 뒤 지운다

@@ -7,6 +7,7 @@
 //       onReady(me) {},                    // 접속 완료 (me = { id, name, picture })
 //       onChips({ chips, inPlay, coins }) {},// 칩·코인이 바뀔 때마다
 //       onMessage(msg) {},                 // 게임이 보낸 메시지 (공통 메시지 me·chips·toast·restart는 여기서 처리)
+//       onToast(msg) {},                   // 서버의 알림·거절 { t: 'toast'|'error', msg, ... } — false를 돌려주면 기본 알림을 띄우지 않음
 //       onLoggedOut() {},                  // 로그인 안 한 사람 (화면은 보여 주고, 칩 바꾸기 때 로그인 안내)
 //     })
 //     game.send({ t: 'spin', bet: 10 })    // 서버(server/games/<id>)로
@@ -140,7 +141,8 @@ export async function startGame(opts = {}) {
         if (opts.autoBuyIn !== false && !state.chips && !state.inPlay && state.ready && !dlg.open && d.cashout === undefined && !api._askedOnce) { api._askedOnce = true; openBuyIn() }
         return
       }
-      if (d.t === 'toast' || d.t === 'error') return toast(d.msg)
+      // 서버의 알림·거절: 게임이 알 수 있게 onToast로 먼저 넘기고, false를 돌려주지 않으면 기본 알림을 띄운다
+      if (d.t === 'toast' || d.t === 'error') { if (opts.onToast?.(d) === false) return; return toast(d.msg) }
       if (d.t === 'restart') return toast('서버가 다시 시작돼요. 진행 중이던 판은 무효, 칩은 코인으로 돌아갔어요.')
       opts.onMessage?.(d)
     }
