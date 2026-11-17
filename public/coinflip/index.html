@@ -1,0 +1,40 @@
+<!doctype html>
+<!-- 로컬 테스트 전용 (CASINO_TEST_GAMES=1). 사이트 이미지에는 들어가지 않는다 (.dockerignore).
+     새 하우스 게임 화면이 shared/casino.js를 어떻게 쓰는지 보여 주는 가장 작은 예시 -->
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>동전 던지기 (테스트)</title>
+  <meta name="robots" content="noindex">
+  <link rel="stylesheet" href="../shared/casino.css">
+  <style>
+    main { max-width: 420px; margin: 40px auto; padding: 0 16px; text-align: center; }
+    .coin { width: 140px; height: 140px; margin: 0 auto 20px; border-radius: 50%; display: grid; place-items: center;
+      font: 900 48px "Pretendard", sans-serif; color: #2a1a05; background: radial-gradient(circle at 35% 30%, #fff1b8, var(--c-gold) 45%, var(--c-gold-2)); }
+    .bet { display: flex; gap: 8px; justify-content: center; align-items: center; margin-bottom: 14px; }
+    .bet input { width: 110px; height: 44px; border-radius: 12px; border: 1px solid var(--c-line); background: #0c0b09; color: var(--c-ink); font: 700 18px "Pretendard"; text-align: center; }
+    .picks { display: flex; gap: 10px; justify-content: center; }
+    #log { margin-top: 18px; color: var(--c-muted); min-height: 1.4em; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="coin" id="coin">?</div>
+    <div class="bet">베팅 <input id="bet" type="number" min="1" step="1" value="10"></div>
+    <div class="picks"><button class="casino-btn" data-side="H">앞면</button><button class="casino-btn" data-side="T">뒷면</button></div>
+    <p id="log"></p>
+  </main>
+  <script type="module">
+    import { startGame } from '../shared/casino.js'
+    const log = document.getElementById('log'), coin = document.getElementById('coin')
+    const game = await startGame({
+      onLoggedOut() { log.textContent = '로그인하면 할 수 있어요.' },
+      onMessage(m) {
+        if (m.t === 'flipped') { coin.textContent = m.side === 'H' ? '앞' : '뒤'; log.textContent = m.win ? '맞혔어요! 2배' : '아쉬워요' }
+      },
+    })
+    document.querySelectorAll('[data-side]').forEach(b => b.onclick = () => game.send({ t: 'flip', side: b.dataset.side, bet: Number(document.getElementById('bet').value) }))
+  </script>
+</body>
+</html>

@@ -5,7 +5,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms))
 const out = []
 const check = (name, ok, extra = '') => out.push(`${ok ? 'PASS' : 'FAIL'} ${name}${extra ? ' — ' + extra : ''}`)
 function client(user, device) {
-  const ws = new WebSocket(BASE.replace('http', 'ws') + '/casino/ws', { headers: { Cookie: `jmtt_session=${user}` + (device ? `; casino_device=${device}` : '') } })
+  const ws = new WebSocket(BASE.replace('http', 'ws') + '/casino/holdem/ws', { headers: { Cookie: `jmtt_session=${user}` + (device ? `; casino_device=${device}` : '') } })
   const c = { ws, msgs: [], state: null, seatId: null }
   ws.on('message', raw => { const d = JSON.parse(raw); c.msgs.push(d); if (d.t === 'state') c.state = d.s; if (d.t === 'joined') c.seatId = d.seatId })
   c.open = new Promise(r => ws.on('open', r))

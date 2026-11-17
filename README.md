@@ -1,6 +1,7 @@
-# P2P 카지노 · 포커
+# JMTT 카지노 (P2P 카지노 · 포커)
 
-JMTT 코인으로 치는 텍사스 홀덤입니다. **v1.8.0부터 카지노 서버가 판을 진행합니다** (예전에는 방장 브라우저가 진행하는 P2P였음).
+JMTT 코인으로 즐기는 카지노입니다. **v1.9.0부터 `/casino/`는 카지노 홀 로비**이고, 테이블을 누르면 각 게임으로 들어갑니다. 텍사스 홀덤은 `/casino/holdem/`. 블랙잭·바카라·룰렛·슬롯은 준비 중.
+**새 게임을 붙이거나 구조를 볼 때는 [CASINO.md](CASINO.md)를 먼저** (주소, 게임 모듈 약속, 코인·칩, 체크리스트, 로컬 테스트, 배포).
 
 **플레이: https://justmadethisthat.com/casino/** (카카오톡 안에서 열면 Google 로그인이 막히니 크롬/사파리로 여세요)
 
@@ -10,31 +11,34 @@ JMTT 코인으로 치는 텍사스 홀덤입니다. **v1.8.0부터 카지노 서
 | 항목 | 값 |
 |---|---|
 | 저장소 | https://github.com/Lucete28/p2p-casino (`main` 브랜치) |
-| 주소 | `https://justmadethisthat.com/casino/` (터널이 `/casino` 경로를 그대로 넘김) |
-| 컨테이너 | Node 22 (`Dockerfile`). 포트 `3000`. 정적 파일 + `/casino/ws`(웹소켓) + `/casino/api/*` |
+| 주소 | `https://justmadethisthat.com/casino/` (터널이 `/casino` 경로를 그대로 넘김). 로비 `/casino/`, 게임 `/casino/<id>/` — 모두 이 컨테이너 하나 |
+| 컨테이너 | Node 22 (`Dockerfile`). 포트 `3000`. 정적 파일(`public/`) + `/casino/<id>/ws`(웹소켓) + `/casino/<id>/api/*` + `/casino/api/lobby` |
 | 환경변수 | `JMTT_AUTH_URL`(운영 `http://auth:3000`), `JMTT_COIN_KEY`(코인 API 열쇠), `CASINO_ADMINS`(관리자 통계를 볼 JMTT 사용자 ID, 쉼표로 여러 명) |
 | 저장소(데이터) | `/app/data/casino.db` (SQLite 하나: 앉은 자리·정산 대기열·판 기록 30일·월간 랭킹·사용 통계). compose에서 `./data/casino:/app/data` |
 | 외부 의존성 | JMTT 계정 서비스(`/auth`: 로그인 확인, 코인 맡기기·돌려주기) |
 | 메모리 | 테스트에서 약 60MB (봇 3명 테이블 1개 기준) |
 | 메인 화면 스크린샷 | `casino.webp` (1600×1000, 이미지에는 안 들어감) |
 
-- 모든 응답에 `Cache-Control: no-store`. 게임 파일만 골라서 내보냄 (`server/index.mjs`의 `PUBLIC_FILES`, `Dockerfile`)
+- 모든 응답에 `Cache-Control: no-store`. `public/` 아래 허용한 확장자만 내보냄 (`server/core/http.mjs`). 개발·테스트 파일은 `.dockerignore`로 이미지에서 뺌
 - 끌 때(SIGTERM): 진행 중인 판은 무효로 하고 건 칩을 돌려준 뒤 앉은 사람 모두 정산. 갑자기 꺼져도 다시 켜질 때 저장소에 남은 자리를 모두 정산 (`ref`가 같아 두 번 들어가지 않음)
 
 ## 구조
+전체 구조와 폴더별 담당은 [CASINO.md](CASINO.md) 2장. 홀덤 파일:
+
 | 파일 | 하는 일 |
 |---|---|
-| `server/index.mjs` | HTTP(정적 파일·API)·웹소켓, 방 목록, 정산 대기열, 끌 때·다시 켤 때 정산 |
-| `server/room.mjs` | 테이블 하나: 앉기(코인 맡기기)·일어나기(정산), 판 진행, 시간 초과·자리 비움, 봇, 판 기록 |
-| `server/store.mjs` | SQLite 저장소 |
-| `server/jmtt.mjs` | `/auth` 호출: 누구인지 확인(Cookie), 코인 `stake`·`cashout`·`balance` |
-| `poker.js` | 게임 규칙(족보 판정, 베팅, 사이드팟). 서버와 브라우저(내 패 분석)가 같이 씀 |
-| `bot.js` | 봇의 판단 (서버에서 돎) |
-| `index.html`, `style.css`, `app.js` | 화면. 행동만 서버로 보내고 판 상태·내 카드만 받음 |
-| `net.js` | 서버와의 웹소켓 (끊기면 다시 연결, 같은 자리로) |
-| `cloud.js` | JMTT 로그인, 랭킹·통계 API |
-| `odds.js` | 내 패 분석(족보별 확률, 예상 승률) — 브라우저에서 계산 |
-| `stats.html`, `stats.js` | 관리자 전용 사용 통계 |
+| `server/index.mjs` | 시작점: 게임 불러오기, 주소 나누기, 웹소켓, 끌 때 정산 (로비 세션) |
+| `server/core/` | 공통: 칩 지갑(정산 대기열·다시 켤 때 정산), 저장소, `/auth`, 정적 파일, 하우스 게임 관리 (로비 세션) |
+| `server/games/holdem/index.mjs` | 홀덤 모듈: 방 목록, 방 만들기·참가·빠른 시작, `/casino/holdem/api/*` |
+| `server/games/holdem/room.mjs` | 테이블 하나: 앉기(코인 맡기기)·일어나기(정산), 판 진행, 시간 초과·자리 비움, 봇, 판 기록 |
+| `public/holdem/poker.js` | 게임 규칙(족보 판정, 베팅, 사이드팟). 서버와 브라우저(내 패 분석)가 같이 씀 |
+| `public/holdem/bot.js` | 봇의 판단 (서버에서 돎) |
+| `public/holdem/index.html`, `style.css`, `app.js` | 화면. 행동만 서버로 보내고 판 상태·내 카드만 받음 |
+| `public/holdem/net.js` | 서버와의 웹소켓 (끊기면 다시 연결, 같은 자리로) |
+| `public/holdem/cloud.js` | JMTT 로그인, 랭킹·통계 API |
+| `public/holdem/odds.js` | 내 패 분석(족보별 확률, 예상 승률) — 브라우저에서 계산 |
+| `public/holdem/stats.html`, `stats.js` | 관리자 전용 사용 통계 |
+| `public/index.html`, `lobby.js`, `lobby.css` | 카지노 로비 (로비 세션) |
 
 ## 규칙
 | 항목 | 값 |
@@ -53,13 +57,12 @@ JMTT 코인으로 치는 텍사스 홀덤입니다. **v1.8.0부터 카지노 서
 - 판 기록(행동·카드)은 30일 동안 서버에 남겨 운영자가 확인할 수 있게 함
 
 ## 로컬 테스트
-1. `cd server && npm install`
-2. JMTT `/auth` 흉내를 띄우고(`/auth/me`, `/auth/internal/me`, `/auth/internal/coin/*`) 그 주소를 `JMTT_AUTH_URL`로
-3. `PORT=3200 JMTT_AUTH_URL=... JMTT_COIN_KEY=... node server/index.mjs` → `http://localhost:3200/casino/`
-4. `node server/test-e2e.mjs`: 두 사람이 앉아 몇 판 → 나가기, 코인 합·남의 카드·쿠키 없는 연결·랭킹·관리자 통계 확인 / `node server/test-seats.mjs`: 기기당 한 자리, 봇 대신 앉기
+[CASINO.md](CASINO.md) 8장. 요약: `cd server && npm ci` → `node dev/mock-auth.mjs`(가짜 `/auth`, 3100) → `PORT=3200 JMTT_AUTH_URL=http://127.0.0.1:3100 JMTT_COIN_KEY=test CASINO_ADMINS=u_alice CASINO_TEST_GAMES=1 DATA_DIR=../data-dev node index.mjs` → `http://127.0.0.1:3100/auth/login?as=alice&next=/casino/`.
+테스트: `test-routes.mjs`(주소), `test-house.mjs`(칩 지갑), `test-e2e.mjs`·`test-seats.mjs`·`test-crash.mjs`(홀덤). 모두 `BASE=http://127.0.0.1:3100 node <파일>`.
 
 ## 버전 기록
 게임 첫 화면 아래에 버전이 표시됩니다. 배포하기 전에 `python set-version.py 1.7.0`처럼 실행하면 `app.js`의 `VERSION`과 모든 파일 주소의 `?v=` 꼬리표가 함께 바뀌어요(브라우저가 옛 파일을 캐시에서 쓰는 것을 막음). 그리고 여기에 기록하세요.
+- **v1.9.0** — 카지노 로비 구조 (CASINO.md): `/casino/`는 아이소메트릭 카지노 홀 로비(테이블을 누르면 그 게임으로, 인원·LIVE/오픈 예정 표시, 코인·출석 캐셔, 지금 앉아 있는 게임 안내), 홀덤은 `/casino/holdem/`으로(옛 초대 링크·`/casino/ws`·`/casino/api/*`는 그대로 연결). 서버를 코어(`server/core/`)와 게임 모듈(`server/games/<id>/`)로 나눔, 칩 지갑 공통화(한 번에 한 게임), 하우스 게임 관리 모드와 공통 화면 부품(`public/shared/`), 준비 중 게임은 관리자만, 게임 하나가 오류여도 나머지는 동작. 홀덤 규칙·화면은 그대로 (시작 화면에 "← 카지노 로비"만 추가)
 - **v1.8.4** — 이모지 연출 개선: 자리 위 말풍선이 통통 튀어나오고 이모지마다 움직임이 다름(하품·까딱·흔들·떨림·일렁임), 같은 자리 연타는 교체. PC 넓은 화면은 확률 창 아래 이모지 줄
 - **v1.8.3** — 게임 중 이모지: 앉은 사람이 😀 버튼으로 🥱 👍 😂 😭 🔥 중 하나를 보내면 그 사람 자리 위에 잠깐 떠오름 (정해 둔 것만, 1.2초에 한 번, 서버가 같은 방에만 전달·저장 안 함)
 - **v1.8.2** — 게임 화면 위쪽에 JMTT 버튼: 누르면 자리에서 일어나 남은 칩을 코인으로 정산한 뒤 JMTT 홈으로

@@ -1,10 +1,10 @@
 // 판 도중 서버가 꺼지는 경우 준비: 두 사람이 앉아 한 판을 끝낸 뒤, 다음 판에서 베팅이 들어간 상태로 멈춰 둔다.
 // 이 스크립트가 끝나면 서버를 강제로 끄고 다시 켠 뒤 장부를 본다 (node test-crash.mjs → 서버 재시작 → /auth/_ledger)
 import WebSocket from 'ws'
-const BASE = 'http://127.0.0.1:3100'
+const BASE = process.env.BASE || 'http://127.0.0.1:3100'
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 function client(user) {
-  const ws = new WebSocket(BASE.replace('http', 'ws') + '/casino/ws', { headers: { Cookie: `jmtt_session=${user}` } })
+  const ws = new WebSocket(BASE.replace('http', 'ws') + '/casino/holdem/ws', { headers: { Cookie: `jmtt_session=${user}` } })
   const c = { ws, msgs: [], state: null, seatId: null }
   ws.on('message', raw => { const d = JSON.parse(raw); c.msgs.push(d); if (d.t === 'state') c.state = d.s; if (d.t === 'joined') c.seatId = d.seatId })
   c.open = new Promise(r => ws.on('open', r))

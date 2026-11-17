@@ -57,6 +57,9 @@ button { font: inherit; cursor: pointer; }
   padding: 28px 24px; display: flex; flex-direction: column; gap: 14px;
   box-shadow: 0 20px 60px #0008;
 }
+/* 카지노 로비로 (구조 개편 v1.9.0) */
+.to-lobby { align-self: flex-start; margin: -10px 0 -6px -4px; padding: 6px 8px; border-radius: 8px; color: var(--muted); font-size: 14px; text-decoration: none; }
+.to-lobby:hover { color: var(--gold); background: rgba(255,255,255,.05); }
 .logo { text-align: center; font-size: 26px; letter-spacing: 8px; color: var(--gold); }
 .logo::first-letter { color: var(--text); }
 h1 { margin: 0; text-align: center; font-size: 28px; }

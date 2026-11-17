@@ -1,0 +1,112 @@
+/* 카지노 로비 (확정 시안: 블랙 & 골드 아이소메트릭 홀) */
+:root {
+  --bg: #070706; --ink: #f5efe0; --muted: #a49c88; --accent: #e8c26a; --accent-2: #a9833a;
+  --floor-a: #1b1915; --floor-b: #24211b; --floor-line: rgba(212,175,90,.22);
+  --wall-l: #141210; --wall-r: #1b1915; --trim: #c9a24a;
+  --felt: #0f5a3c; --felt-line: rgba(232,200,120,.5); --bj-felt: #0f4a5a; --bacc-felt: #5a1420;
+  --rail: #1d1b18; --rail-side: #0b0a09; --rail-trim: #c9a24a;
+  --chair: #3a3128; --chair-side: #1a1612;
+  --slot: #26221c; --slot-side: #12100d; --slot-trim: #c9a24a;
+  --sign: #ffe9b0; --glow: rgba(255,196,80,.9); --live: #4ade80;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { min-height: 100vh; color: var(--ink); background: var(--bg); font-family: "Pretendard", system-ui, sans-serif; overflow-x: hidden; }
+[hidden] { display: none !important; }
+
+/* 상단바 */
+.top {
+  position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 10px;
+  padding: 10px clamp(16px, 3vw, 32px);
+  background: rgba(7,7,6,.88); backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(232,194,106,.22);
+}
+.brand { margin-right: auto; font-size: clamp(18px, 2.4vw, 24px); font-weight: 800; letter-spacing: .08em; color: var(--accent); text-shadow: 0 0 14px var(--glow); text-decoration: none; }
+.coins {
+  display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border-radius: 20px; cursor: pointer;
+  border: 1px solid rgba(232,194,106,.5); background: rgba(232,194,106,.1);
+  color: var(--ink); font: 700 15px "Pretendard", sans-serif; font-variant-numeric: tabular-nums;
+}
+.coin-ico { width: 18px; height: 18px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff1b8, #e8c26a 45%, #a9833a); box-shadow: inset 0 0 0 2px rgba(120,80,20,.5); }
+/* JMTT 공통 "Google로 로그인" 버튼 (DEV_REFERENCE 2-1) */
+.jmtt-google { display:inline-flex; align-items:center; gap:10px; height:40px; padding:0 12px; border-radius:20px;
+  background:#fff; border:1px solid #747775; color:#1f1f1f; font:500 14px/1 Roboto, "Pretendard", sans-serif; text-decoration:none; cursor:pointer; }
+.jmtt-google.dark { background:#131314; border-color:#8e918f; color:#e3e3e3; }
+
+/* 앉아 있는 게임 안내 */
+.seat-banner { margin: 10px auto 0; width: fit-content; max-width: calc(100vw - 32px); padding: 10px 16px; border-radius: 12px;
+  background: rgba(74,222,128,.1); border: 1px solid rgba(74,222,128,.45); font-size: 14px; text-align: center; }
+.seat-banner a { color: var(--live); font-weight: 700; margin-left: 6px; }
+
+/* 장면 */
+.stage { position: relative; padding: 4px 8px 0; }
+.scene { display: block; width: 100%; height: auto; max-height: calc(100vh - 110px); margin: 0 auto; }
+.g { cursor: pointer; transition: transform .28s cubic-bezier(.2,.8,.3,1); outline: none; }
+.g .art { transition: filter .28s; }
+.g:hover, .g:focus-visible { transform: translateY(-12px); }
+.g:hover .art, .g:focus-visible .art { filter: brightness(1.15) drop-shadow(0 0 18px var(--glow)); }
+.g .spot { opacity: .35; transition: opacity .28s, transform .28s; }
+.g:hover .spot, .g:focus-visible .spot { opacity: 1; transform: translateY(12px); }
+.sign-t { font: 800 44px "Pretendard", sans-serif; fill: #fff6dc; letter-spacing: 1px; }
+.plate { fill: rgba(8,7,5,.88); stroke: var(--trim); stroke-width: 2.5; }
+.g:hover .plate, .g:focus-visible .plate { stroke: #ffe39b; stroke-width: 3.5; }
+.felt-t { font: 800 17px "Pretendard", sans-serif; fill: var(--felt-line); letter-spacing: 3px; }
+.pill-t { font: 700 23px "Pretendard", sans-serif; }
+.wall-t { font: 900 62px "Pretendard", sans-serif; fill: var(--sign); letter-spacing: 6px; }
+.enter-t { font: 800 25px "Pretendard", sans-serif; fill: #ffe39b; opacity: 0; transition: opacity .2s; paint-order: stroke; stroke: rgba(0,0,0,.8); stroke-width: 6px; }
+.g:hover .enter-t, .g:focus-visible .enter-t { opacity: 1; }
+.g.closed .enter-t { display: none; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes blink { 50% { opacity: .25; } }
+.spin { animation: spin 26s linear infinite; }
+.g:hover .spin { animation-duration: 2.4s; }
+.bulb { animation: blink 1.3s infinite; }
+.bulb.b2 { animation-delay: .65s; }
+
+/* 좁은 화면용 게임 목록 */
+.game-list { display: none; }
+@media (max-width: 760px) {
+  .brand { font-size: 17px; letter-spacing: .04em; }
+  .jmtt-google .label { display: none; }
+  .scene { max-height: none; }
+  .game-list { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 8px 16px 0; }
+  .gl {
+    display: flex; flex-direction: column; gap: 4px; padding: 14px; min-height: 64px; border-radius: 14px; text-decoration: none; color: var(--ink);
+    background: rgba(245,239,224,.06); border: 1px solid rgba(232,194,106,.25);
+  }
+  .gl.live { border-color: var(--accent); background: rgba(232,194,106,.14); }
+  .gl.first { grid-column: 1 / -1; }
+  .gl b { font-size: 16px; }
+  .gl span { font-size: 12px; color: var(--muted); }
+  .gl.live span { color: var(--live); font-weight: 700; }
+}
+
+footer { text-align: center; padding: 18px 16px 28px; color: var(--muted); font-size: 13px; }
+footer a { color: var(--muted); }
+footer p { margin: 0 0 8px; }
+
+.toast {
+  position: fixed; left: 50%; bottom: 28px; z-index: 50; transform: translate(-50%, 20px); opacity: 0; pointer-events: none;
+  padding: 12px 18px; border-radius: 12px; background: #1d1b17; border: 1px solid rgba(232,194,106,.45);
+  color: var(--ink); font-size: 14px; transition: .25s; max-width: calc(100vw - 32px);
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+dialog {
+  width: min(340px, calc(100vw - 32px)); padding: 22px; border-radius: 18px; text-align: center; color: var(--ink);
+  background: #15130f; border: 1px solid rgba(232,194,106,.45);
+}
+dialog::backdrop { background: rgba(0,0,0,.6); }
+dialog small { color: var(--muted); }
+dialog .bal { font-size: 34px; font-weight: 800; margin: 6px 0 4px; font-variant-numeric: tabular-nums; }
+.cashier-note { margin: 0; color: var(--muted); font-size: 13px; }
+.cashier-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 14px; }
+.btn { height: 42px; padding: 0 18px; border: 0; border-radius: 12px; cursor: pointer; font: 700 14px "Pretendard", sans-serif; color: #1a1205; background: var(--accent); }
+.btn.ghost { background: transparent; color: var(--muted); border: 1px solid rgba(245,239,224,.2); }
+.btn[disabled] { opacity: .5; cursor: default; }
+
+@media (prefers-reduced-motion: reduce) {
+  .spin, .bulb { animation: none; }
+  .g, .g .art, .g .spot { transition: none; }
+}

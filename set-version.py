@@ -4,7 +4,7 @@
 import pathlib, re, sys
 
 version = sys.argv[1]
-root = pathlib.Path(__file__).parent
+root = pathlib.Path(__file__).parent / 'public' / 'holdem'  # v1.9.0~: 홀덤 파일은 public/holdem/ (로비·shared는 버전 꼬리표 없이 no-store)
 local = r"(\./[\w-]+\.(?:js|css))(?:\?v=[\w.]+)?"
 
 for path in root.glob('*.js'):

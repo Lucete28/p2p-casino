@@ -1,5 +1,5 @@
 // 관리자 전용 사용 통계 (v1.8.0~: 카지노 서버가 모은 숫자). 서버의 CASINO_ADMINS에 있는 JMTT 사용자만 볼 수 있다
-import * as cloud from './cloud.js?v=1.8.4'
+import * as cloud from './cloud.js?v=1.9.0'
 
 const $ = s => document.querySelector(s)
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`)

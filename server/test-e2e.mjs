@@ -2,7 +2,7 @@
 // 두 사람이 같은 방에 앉아 몇 판 → 나가기. 코인 합이 맞는지, 남의 카드가 오지 않는지, 쿠키 없이 막히는지 본다
 import WebSocket from 'ws'
 const BASE = process.env.BASE || 'http://127.0.0.1:3100'
-const WS = BASE.replace('http', 'ws') + '/casino/ws'
+const WS = BASE.replace('http', 'ws') + '/casino/holdem/ws'
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const ledger = async () => (await (await fetch(BASE + '/auth/_ledger')).json())
 const out = []
@@ -75,10 +75,10 @@ check('사람끼리 판의 코인 합 = 0', sum('u_alice') + sum('u_bob') === 0,
 check('장부: 입장·정산 기록', after.log.filter(x => x.op === 'stake').length >= 2 && after.log.filter(x => x.op === 'cashout').length >= 2,
   after.log.slice(-4).map(x => `${x.op} ${x.user} ${x.amount} ${x.reason}`).join(' | '))
 // 랭킹·통계
-const season = await (await fetch(BASE + '/casino/api/season', { headers: { Cookie: 'jmtt_session=u_alice' } })).json()
+const season = await (await fetch(BASE + '/casino/holdem/api/season', { headers: { Cookie: 'jmtt_session=u_alice' } })).json()
 check('월간 랭킹 기록', ['앨리스', '밥'].every(n => season.rows.some(r => r.name === n)), JSON.stringify(season.rows))
-const stats = await fetch(BASE + '/casino/api/stats', { headers: { Cookie: 'jmtt_session=u_alice' } })
-const statsBob = await fetch(BASE + '/casino/api/stats', { headers: { Cookie: 'jmtt_session=u_bob' } })
+const stats = await fetch(BASE + '/casino/holdem/api/stats', { headers: { Cookie: 'jmtt_session=u_alice' } })
+const statsBob = await fetch(BASE + '/casino/holdem/api/stats', { headers: { Cookie: 'jmtt_session=u_bob' } })
 check('관리자 통계: 관리자만', stats.status === 200 && statsBob.status === 403)
 A.ws.close(); B.ws.close()
 console.log(out.join('\n'))

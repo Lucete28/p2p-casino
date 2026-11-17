@@ -1,7 +1,7 @@
 // 테이블 하나. 서버가 카드를 섞어 나누고 판을 진행한다 (예전에는 방장 브라우저가 하던 일).
 // 사람은 앉을 때 가진 코인을 모두 맡기고(stake), 일어날 때 남은 칩을 돌려받는다(cashout). 봇의 칩은 하우스 몫
 import { randomBytes } from 'node:crypto'
-import * as jmtt from './jmtt.mjs'
+import * as jmtt from '../../core/jmtt.mjs'
 
 const rid = (p, n = 6) => p + randomBytes(n).toString('base64url')
 const DISCONNECT_MS = 60000      // 연결이 끊긴 뒤 이만큼 지나면 자리에서 일으켜 정산
@@ -11,7 +11,7 @@ const EMPTY_CLOSE_MS = 30000     // 사람이 아무도 없으면 이만큼 뒤 
 // 게임 중 이모지 (app.js의 EMOJIS와 같게). 정해 둔 것만 보낼 수 있어서 글자 채팅 같은 내용은 오가지 않음
 export const EMOJIS = new Set(['🥱', '👍', '😂', '😭', '🔥'])
 
-export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, flush, onClose }) {
+export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, wallet, titleOf = id => id, onClose }) {
   class Room {
     constructor({ code, isPublic = false, autoBots = false, owner = null }) {
       this.code = code
@@ -88,18 +88,11 @@ export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, flush, o
         let bal
         try { bal = await jmtt.balance(m.user) } catch { return this.tell(m, '코인 서버에 연결하지 못했어요. 잠시 뒤 다시 앉아 주세요.') }
         if (bal <= 0) { this.sendTo(m, { t: 'nocoins' }); return }
-        const session = rid('s_', 9)
-        store.seatOpen(session, this.id, m.user, m.name, bal, jmtt.MAX_AMOUNT)
-        let staked = 0
-        for (let i = 0, left = bal; left > 0; i++, left -= jmtt.MAX_AMOUNT) {
-          const amount = Math.min(jmtt.MAX_AMOUNT, left)
-          let r
-          try { r = await jmtt.coin('stake', m.user, amount, '카지노 입장', `buyin:${this.id}:${session}${i ? ':' + i : ''}`) } catch { r = { status: 0 } }
-          if (r.status !== 200) break
-          staked += amount
-        }
-        store.seatStaked(session, staked)
-        if (!staked) { store.seatClose(session, 0, '카지노 정산', jmtt.MAX_AMOUNT); return this.tell(m, '코인을 맡기지 못했어요. 잠시 뒤 다시 앉아 주세요.') }
+        // 코인 맡기기는 공통 칩 지갑이 한다 (한 번에 한 게임: 다른 게임에 앉아 있으면 거절)
+        const st = await wallet.stakeSeat({ game: 'holdem', table: this.id, user: m.user, name: m.name, amount: bal })
+        if (st.error === 'busy') return this.tell(m, `${titleOf(st.game)}에 앉아 있어요. 그 게임에서 일어난 뒤 앉을 수 있어요.`)
+        if (st.error) return this.tell(m, '코인을 맡기지 못했어요. 잠시 뒤 다시 앉아 주세요.')
+        const { session, staked } = st
         if (!this.members.has(m.user)) { this.closeSeat(m, session, staked); return } // 맡기는 사이 나감
         m.session = session
         m.staked = staked
@@ -134,9 +127,8 @@ export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, flush, o
     }
 
     closeSeat(m, session, amount) {
-      const r = store.seatClose(session, amount, '카지노 정산', jmtt.MAX_AMOUNT)
+      const r = wallet.closeSeat(session, amount, '카지노 정산')
       if (m.session === session) m.session = null
-      flush()
       return r
     }
 

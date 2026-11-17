@@ -1,16 +1,24 @@
-# 서버 이미지에 넣지 않을 것 (Dockerfile이 필요한 파일만 골라 복사하지만 빌드 재료도 가볍게)
+# 서버 이미지에 넣지 않을 것 (Dockerfile이 server/·public/을 통째로 복사하므로 여기서 거른다)
 .git
 .github
 .claude
 node_modules
 server/node_modules
+# 개발·테스트 전용
 server/test-*.mjs
+server/games/*/test-*.mjs
+server/dev
+server/games/_test
+public/coinflip
 data
+data-*
+# 문서·설정 (사이트에 나가면 안 됨: DEV_REFERENCE 1-10)
 보고.md
 *.md
 casino.webp
 set-version.py
 *.py
+*.patch
 firestore.rules
 firebase.json
 dev-harness.html

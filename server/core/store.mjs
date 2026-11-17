@@ -27,17 +27,28 @@ export function openStore(file) {
     CREATE TABLE IF NOT EXISTS users (user_id TEXT PRIMARY KEY, name TEXT, first_day TEXT);
     CREATE TABLE IF NOT EXISTS visits (day TEXT NOT NULL, user_id TEXT NOT NULL, fresh INTEGER DEFAULT 0, PRIMARY KEY (day, user_id));
     CREATE TABLE IF NOT EXISTS rooms (room TEXT PRIMARY KEY, day TEXT, max_players INTEGER DEFAULT 1, hands INTEGER DEFAULT 0);
+    -- 하우스 게임(블랙잭·바카라·룰렛·슬롯) 판 기록 (운영자 확인용, 30일)
+    CREATE TABLE IF NOT EXISTS rounds (id INTEGER PRIMARY KEY AUTOINCREMENT, game TEXT, user_id TEXT, round TEXT, bet INTEGER, payout INTEGER, at INTEGER, data TEXT);
+    CREATE INDEX IF NOT EXISTS rounds_at ON rounds (at);
   `)
+  // v1.9.0 (카지노 로비): 자리에 게임 이름과 '진행 중인 판에 건 칩'을 더한다. 예전 행은 홀덤
+  const cols = new Set(db.prepare('PRAGMA table_info(seats)').all().map(c => c.name))
+  if (!cols.has('game')) db.exec("ALTER TABLE seats ADD COLUMN game TEXT NOT NULL DEFAULT 'holdem'")
+  if (!cols.has('in_play')) db.exec('ALTER TABLE seats ADD COLUMN in_play INTEGER NOT NULL DEFAULT 0')
   const q = sql => db.prepare(sql)
 
   return {
     db,
     // ---- 자리와 정산 ----
     // 맡기기 전에 먼저 적어 둔다: 맡기는 도중 꺼지면 다시 켜질 때 같은 ref로 다시 물어 실제 맡긴 양을 알아낸다
-    seatOpen(session, room, user, name, intended, chunk) {
-      q('INSERT INTO seats (session, room, user_id, name, intended, chunk, staked, stack, state, at) VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?)')
-        .run(session, room, user, name, intended, chunk, 'staking', Date.now())
+    seatOpen(session, room, user, name, intended, chunk, game = 'holdem') {
+      q('INSERT INTO seats (session, room, user_id, name, intended, chunk, staked, stack, state, at, game) VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)')
+        .run(session, room, user, name, intended, chunk, 'staking', Date.now(), game)
     },
+    // 하우스 게임: 판마다 칩과 '진행 중인 판에 건 칩'을 함께 적는다 (판 도중 꺼지면 건 칩은 돌려줌)
+    seatPlay(session, stack, inPlay) { q("UPDATE seats SET stack = ?, in_play = ?, at = ? WHERE session = ? AND state = 'seated'").run(stack, inPlay, Date.now(), session) },
+    // 이 사람이 지금 앉아 있는 자리 (한 번에 한 게임만)
+    openSeatOf: user => q("SELECT * FROM seats WHERE user_id = ? AND state IN ('seated', 'staking') ORDER BY at DESC").get(user) || null,
     seatStaked(session, staked) {
       q("UPDATE seats SET staked = ?, stack = ?, state = 'seated', at = ? WHERE session = ? AND state = 'staking'").run(staked, staked, Date.now(), session)
     },
@@ -66,7 +77,13 @@ export function openStore(file) {
 
     // ---- 판 기록 (운영자 확인용, 30일) ----
     logHand(room, handNo, data) { q('INSERT INTO hands (room, hand_no, at, data) VALUES (?, ?, ?, ?)').run(room, handNo, Date.now(), JSON.stringify(data)) },
-    pruneHands() { q('DELETE FROM hands WHERE at < ?').run(Date.now() - 30 * 86400e3) },
+    pruneHands() {
+      q('DELETE FROM hands WHERE at < ?').run(Date.now() - 30 * 86400e3)
+      q('DELETE FROM rounds WHERE at < ?').run(Date.now() - 30 * 86400e3)
+    },
+    logRound(game, user, round, bet, payout, data) {
+      q('INSERT INTO rounds (game, user_id, round, bet, payout, at, data) VALUES (?, ?, ?, ?, ?, ?, ?)').run(game, user, round, bet, payout, Date.now(), JSON.stringify(data ?? null))
+    },
 
     // ---- 월간 랭킹 (코인 순이익) ----
     seasonAdd(user, name, delta, won) {
