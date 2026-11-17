@@ -9,6 +9,7 @@
 //       onMessage(msg) {},                 // 게임이 보낸 메시지 (공통 메시지 me·chips·toast·restart는 여기서 처리)
 //       onToast(msg) {},                   // 서버의 알림·거절 { t: 'toast'|'error', msg, ... } — false를 돌려주면 기본 알림을 띄우지 않음
 //       bustDelay: 1200,                   // 칩을 모두 잃은 뒤 파산 안내(→ 로비 캐셔)를 띄우기까지 ms (결과 연출 길이에 맞추기)
+//       onGift({ chips, title }) {},       // 첫 방문 기념 칩을 받았을 때 (팝업은 이 파일이 띄움. 게임 연출을 더하고 싶을 때만)
 //       onLoggedOut() {},                  // 로그인 안 한 사람 (화면은 보여 주고, 칩 바꾸기 때 로그인 안내)
 //     })
 //     game.send({ t: 'spin', bet: 10 })    // 서버(server/games/<id>)로
@@ -106,6 +107,36 @@ export async function startGame(opts = {}) {
     return true
   }
 
+  // ---------- 첫 방문 기념 칩 팝업 (서버가 { t: 'gift', chips, title }을 보낼 때, registry의 welcome) ----------
+  // 빛 + 칩이 사방으로 튀는 효과 + 숫자가 올라감. 칩은 서버가 이미 넣었고(chips 메시지), 이 창은 알려 주기만 한다
+  function showGift(d) {
+    if (dlg.open) dlg.close()
+    // 게임의 처음 안내 같은 다른 창이 열려 있으면 닫힌 뒤에 띄운다 (창 밑에 깔려 효과가 안 보이는 것을 막기)
+    if (document.querySelector('dialog[open]')) return setTimeout(() => showGift(d), 300)
+    const n = Number(d.chips) || 0
+    const layer = el('div', { class: 'casino-gift', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${d.title || '기념'} 칩 ${fmt(n)}개` }, `
+      <div class="casino-gift-rays" aria-hidden="true"></div>
+      <div class="casino-gift-burst" aria-hidden="true">${Array.from({ length: 16 }, (_, i) =>
+        `<i style="--a:${i * 22.5}deg;--d:${(i % 4) * 0.06}s;--c:${['#c81e2c', '#e8c26a', '#2a63c4', '#1f9b52'][i % 4]}"></i>`).join('')}</div>
+      <div class="casino-gift-box">
+        <div class="casino-gift-icon">🎁</div>
+        <small>${d.title || '기념 선물'}</small>
+        <h2>칩 <b data-count>0</b>개</h2>
+        <p>${state.game.title}에 처음 오신 걸 환영해요! 바로 쓸 수 있어요.<br>남은 칩은 나갈 때 코인으로 바뀌어요.</p>
+        <button class="casino-btn" type="button" data-gift-ok>시작하기</button>
+      </div>`)
+    document.body.append(layer)
+    const count = layer.querySelector('[data-count]')
+    const t0 = performance.now(), dur = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 1100
+    const tick = now => { const k = dur ? Math.min(1, (now - t0) / dur) : 1; count.textContent = fmt(Math.round(n * (1 - Math.pow(1 - k, 3)))); if (k < 1) requestAnimationFrame(tick) }
+    requestAnimationFrame(tick)
+    const close = () => { layer.classList.add('out'); setTimeout(() => layer.remove(), 250) }
+    layer.querySelector('[data-gift-ok]').onclick = close
+    layer.addEventListener('click', e => { if (e.target === layer) close() })
+    layer.querySelector('[data-gift-ok]').focus()
+    opts.onGift?.(d)
+  }
+
   function paint() {
     q('[data-coins]').textContent = fmt(state.coins)
     q('[data-chips]').textContent = fmt(state.chips)
@@ -174,6 +205,7 @@ export async function startGame(opts = {}) {
       // 서버의 알림·거절: 게임이 알 수 있게 onToast로 먼저 넘기고, false를 돌려주지 않으면 기본 알림을 띄운다
       if (d.t === 'toast' || d.t === 'error') { if (opts.onToast?.(d) === false) return; return toast(d.msg) }
       if (d.t === 'restart') return toast('서버가 다시 시작돼요. 진행 중이던 판은 무효, 칩은 코인으로 돌아갔어요.')
+      if (d.t === 'gift') return showGift(d)
       opts.onMessage?.(d)
     }
     ws.onclose = async () => {

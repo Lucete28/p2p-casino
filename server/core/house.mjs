@@ -1,6 +1,7 @@
 // 하우스 게임 '관리 모드' (CASINO.md 3장): 블랙잭·바카라·룰렛·슬롯
 // 코어가 플레이어·칩·바이인·캐시아웃·연결 끊김·재시작을 맡고, 게임 모듈은 판 규칙만 짠다.
 // 칩은 ctx.bet / ctx.payout / ctx.settle로만 바뀐다. 판마다 저장소에 적어서 서버가 꺼져도 잃지 않는다
+import { randomBytes } from 'node:crypto'
 import * as rng from './rng.mjs'
 import * as jmtt from './jmtt.mjs'
 
@@ -8,8 +9,8 @@ const DISCONNECT_MS = 60000 // 연결이 모두 끊긴 뒤 이만큼 지나면 �
 const isInt = n => Number.isSafeInteger(n)
 
 export function houseKit({ store, wallet, titleOf }) {
-  // game = 게임 모듈 (export default 객체). 반환: { attach(ws), summary(), shutdown() }
-  return function host(game) {
+  // game = 게임 모듈 (export default 객체), meta = registry.mjs의 줄 (welcome 등). 반환: { attach(ws), summary(), shutdown() }
+  return function host(game, meta = {}) {
     const players = new Map() // 사용자 ID → 플레이어
 
     const sendRaw = (p, s) => { for (const ws of p.sockets) if (ws.readyState === 1) ws.send(s) }
@@ -122,6 +123,25 @@ export function houseKit({ store, wallet, titleOf }) {
       players.delete(p.id)
     }
 
+    // ---------- 첫 방문 기념 칩 (registry의 welcome, 계정당 게임마다 한 번) ----------
+    // 맡긴 코인 없이 칩만 준다. 나갈 때 남은 칩은 다른 칩처럼 코인으로 정산된다 (cashout)
+    // 다른 게임에 앉아 있으면(한 번에 한 게임) 이번엔 주지 않고 다음에 들어올 때 준다
+    function grantWelcome(p) {
+      const w = meta.welcome
+      if (!w?.chips || store.welcomeGiven(p.id, game.id)) return null
+      const other = store.openSeatOf(p.id)
+      if (other && other.game !== game.id) return { later: true, game: other.game }
+      if (!store.welcomeMark(p.id, game.id, w.chips)) return null // 다른 탭이 먼저 받음
+      if (p.session) { p.chips += w.chips; persist(p) }
+      else {
+        const session = 's_' + randomBytes(9).toString('base64url')
+        store.seatOpenGift(session, game.id, p.id, p.name, w.chips, game.id)
+        p.session = session; p.chips = w.chips; p.inPlay = 0
+      }
+      ctx.log('welcome', p.id, w.chips)
+      return { chips: w.chips, title: w.title || '첫 방문 기념' }
+    }
+
     // 이 연결의 플레이어 (나가기 뒤 같은 탭에서 다시 하면 새로 만든다)
     function ensure(ws) {
       const who = ws.who
@@ -160,9 +180,16 @@ export function houseKit({ store, wallet, titleOf }) {
       const coins = await coinsOf(who.id)
       if (ws.readyState !== 1) return
       const p = ensure(ws)
+      const gift = grantWelcome(p) // 칩을 먼저 넣고 나서 칩 숫자를 보낸다 (칩 바꾸기 창이 먼저 뜨지 않게)
       ws.send(JSON.stringify({ t: 'me', me: { id: who.id, name: who.name, picture: who.picture }, coins,
         game: { id: game.id, title: game.title, buyIn: game.buyIn || { min: 1 } } }))
       ws.send(JSON.stringify(chipsMsg(p, coins)))
+      if (gift?.chips) {
+        sendRaw(p, JSON.stringify(chipsMsg(p))) // 같은 사람의 다른 탭에도
+        ws.send(JSON.stringify({ t: 'gift', chips: gift.chips, title: gift.title }))
+      } else if (gift?.later) {
+        ws.send(JSON.stringify({ t: 'toast', msg: `${titleOf(gift.game)}에서 일어난 뒤 다시 오면 ${game.title} 기념 칩 ${meta.welcome.chips.toLocaleString('ko-KR')}개를 받아요.` }))
+      }
       try { await game.join?.(p, ctx) } catch (err) { console.error(`${game.id} join`, err) }
     }
 

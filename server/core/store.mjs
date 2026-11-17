@@ -30,6 +30,8 @@ export function openStore(file) {
     -- 하우스 게임(블랙잭·바카라·룰렛·슬롯) 판 기록 (운영자 확인용, 30일)
     CREATE TABLE IF NOT EXISTS rounds (id INTEGER PRIMARY KEY AUTOINCREMENT, game TEXT, user_id TEXT, round TEXT, bet INTEGER, payout INTEGER, at INTEGER, data TEXT);
     CREATE INDEX IF NOT EXISTS rounds_at ON rounds (at);
+    -- 게임별 첫 방문 기념 칩을 받은 기록 (계정당 게임마다 한 번)
+    CREATE TABLE IF NOT EXISTS welcome (user_id TEXT NOT NULL, game TEXT NOT NULL, chips INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (user_id, game));
   `)
   // v1.9.0 (카지노 로비): 자리에 게임 이름과 '진행 중인 판에 건 칩'을 더한다. 예전 행은 홀덤
   const cols = new Set(db.prepare('PRAGMA table_info(seats)').all().map(c => c.name))
@@ -47,6 +49,14 @@ export function openStore(file) {
     },
     // 하우스 게임: 판마다 칩과 '진행 중인 판에 건 칩'을 함께 적는다 (판 도중 꺼지면 건 칩은 돌려줌)
     seatPlay(session, stack, inPlay) { q("UPDATE seats SET stack = ?, in_play = ?, at = ? WHERE session = ? AND state = 'seated'").run(stack, inPlay, Date.now(), session) },
+    // 첫 방문 기념 칩: 받았는지, 받은 것으로 적기 (처음 적은 쪽만 true → 동시에 두 번 들어와도 한 번)
+    welcomeGiven: (user, game) => !!q('SELECT 1 FROM welcome WHERE user_id = ? AND game = ?').get(user, game),
+    welcomeMark: (user, game, chips) => q('INSERT OR IGNORE INTO welcome (user_id, game, chips, at) VALUES (?, ?, ?, ?)').run(user, game, chips, Date.now()).changes === 1,
+    // 기념 칩만으로 자리를 연다 (맡긴 코인 0, 칩 = 기념 칩). 나갈 때 칩은 다른 칩처럼 코인으로 정산
+    seatOpenGift(session, table, user, name, chips, game) {
+      q('INSERT INTO seats (session, room, user_id, name, intended, chunk, staked, stack, state, at, game) VALUES (?, ?, ?, ?, 0, 100000, 0, ?, ?, ?, ?)')
+        .run(session, table, user, name, chips, 'seated', Date.now(), game)
+    },
     // 이 사람이 지금 앉아 있는 자리 (한 번에 한 게임만). 칩을 모두 잃은 하우스 게임 자리(칩 0, 진행 중 0)는 빈 자리로 본다
     openSeatOf: user => q(`SELECT * FROM seats WHERE user_id = ? AND (state = 'staking' OR (state = 'seated' AND (stack > 0 OR in_play > 0)))
       ORDER BY at DESC`).get(user) || null,

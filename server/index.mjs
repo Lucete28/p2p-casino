@@ -42,7 +42,7 @@ for (const meta of GAMES) {
     await mod.init?.({ store, wallet, jmtt, publicDir: PUBLIC, titleOf, isAdmin, send })
     g.mod = mod
     g.mode = mod.mode === 'socket' ? 'socket' : 'house'
-    if (g.mode === 'house') g.host = house(mod)
+    if (g.mode === 'house') g.host = house(mod, meta)
   } catch (err) {
     console.error(`game ${meta.id} failed to load:`, err)
     g.status = 'down'
