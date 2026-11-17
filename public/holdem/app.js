@@ -220,8 +220,11 @@ function onServer(d) {
     case 'cashout':
       toast(`${d.why ? d.why + ' · ' : ''}코인 ${d.amount.toLocaleString()}개를 돌려받았어요.`)
       window.JMTT?.badge?.refresh?.()
+      if (!d.amount) offerRefill('칩을 모두 잃었어요') // 파산: 로비 캐셔의 지원금 안내
       return render()
-    case 'nocoins': return showOverlay('코인이 없어요', '앉으려면 코인이 필요해요. 카지노 로비의 캐셔에서 1,000코인을 받을 수 있어요 (하루 10번). 지금은 구경만 할 수 있어요.', true)
+    case 'nocoins':
+      offerRefill('코인이 없어요').then(shown => { if (!shown) showOverlay('코인이 없어요', '앉으려면 코인이 필요해요. 지금은 구경만 할 수 있어요.', true) })
+      return
     case 'nojoin': toast(d.msg); clearInvite(); return
     case 'kicked': clearInvite(); return showOverlay('방에서 나가게 됐어요', '방장이 이 방에서 내보냈어요. 맡긴 코인은 남은 칩만큼 돌려받았어요.')
     case 'left': return backToLobby()
@@ -1033,6 +1036,24 @@ $('#overlay-btn').onclick = () => {
   net?.send({ t: 'leave' })
   backToLobby()
 }
+
+// 파산 안내 (v1.9.1, 로비 세션): 받을 수 있는지는 카지노 서버가 정한다 (/casino/api/refill — 코인 500 이하, 칩 없음, 하루 10번)
+// 받을 수 있으면 "캐셔로 가기" → 자리에서 일어나 로비로 가서 캐셔를 연다 (/casino/?cashier). 코인이 넉넉하면 아무것도 안 띄움
+async function offerRefill(title) {
+  let s = null
+  try { const r = await fetch('../api/refill', { cache: 'no-store' }); if (r.ok) s = await r.json() } catch {}
+  if (!s || s.why === 'has_coins') return false
+  $('#bk-title').textContent = title
+  const n = v => Number(v).toLocaleString()
+  $('#bk-msg').innerHTML = s.can ? `카지노 로비의 캐셔에서 <b>파산 지원금 ${n(s.amount)}코인</b>을 받을 수 있어요. (오늘 ${s.left}번 남음)`
+    : s.why === 'daily_limit' ? `오늘 받을 수 있는 파산 지원금(하루 ${s.perDay}번)을 다 받았어요. 내일 다시 받을 수 있어요.`
+    : `<b>${s.seat?.title || '다른 게임'}</b>에 칩이 남아 있어요. 그 칩을 코인으로 바꾸면 캐셔에서 파산 지원금을 받을 수 있어요.`
+  $('#bk-go').hidden = s.why === 'daily_limit'
+  $('#bankrupt').hidden = false
+  return true
+}
+$('#bk-later').onclick = () => { $('#bankrupt').hidden = true }
+$('#bk-go').onclick = () => { $('#bankrupt').hidden = true; leaveTable('../?cashier') }
 
 let toastTimer
 function toast(msg) {

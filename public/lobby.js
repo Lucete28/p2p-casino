@@ -324,8 +324,8 @@ function paintRefill() {
   const left = `오늘 <b>${s.left}번</b> 남았어요`
   note.innerHTML = s.why === 'daily_limit' ? `오늘 받을 수 있는 지원금을 다 받았어요 (하루 ${s.perDay}번). 내일 다시 받을 수 있어요.`
     : s.why === 'seated' ? `<b>${s.seat.title}</b>에 칩이 남아 있어요. 그 게임에서 칩을 코인으로 바꾼 뒤 받을 수 있어요. · ${left}`
-    : s.why === 'has_coins' ? `코인을 모두 잃으면 여기서 <b>${fmt(s.amount)}코인</b>을 받을 수 있어요. · ${left}`
-    : `코인을 모두 잃었네요. <b>${fmt(s.amount)}코인</b>을 받아 다시 해 보세요. · ${left}`
+    : s.why === 'has_coins' ? `코인이 <b>${fmt(s.maxCoins)} 이하</b>가 되면 여기서 파산 지원금 <b>${fmt(s.amount)}코인</b>을 받을 수 있어요. · ${left}`
+    : `코인이 얼마 안 남았네요. 파산 지원금 <b>${fmt(s.amount)}코인</b>을 받아 다시 해 보세요. · ${left}`
 }
 async function openCashier() {
   $('cashier-bal').hidden = !me
@@ -348,7 +348,7 @@ $('refill').onclick = async e => {
   } else {
     toast(d?.error === 'not_ready' ? '지원금은 곧 열려요. 조금만 기다려 주세요.'
       : d?.error === 'daily_limit' ? '오늘 받을 수 있는 지원금을 다 받았어요.'
-      : d?.error === 'has_coins' ? '코인이 남아 있으면 받을 수 없어요.'
+      : d?.error === 'has_coins' ? `코인이 ${fmt(d.maxCoins ?? 500)} 이하일 때 받을 수 있어요.`
       : d?.error === 'seated' ? `${d.seat?.title || '다른 게임'}에 칩이 남아 있어요.`
       : '지원금을 받지 못했어요. 잠시 뒤 다시 해 주세요.')
   }
@@ -360,10 +360,16 @@ addEventListener('hashchange', () => { if (/^#[A-Za-z0-9]{4,8}$/.test(location.h
 
 render()
 loadLobby()
-// 로그인했는데 코인을 모두 잃은 사람: 캐셔를 바로 열어 지원금을 안내
+// 캐셔를 바로 연다: 게임에서 "캐셔로 가기"로 온 경우(/casino/?cashier), 또는 지원금을 받을 수 있는 사람이 처음 들어온 경우(탭마다 한 번)
+const wantCashier = new URLSearchParams(location.search).has('cashier')
+if (wantCashier) history.replaceState(null, '', location.pathname) // 새로고침해도 다시 열리지 않게
 loadMe().then(async () => {
-  if (!me || me.coins > 0) return
+  if (wantCashier) return openCashier()
+  if (!me) return
+  let shown = false
+  try { shown = sessionStorage.getItem('casino:cashier-shown') === '1' } catch {}
+  if (shown) return
   const s = await loadRefill()
-  if (s?.can) openCashier()
+  if (s?.can) { try { sessionStorage.setItem('casino:cashier-shown', '1') } catch {} ; openCashier() }
 })
 setInterval(loadLobby, 20000) // 인원 숫자 새로고침

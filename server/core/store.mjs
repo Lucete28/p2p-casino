@@ -47,8 +47,9 @@ export function openStore(file) {
     },
     // 하우스 게임: 판마다 칩과 '진행 중인 판에 건 칩'을 함께 적는다 (판 도중 꺼지면 건 칩은 돌려줌)
     seatPlay(session, stack, inPlay) { q("UPDATE seats SET stack = ?, in_play = ?, at = ? WHERE session = ? AND state = 'seated'").run(stack, inPlay, Date.now(), session) },
-    // 이 사람이 지금 앉아 있는 자리 (한 번에 한 게임만)
-    openSeatOf: user => q("SELECT * FROM seats WHERE user_id = ? AND state IN ('seated', 'staking') ORDER BY at DESC").get(user) || null,
+    // 이 사람이 지금 앉아 있는 자리 (한 번에 한 게임만). 칩을 모두 잃은 하우스 게임 자리(칩 0, 진행 중 0)는 빈 자리로 본다
+    openSeatOf: user => q(`SELECT * FROM seats WHERE user_id = ? AND (state = 'staking' OR (state = 'seated' AND (stack > 0 OR in_play > 0)))
+      ORDER BY at DESC`).get(user) || null,
     seatStaked(session, staked) {
       q("UPDATE seats SET staked = ?, stack = ?, state = 'seated', at = ? WHERE session = ? AND state = 'staking'").run(staked, staked, Date.now(), session)
     },

@@ -8,6 +8,7 @@
 //       onChips({ chips, inPlay, coins }) {},// 칩·코인이 바뀔 때마다
 //       onMessage(msg) {},                 // 게임이 보낸 메시지 (공통 메시지 me·chips·toast·restart는 여기서 처리)
 //       onToast(msg) {},                   // 서버의 알림·거절 { t: 'toast'|'error', msg, ... } — false를 돌려주면 기본 알림을 띄우지 않음
+//       bustDelay: 1200,                   // 칩을 모두 잃은 뒤 파산 안내(→ 로비 캐셔)를 띄우기까지 ms (결과 연출 길이에 맞추기)
 //       onLoggedOut() {},                  // 로그인 안 한 사람 (화면은 보여 주고, 칩 바꾸기 때 로그인 안내)
 //     })
 //     game.send({ t: 'spin', bet: 10 })    // 서버(server/games/<id>)로
@@ -78,6 +79,31 @@ export async function startGame(opts = {}) {
     dlg.showModal()
   }
 
+  // ---------- 파산 안내: 칩을 모두 잃었고 코인도 얼마 없으면 로비 캐셔의 파산 지원금으로 ----------
+  // 받을 수 있는지는 서버가 정한다 (/casino/api/refill: 코인 500 이하, 칩 없음, 하루 10번)
+  const bk = el('dialog', { class: 'casino-dialog' }, `
+    <h2 data-bk-title>칩을 모두 잃었어요</h2>
+    <p data-bk-msg></p>
+    <div class="row"><button class="casino-btn ghost" type="button" data-bk-close>닫기</button><button class="casino-btn" type="button" data-bk-go>캐셔로 가기</button></div>`)
+  document.body.append(bk)
+  bk.querySelector('[data-bk-close]').onclick = () => bk.close()
+  bk.querySelector('[data-bk-go]').onclick = () => {
+    bk.close()
+    if (ws?.readyState === 1) api.send({ t: 'leave' }) // 칩이 0이라 정산할 것은 없지만 자리를 정리
+    setTimeout(() => { location.href = '../?cashier' }, 200)
+  }
+  async function offerRefill() {
+    let s = null
+    try { const r = await fetch('../api/refill', { cache: 'no-store' }); if (r.ok) s = await r.json() } catch {}
+    if (!s || s.why === 'has_coins' || dlg.open) return false
+    bk.querySelector('[data-bk-msg]').innerHTML = s.can ? `로비 캐셔에서 <b>파산 지원금 ${fmt(s.amount)}코인</b>을 받을 수 있어요. (오늘 ${s.left}번 남음)`
+      : s.why === 'daily_limit' ? `오늘 받을 수 있는 파산 지원금(하루 ${s.perDay}번)을 다 받았어요. 내일 다시 받을 수 있어요.`
+      : `<b>${s.seat?.title || '다른 게임'}</b>에 칩이 남아 있어요. 그 칩을 코인으로 바꾸면 캐셔에서 받을 수 있어요.`
+    bk.querySelector('[data-bk-go]').hidden = s.why === 'daily_limit'
+    bk.showModal()
+    return true
+  }
+
   function paint() {
     q('[data-coins]').textContent = fmt(state.coins)
     q('[data-chips]').textContent = fmt(state.chips)
@@ -133,7 +159,9 @@ export async function startGame(opts = {}) {
         return
       }
       if (d.t === 'chips') {
+        const busted = state.chips + state.inPlay > 0 && d.chips === 0 && d.inPlay === 0 && d.cashout === undefined
         state.chips = d.chips; state.inPlay = d.inPlay
+        if (busted) setTimeout(offerRefill, opts.bustDelay ?? 1200) // 결과 연출을 본 뒤에 (게임이 bustDelay로 조절)
         if (d.coins !== undefined && d.coins !== null) state.coins = d.coins
         paint()
         opts.onChips?.({ chips: state.chips, inPlay: state.inPlay, coins: state.coins })
