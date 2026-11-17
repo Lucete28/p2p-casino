@@ -1,8 +1,8 @@
 // 화면 + 카지노 서버 연결. 카드 섞기·판 진행·봇·코인 정산은 서버가 하고, 브라우저는 행동만 보내고 상태만 받는다 (v1.8.0~)
-import { connect } from './net.js?v=1.9.1'
-import { CONFIG } from './poker.js?v=1.9.1'
-import * as cloud from './cloud.js?v=1.9.1'
-import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.9.1'
+import { connect } from './net.js?v=1.9.2'
+import { CONFIG } from './poker.js?v=1.9.2'
+import * as cloud from './cloud.js?v=1.9.2'
+import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.9.2'
 
 // 카카오톡·라인 같은 앱 안 브라우저는 외부 브라우저로 (Google 로그인이 막혀 있음. 로그인 화면도 따로 안내함)
 const UA = navigator.userAgent
@@ -15,7 +15,7 @@ else if (/\bLine\//i.test(UA) && !new URLSearchParams(location.search).has('open
   location.replace(u)
 }
 
-const VERSION = '1.9.1' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
+const VERSION = '1.9.2' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
 
 // 연습 토큰 시절의 브라우저 저장값 정리 (토큰은 코인으로 바뀜. 닉네임만 이어 씀)
 const NAME_KEY = 'casino:name'
@@ -226,6 +226,7 @@ function onServer(d) {
       offerRefill('코인이 없어요').then(shown => { if (!shown) showOverlay('코인이 없어요', '앉으려면 코인이 필요해요. 지금은 구경만 할 수 있어요.', true) })
       return
     case 'nojoin': toast(d.msg); clearInvite(); return
+    case 'kickResult': clearTimeout(kickTimer); if (d.msg) toast(d.msg); return
     case 'kicked': clearInvite(); return showOverlay('방에서 나가게 됐어요', '방장이 이 방에서 내보냈어요. 맡긴 코인은 남은 칩만큼 돌려받았어요.')
     case 'left': return backToLobby()
     case 'restart': connectStage = '서버를 다시 시작하는 중… 잠시 뒤 자동으로 다시 들어가요.'; return render()
@@ -272,7 +273,11 @@ $('#seats').addEventListener('click', e => {
   const p = state?.seats.find(x => x.id === b.dataset.kick)
   if (p && !p.bot && !confirm(`${p.name} 님을 방에서 내보낼까요? (남은 칩은 그 사람에게 코인으로 돌아가요)`)) return
   net.send({ t: 'kick', id: b.dataset.kick })
+  net.probe(4000) // 연결이 죽어 있었으면 바로 다시 연결
+  clearTimeout(kickTimer)
+  kickTimer = setTimeout(() => toast('서버 응답이 없어요. 다시 연결하는 중이니 잠시 뒤 한 번 더 눌러 주세요.'), 5000)
 })
+let kickTimer = 0
 $('#bot-add').onclick = () => net?.send({ t: 'bot' })
 $('#sit-btn').onclick = () => { $('#sit-btn').hidden = true; net?.send({ t: 'sit' }) }
 // 탭이 뒤로 갔는지 서버에 알림 (자리 비움을 더 빨리 판단)

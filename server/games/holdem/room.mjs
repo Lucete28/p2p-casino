@@ -176,17 +176,24 @@ export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, wallet, 
       }, EMPTY_CLOSE_MS)
     }
 
+    // 내보내기: 결과를 방장에게 꼭 알려 준다 (말없이 무시되면 눌렀는지 안 됐는지 알 수 없어서)
     kick(by, seatId) {
-      if (by.user !== this.owner) return
       const s = this.table.seat(seatId)
-      if (!s) return
-      if (s.bot) { this.autoBots = false; this.table.removePlayer(seatId, '자리를 비켜줬어요.'); return this.after() }
-      const m = this.humans().find(x => x.seatId === seatId)
-      if (!m || m === by) return
+      const m = s && !s.bot ? this.humans().find(x => x.seatId === seatId) : null
+      console.log(`[holdem ${this.code}] kick by=${by.user} owner=${by.user === this.owner} seat=${seatId} found=${!!s} bot=${!!s?.bot} member=${m?.user || '-'} phase=${this.table.phase}`)
+      if (by.user !== this.owner) return this.sendTo(by, { t: 'kickResult', ok: false, msg: '방장만 내보낼 수 있어요.' })
+      if (!s || s.left) return this.sendTo(by, { t: 'kickResult', ok: false, msg: '이미 자리에서 나간 사람이에요.' })
+      if (s.bot) { this.autoBots = false; this.table.removePlayer(seatId, '자리를 비켜줬어요.'); this.sendTo(by, { t: 'kickResult', ok: true, msg: '' }); return this.after() }
+      if (!m) return this.sendTo(by, { t: 'kickResult', ok: false, msg: '그 사람을 찾지 못했어요. 잠시 뒤 다시 해 주세요.' })
+      if (m === by) return this.sendTo(by, { t: 'kickResult', ok: false, msg: '나 자신은 내보낼 수 없어요.' })
+      const name = s.name
       this.kicked.add(m.user)
       this.sendTo(m, { t: 'kicked' })
+      const later = this.standUpLater(m)
       this.leave(m, '방장이 이 방에서 내보냈어요')
+      this.sendTo(by, { t: 'kickResult', ok: true, msg: later ? `${name} 님은 올인 중이라 이번 판이 끝나면 나가요.` : `${name} 님을 내보냈어요.` })
     }
+    standUpLater(m) { const s = this.seatOf(m); return !!(s && this.table.isBetting() && s.inHand && !s.folded && s.allIn) }
 
     // ---------- 이모지 (앉은 사람만, 정해 둔 것만, 1.2초에 한 번) ----------
     emoji(m, e) {
