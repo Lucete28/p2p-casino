@@ -74,6 +74,11 @@ input:focus { outline: 2px solid var(--gold-dark); border-color: transparent; }
 .btn:disabled { opacity: .4; cursor: not-allowed; filter: none; transform: none; }
 .btn.google { background: #fff; color: #1f1f1f; border-color: #dadce0; }
 .user-line { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; }
+.user-pic { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
+.user-pic[hidden] { display: none; }
+.login-note { margin: 6px 0 0; font-size: 12px; color: var(--muted); text-align: center; }
+.login-note[hidden] { display: none; }
+.btn.google:disabled { opacity: .6; cursor: not-allowed; }
 .or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
 .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .note { margin: 4px 0 0; font-size: 12px; color: var(--muted); text-align: center; line-height: 1.6; }
@@ -223,10 +228,10 @@ header .me-info b { color: var(--gold); }
 .slot-split { display: flex; gap: 6px; }
 .slot-split .btn { flex: 1; min-width: 0; font-size: 13px; padding-left: 4px; padding-right: 4px; }
 .slot-blank {
-  grid-column: span 2; display: flex; align-items: center; justify-content: center; text-align: center;
+  display: flex; align-items: center; justify-content: center; text-align: center;
   border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); font-size: 12px; opacity: .7;
 }
-.actions .raise-wrap + .slot-blank, .actions .row.slots > .slot-blank:not(:last-child) { grid-column: span 1; }
+.actions.pre .slot-blank { grid-column: span 2; } /* 미리 선택에서는 레이즈·올인 두 칸을 한 칸으로 */
 .bar-head { font-size: 12px; font-weight: 700; color: var(--muted); line-height: 16px; height: 16px; overflow: hidden; white-space: nowrap; }
 .bar-head span { font-weight: 400; margin-left: 6px; font-size: 11px; }
 .turn-head { color: var(--gold); }

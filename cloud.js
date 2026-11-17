@@ -1,5 +1,5 @@
 // Firebase(구글 로그인 + Firestore) 연결. 토큰과 재지급 횟수를 계정에 저장해서 기기가 바뀌어도 이어진다.
-import { firebaseConfig } from './firebase-config.js?v=1.7.4'
+import { firebaseConfig } from './firebase-config.js?v=1.7.6'
 
 const SDK = 'https://www.gstatic.com/firebasejs/12.19.0/'
 // 로컬 테스트용: localhost에서 ?emu 를 붙이면 Firebase 에뮬레이터에 연결
@@ -27,8 +27,71 @@ export async function initCloud(onUser) {
     A.connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true })
     F.connectFirestoreEmulator(db, '127.0.0.1', 8080)
   }
-  A.onAuthStateChanged(auth, user => { refreshToken(); onUser(user) })
+  // JMTT 로그인과 Firebase 로그인을 맞춘 뒤에야 화면에 사용자를 알림 (엉뚱한 계정의 잔액을 쓰지 않게)
+  await auth.authStateReady()
+  if (!EMU) await syncJmtt()
+  A.onAuthStateChanged(auth, user => {
+    refreshToken()
+    // 로그인 서버 점검 중이면 Firebase에 남아 있는 로그인을 쓰지 않음
+    onUser(jmttState === 'down' ? null : user, { me: jmttMe, state: EMU ? 'in' : jmttState })
+  })
   setInterval(refreshToken, 20 * 60000) // 로그인 토큰은 1시간짜리라 미리 갱신
+}
+
+// ---------- JMTT 로그인 (DEV_REFERENCE 2-1) ----------
+// 로그인은 JMTT 공통 화면(/auth/login)에서 하고, 카지노는 /auth/firebase-token으로 받은 커스텀 토큰으로 Firebase에 들어간다.
+// 기존 사용자는 예전 Firebase uid 그대로 들어가므로 Firestore 데이터와 규칙은 그대로다.
+let jmttMe = null          // /auth/me 응답 { id, name, picture }
+let jmttState = 'out'      // 'in' 로그인됨 · 'out' 로그인 안 함 · 'down' 로그인 서버 점검 중
+export const jmtt = () => ({ me: jmttMe, state: jmttState })
+
+async function syncJmtt() {
+  let r
+  try { r = await fetch('/auth/me', { credentials: 'same-origin', cache: 'no-store' }) } catch { r = null }
+  if (r?.status === 401) {
+    jmttMe = null; jmttState = 'out'
+    if (auth.currentUser) await A.signOut(auth).catch(() => {})
+    return
+  }
+  if (!r?.ok) { jmttMe = null; jmttState = 'down'; return }
+  jmttMe = await r.json()
+  // 이미 같은 JMTT 사용자로 Firebase에 들어가 있으면 그대로
+  if (auth.currentUser) {
+    try {
+      const t = await auth.currentUser.getIdTokenResult()
+      if (t.claims.jmtt === jmttMe.id) { jmttState = 'in'; return }
+    } catch {}
+  }
+  let tr
+  try { tr = await fetch('/auth/firebase-token', { credentials: 'same-origin', cache: 'no-store' }) } catch { tr = null }
+  if (tr?.status === 401) { jmttMe = null; jmttState = 'out'; if (auth.currentUser) await A.signOut(auth).catch(() => {}); return }
+  if (!tr?.ok) { jmttState = 'down'; return } // 502·503: 로그인 서버 점검 중
+  try {
+    const { token } = await tr.json()
+    await A.signInWithCustomToken(auth, token)
+    jmttState = 'in'
+  } catch (err) { console.warn('firebase custom token', err); jmttState = 'down' }
+}
+
+// 로비처럼 페이지를 떠나도 되는 곳: JMTT 로그인 화면으로 갔다가 이 화면으로 돌아옴 (초대 코드 #ABCDE도 그대로)
+export function loginRedirect() {
+  location.href = '/auth/login?next=' + encodeURIComponent(location.pathname + location.search + location.hash)
+}
+// 방 안이나 초대 링크처럼 페이지를 떠나면 안 되는 곳: 작은 창으로 로그인하고, 끝나면 다시 맞춤
+export function loginPopup() {
+  return new Promise((resolve, reject) => {
+    const w = window.open('/auth/login?popup=1', 'jmtt-login', 'width=480,height=640')
+    if (!w) return reject(new Error('popup_blocked'))
+    const done = async e => {
+      if (e.origin !== location.origin || e.data?.type !== 'jmtt:login') return
+      removeEventListener('message', done)
+      clearInterval(closed)
+      await syncJmtt()
+      resolve(jmttState)
+    }
+    addEventListener('message', done)
+    const closed = setInterval(() => { if (w.closed) { clearInterval(closed); setTimeout(() => { removeEventListener('message', done); resolve(jmttState) }, 500) } }, 500)
+  })
 }
 
 // ---------- 탭이 닫히는 순간에도 끝까지 가는 삭제 요청 ----------
@@ -46,8 +109,15 @@ function deleteOnUnload(path) {
     .catch(() => {})
 }
 
-export const login = () => A.signInWithPopup(auth, new A.GoogleAuthProvider())
-export const logout = () => A.signOut(auth)
+// 로컬 에뮬레이터(?emu)에서만 예전처럼 가짜 Google 로그인 창을 씀 (사이트에서는 JMTT 로그인)
+export const emuLogin = () => A.signInWithPopup(auth, new A.GoogleAuthProvider())
+export const isEmu = EMU
+// 로그아웃은 JMTT 전체에 적용: JMTT 세션을 지우고 Firebase도 나간 뒤 새로고침
+export async function logout() {
+  if (!EMU) await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {})
+  await A.signOut(auth).catch(() => {})
+  location.reload()
+}
 
 export async function loadPlayer(uid) {
   const snap = await F.getDoc(F.doc(db, 'players', uid))

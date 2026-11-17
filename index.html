@@ -16,7 +16,7 @@
   <meta property="og:image:height" content="630">
   <meta property="og:locale" content="ko_KR">
   <meta name="twitter:card" content="summary_large_image">
-  <link rel="stylesheet" href="style.css?v=1.7.4">
+  <link rel="stylesheet" href="style.css?v=1.7.6">
 </head>
 <body>
   <section id="lobby">
@@ -30,8 +30,9 @@
       <div id="invite" class="invite" hidden></div>
 
       <div id="auth" class="auth" hidden>
-        <button id="login" class="btn big google">G 구글로 로그인</button>
-        <div id="user-line" class="user-line" hidden><span id="user-name"></span> 님 로그인됨 <button id="logout" class="chip">로그아웃</button></div>
+        <button id="login" class="btn big google">JMTT로 로그인</button>
+        <p class="login-note">Google 계정으로 JMTT에 로그인해요. 토큰과 기록이 계정에 저장돼요.</p>
+        <div id="user-line" class="user-line" hidden><img id="user-pic" class="user-pic" alt="" hidden referrerpolicy="no-referrer"><span id="user-name"></span> 님 로그인됨 <button id="logout" class="chip">로그아웃</button></div>
       </div>
 
       <label>닉네임 <input id="name" maxlength="12" placeholder="예: 포커왕" autocomplete="off"></label>
@@ -125,6 +126,6 @@
 
   <!-- JMTT 배지 (DEV_REFERENCE 1-11): 시작 화면에서만 보이고, 방에 들어가면 app.js가 숨김. 돌아올 때는 새로고침이라 다시 보임 -->
   <script src="/jmtt-badge.js" defer data-position="bl" data-theme="dark"></script>
-  <script type="module" src="app.js?v=1.7.4"></script>
+  <script type="module" src="app.js?v=1.7.6"></script>
 </body>
 </html>

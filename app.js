@@ -1,9 +1,9 @@
 ﻿// P2P 연결 + 화면. 방을 만든 사람(호스트)이 딜러 역할을 하며 게임 상태를 결정한다.
-import { createNet, selfId } from './net.js?v=1.7.4'
-import { CONFIG, Table } from './poker.js?v=1.7.4'
-import * as cloud from './cloud.js?v=1.7.4'
-import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.7.4'
-import { botDecision, BOT_NAMES } from './bot.js?v=1.7.4'
+import { createNet, selfId } from './net.js?v=1.7.6'
+import { CONFIG, Table } from './poker.js?v=1.7.6'
+import * as cloud from './cloud.js?v=1.7.6'
+import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.7.6'
+import { botDecision, BOT_NAMES } from './bot.js?v=1.7.6'
 
 // 카카오톡·인스타그램 같은 앱 안 브라우저에서는 구글 로그인이 막혀서, 외부 브라우저로 열도록 유도
 const UA = navigator.userAgent
@@ -16,7 +16,7 @@ else if (/\bLine\//i.test(UA) && !new URLSearchParams(location.search).has('open
   location.replace(u)
 }
 
-const VERSION = '1.7.4' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
+const VERSION = '1.7.6' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
 const APP_ID = 'p2p-casino-poker-v1'
 const STORE = 'casino:wallet'
 
@@ -80,8 +80,23 @@ function saveWallet() {
     try { localStorage.setItem(STORE, JSON.stringify(wallet)) } catch {}
   }
 }
-function rollover() {
-  if (wallet.day !== today()) { wallet.day = today(); wallet.refills = 0; saveWallet() }
+// 날짜가 바뀌면 재지급 횟수를 0으로.
+// topUp: 그날 처음 시작할 때(로비에서 불러올 때) 토큰이 기본 토큰보다 적으면 기본 토큰(1000)까지 채움. 재지급 횟수에는 안 셈
+let toppedUp = 0
+function rollover(topUp = false) {
+  if (wallet.day === today()) return
+  wallet.day = today()
+  wallet.refills = 0
+  if (topUp && wallet.tokens < CONFIG.START_TOKENS) {
+    toppedUp = CONFIG.START_TOKENS - wallet.tokens
+    wallet.tokens = CONFIG.START_TOKENS
+  }
+  saveWallet()
+}
+function showTopUp() {
+  if (!toppedUp) return
+  toast(`오늘 첫 접속! 토큰을 ${CONFIG.START_TOKENS.toLocaleString()}개로 채워 드렸어요.`)
+  toppedUp = 0
 }
 // 토큰이 바닥나면 기본 토큰을 다시 준다 (하루 DAILY_REFILLS번까지)
 function refillIfBroke() {
@@ -97,7 +112,7 @@ const canRefill = () => { rollover(); return wallet.tokens <= 0 && wallet.refill
 const wallet = cloud.enabled
   ? { name: '', tokens: 0, day: today(), refills: 0 }
   : loadWallet()
-if (!cloud.enabled) saveWallet()
+if (!cloud.enabled) { rollover(true); saveWallet(); setTimeout(showTopUp, 0) } // 알림은 화면 준비가 끝난 뒤에
 
 // ---------- 상태 ----------
 let net = null, isHost = false, hostId = null
@@ -150,7 +165,7 @@ function showInvite() {
   const box = $('#invite')
   box.hidden = !inviteCode
   if (!inviteCode) return
-  const next = cloud.enabled && !uid ? '구글 로그인하면 바로 들어가요.'
+  const next = cloud.enabled && !uid ? (loginDown ? '로그인 서버 점검 중이라 지금은 들어갈 수 없어요.' : 'JMTT로 로그인하면 바로 들어가요.')
     : !nameInput.value.trim() ? '닉네임을 입력하고 <b>참가하기</b>를 눌러 주세요.'
     : '방에 들어가는 중…'
   box.innerHTML = `🎟 <b>${esc(inviteCode)}</b> 방에 초대받았어요<br><small>${next}</small>`
@@ -238,26 +253,41 @@ $('#quick').onclick = async () => {
   else enter(newCode(), true, { public: true })
 }
 
-// ---------- 로그인 (Firebase 설정 시) ----------
+// ---------- 로그인: JMTT 계정 (DEV_REFERENCE 2-1) ----------
+// 로그인은 JMTT 공통 화면에서. 로비에서는 그 화면으로 갔다가 돌아오고, 방 안·초대 링크처럼 떠나면 안 될 때는 작은 창으로
+let loginDown = false // 로그인 서버 점검 중이면 게임 입장을 막음 (토큰을 엉뚱한 계정에 쓰지 않게)
 if (cloud.enabled) {
   $('#auth').hidden = false
-  $('#login').onclick = () => cloud.login().catch(err => {
-    if (err?.code !== 'auth/popup-closed-by-user') toast('로그인하지 못했어요: ' + (err?.code || err))
-  })
+  $('#login').onclick = async () => {
+    if (cloud.isEmu) return cloud.emuLogin().catch(err => toast('로그인하지 못했어요: ' + (err?.code || err)))
+    if (!roomCode && !inviteCode) return cloud.loginRedirect()
+    try { await cloud.loginPopup() } // 성공하면 Firebase 로그인이 바뀌면서 아래 onUser가 다시 불림
+    catch { toast('로그인 창이 막혔어요. 팝업을 허용하고 다시 눌러 주세요.') }
+  }
   $('#logout').onclick = () => cloud.logout()
   updateLobbyWallet()
-  cloud.initCloud(async user => {
+  cloud.initCloud(async (user, j) => {
     uid = user?.uid || null
+    loginDown = j?.state === 'down'
     $('#login').hidden = !!uid
+    $('#login').disabled = loginDown
+    $('#login').textContent = loginDown ? '로그인 서버 점검 중' : 'JMTT로 로그인'
     $('#user-line').hidden = !uid
+    document.querySelector('.login-note').hidden = !!uid || loginDown
+    if (loginDown) toast('로그인 서버를 점검하고 있어요. 잠시 뒤 다시 들어와 주세요.')
     if (uid) {
-      $('#user-name').textContent = user.displayName || user.email || '플레이어'
+      // 이름은 JMTT 계정 것 (커스텀 토큰 사용자는 Firebase에 이름이 없음). 게임 닉네임은 지금처럼 따로
+      $('#user-name').textContent = j?.me?.name || user.displayName || '플레이어'
+      const pic = j?.me?.picture
+      $('#user-pic').hidden = !pic
+      if (pic) $('#user-pic').src = pic
       try {
         const saved = await cloud.loadPlayer(uid)
         if (saved) Object.assign(wallet, saved)
-        else Object.assign(wallet, { name: (user.displayName || '').slice(0, 12), tokens: CONFIG.START_TOKENS, day: today(), refills: 0 })
-        rollover()
+        else Object.assign(wallet, { name: (j?.me?.name || user.displayName || '').slice(0, 12), tokens: CONFIG.START_TOKENS, day: today(), refills: 0 })
+        rollover(true)
         saveWallet()
+        showTopUp()
         nameInput.value = wallet.name
         if (canRefill()) openBankrupt()
         cloud.recordVisit({ isNew: !saved, via: inviteCode ? 'invite' : 'direct' }).catch(err => console.warn('stats', err))
@@ -1302,7 +1332,8 @@ function renderActions(me) {
   const toCall = state.currentBet - me.bet
   const maxTo = me.bet + me.stack
   const minTo = Math.min(maxTo, state.currentBet + state.minRaise)
-  const canRaise = maxTo > minTo
+  const locked = !!me.raiseLocked // 앞 올인이 최소 레이즈보다 적어서 콜·폴드만 가능
+  const canRaise = maxTo > minTo && !locked
   const verb = state.currentBet ? '레이즈' : '벳'
   const potTotal = state.pot + state.seats.reduce((a, p) => a + p.bet, 0)
   const clamp = v => Math.min(maxTo, Math.max(minTo, Math.round(v)))
@@ -1343,8 +1374,10 @@ function renderActions(me) {
           <button class="rm-opt rm-custom" data-custom role="menuitem"><b>직접</b><small>입력</small></button>
         </div>
         <button class="btn raise" data-a="raise" aria-haspopup="menu"><span class="rv"><em class="rn" id="raise-name"></em> <span id="raise-verb">${verb}</span> <b id="raise-val"></b></span><small class="rhint"><span class="h-mouse">▴ 마우스를 올리면 다른 금액</span><span class="h-touch">▴ 길게 누르면 다른 금액</span></small></button>
-      </div>` : '<div class="slot-blank" aria-hidden="true">레이즈 불가</div>'}
-      <button class="btn allin" data-a="allin">올인 ${maxTo.toLocaleString()}</button>
+      </div>` : `<div class="slot-blank" aria-hidden="true">${locked ? '콜·폴드만 가능' : '레이즈 불가'}</div>`}
+      ${locked && maxTo > state.currentBet
+        ? '<div class="slot-blank" title="앞 사람의 올인이 최소 레이즈보다 적어서 다시 올릴 수 없어요">올인 불가</div>'
+        : `<button class="btn allin" data-a="allin">올인 ${maxTo.toLocaleString()}</button>`}
     </div>
     ${canRaise && custom ? `
     <div class="bet-box">

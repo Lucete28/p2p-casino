@@ -191,7 +191,7 @@ export class Table {
     if (elig.length < 2) { this.phase = 'waiting'; return null }
 
     for (const s of this.seats) {
-      Object.assign(s, { bet: 0, total: 0, folded: false, allIn: false, acted: false, last: '', inHand: elig.includes(s) })
+      Object.assign(s, { bet: 0, total: 0, folded: false, allIn: false, acted: false, raiseLocked: false, last: '', inHand: elig.includes(s) })
     }
     this.handNo++
     this.board = []
@@ -243,6 +243,10 @@ export class Table {
       const maxTo = s.bet + s.stack
       let to = type === 'allin' ? maxTo : Math.floor(Number(amount))
       if (!Number.isFinite(to)) return { ok: false, error: '금액이 올바르지 않습니다.' }
+      // 이미 행동했는데 그 뒤 최소 레이즈보다 적은 올인만 있었으면 다시 올릴 수 없음 (콜·폴드만)
+      if (s.raiseLocked && Math.min(to, maxTo) > this.currentBet) {
+        return { ok: false, error: '앞 사람의 올인이 최소 레이즈보다 적어서 콜이나 폴드만 할 수 있어요.' }
+      }
       if (to >= maxTo) to = maxTo
       else if (to < this.currentBet + this.minRaise) {
         return { ok: false, error: `최소 ${this.currentBet + this.minRaise}까지 올려야 합니다.` }
@@ -255,6 +259,7 @@ export class Table {
       return { ok: false, error: '알 수 없는 행동입니다.' }
     }
     s.acted = true
+    s.raiseLocked = false
     const kind = type === 'fold' ? 'fold' : s.allIn ? 'allin'
       : s.last.startsWith('체크') ? 'check' : s.last.startsWith('콜') ? 'call' : s.last.startsWith('벳') ? 'bet' : 'raise'
     this.lastAction = { id, kind, label: s.last, seq: ++this.actSeq }
@@ -282,6 +287,7 @@ export class Table {
       seats: this.seats.map(s => ({
         id: s.id, name: s.name, stack: s.stack, bet: s.bet, folded: s.folded, allIn: s.allIn,
         inHand: s.inHand, sitOut: s.sitOut, left: s.left, last: s.last, bot: s.bot, total: s.total,
+        raiseLocked: !!s.raiseLocked,
         cards: shown[s.id]?.cards || null,
       })),
     }
@@ -298,10 +304,18 @@ export class Table {
 
   _raiseTo(s, to) {
     const size = to - this.currentBet
+    const full = size >= this.minRaise
     this._put(s, to - s.bet)
-    if (size >= this.minRaise) this.minRaise = size
+    if (full) this.minRaise = size
     this.currentBet = to
-    for (const p of this.seats) if (p !== s && p.inHand && !p.folded && !p.allIn) p.acted = false
+    for (const p of this.seats) {
+      if (p === s || !p.inHand || p.folded || p.allIn) continue
+      // 최소 레이즈보다 적은 올인(불완전 레이즈)은 이미 행동한 사람에게 레이즈 기회를 다시 열지 않는다:
+      // 더 낸 만큼 콜하거나 폴드만 가능 (아직 행동하지 않은 사람은 그대로 레이즈 가능)
+      if (!full && p.acted) p.raiseLocked = true
+      if (full) p.raiseLocked = false
+      p.acted = false
+    }
   }
 
   _setTurn(i) {
@@ -344,6 +358,7 @@ export class Table {
       this.pot += s.bet
       s.bet = 0
       s.acted = false
+      s.raiseLocked = false
     }
     this.currentBet = 0
     this.minRaise = this.cfg.BB

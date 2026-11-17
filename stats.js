@@ -1,5 +1,5 @@
 // 관리자 전용 사용 통계. 보안 규칙에서 admins/{uid} 문서가 있는 계정만 데이터를 읽을 수 있다.
-import * as cloud from './cloud.js?v=1.7.4'
+import * as cloud from './cloud.js?v=1.7.6'
 
 const $ = s => document.querySelector(s)
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`)
@@ -16,17 +16,16 @@ function dayList() {
 
 if (!cloud.enabled) gate('Firebase가 설정되지 않아서 통계를 볼 수 없어요.')
 else {
-  cloud.initCloud(async user => {
+  cloud.initCloud(async (user, j) => {
     if (!user) {
       $('#who').textContent = ''
       $('#refresh').hidden = true
-      gate(`관리자 계정으로 로그인해 주세요.<br><br><button id="login" class="btn big google">G 구글로 로그인</button>`)
-      $('#login').onclick = () => cloud.login().catch(err => {
-        if (err?.code !== 'auth/popup-closed-by-user') gate('로그인하지 못했어요: ' + esc(err?.code || err))
-      })
+      if (j?.state === 'down') return gate('로그인 서버를 점검하고 있어요. 잠시 뒤 다시 열어 주세요.')
+      gate(`관리자 계정으로 로그인해 주세요.<br><br><button id="login" class="btn big google">JMTT로 로그인</button>`)
+      $('#login').onclick = () => (cloud.isEmu ? cloud.emuLogin() : cloud.loginRedirect())
       return
     }
-    $('#who').textContent = user.email || user.displayName || ''
+    $('#who').textContent = j?.me?.name || user.displayName || ''
     let admin = false
     try { admin = await cloud.isAdmin() } catch (err) { console.warn(err) }
     if (!admin) {
