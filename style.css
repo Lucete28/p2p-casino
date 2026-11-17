@@ -95,6 +95,9 @@ header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding
 header .room b { color: var(--gold); letter-spacing: 2px; margin-right: 6px; }
 header .me-info { margin-left: auto; font-size: 14px; }
 header .me-info b { color: var(--gold); }
+/* 게임 화면에서 JMTT 홈으로 (배지는 게임 중에 숨기므로 대신 위쪽에 작게) */
+.jmtt-chip { text-decoration: none; font-weight: 900; letter-spacing: -.3px; }
+.jmtt-chip em { font-style: normal; color: #4c8dff; }
 
 .table-wrap { padding: 46px 40px 60px; }
 .table { position: relative; width: 100%; aspect-ratio: 2 / 1; }
@@ -129,6 +132,29 @@ header .me-info b { color: var(--gold); }
 
 /* 승리 연출 레이어 */
 .fx { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+/* 이모지: 보낸 사람 자리 위로 떠올랐다 사라짐 */
+.emoji-pop { position: absolute; transform: translate(-50%, -50%); font-size: 40px; line-height: 1; filter: drop-shadow(0 3px 6px #000a);
+  animation: emoji-pop 2.6s ease-out forwards; }
+@keyframes emoji-pop {
+  0% { opacity: 0; transform: translate(-50%, -20%) scale(.4); }
+  12% { opacity: 1; transform: translate(-50%, -90%) scale(1.15); }
+  25% { transform: translate(-50%, -100%) scale(1); }
+  80% { opacity: 1; transform: translate(-50%, -130%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -150%) scale(.9); }
+}
+@media (prefers-reduced-motion: reduce) { .emoji-pop { animation-duration: 2.6s; animation-timing-function: steps(1); } }
+.emoji-wrap { position: relative; }
+.emoji-side { display: none; justify-content: space-between; gap: 6px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.emoji-side .emoji-opt { flex: 1; width: auto; height: 44px; font-size: 24px; }
+.emoji-btn { font-size: 18px; padding-left: 12px; padding-right: 12px; }
+.emoji-panel {
+  position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); z-index: 30;
+  display: grid; grid-template-columns: repeat(5, 40px); gap: 4px; padding: 8px;
+  background: #0d1117; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px #000c;
+}
+.emoji-panel[hidden] { display: none; }
+.emoji-opt { width: 40px; height: 40px; font-size: 22px; border-radius: 8px; border: 0; background: transparent; cursor: pointer; }
+.emoji-opt:hover, .emoji-opt:focus-visible { background: #ffffff14; outline: none; }
 .fly-chip {
   position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%;
   background: radial-gradient(circle, #fff3 0 30%, transparent 31%), repeating-conic-gradient(var(--gold) 0 30deg, #9e1c1c 30deg 60deg);
@@ -492,11 +518,16 @@ label.public-check { flex-direction: row; align-items: center; gap: 6px; font-si
   }
   #game > * { grid-column: 1; }
   #game > header { grid-column: 1 / -1; }
-  #game > .odds {
+  #game > .side-col {
     grid-column: 2; grid-row: 2 / span 5; margin-top: 46px; /* 테이블 위쪽 여백과 맞춤 */
     position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto;
+    display: flex; flex-direction: column; gap: 10px;
   }
-  #game > .odds .odds-row { grid-template-columns: 8.5em 1fr 3.6em; }
+  #game > .side-col .odds { margin-top: 0; }
+  #game > .side-col .odds-row { grid-template-columns: 8.5em 1fr 3.6em; }
+  /* PC에서는 이모지를 확률 창 아래에 바로 (😀 버튼은 숨김) */
+  #game.side .emoji-side:not([hidden]) { display: flex; }
+  #game.side .emoji-wrap { display: none; }
 }
 
 /* 족보표 */

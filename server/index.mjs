@@ -224,6 +224,7 @@ async function handle(ws, d) {
     case 'bot': return m && room.botAdd(m)
     case 'kick': return m && room.kick(m, String(d.id || ''))
     case 'hidden': if (m) m.hidden = !!d.v; return
+    case 'emoji': return m && room.emoji(m, String(d.e || ''))
     case 'name': if (m && !room.seatOf(m)) m.name = cleanName(d.name, m.name); return
   }
 }

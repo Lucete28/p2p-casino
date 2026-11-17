@@ -1,8 +1,8 @@
 // 화면 + 카지노 서버 연결. 카드 섞기·판 진행·봇·코인 정산은 서버가 하고, 브라우저는 행동만 보내고 상태만 받는다 (v1.8.0~)
-import { connect } from './net.js?v=1.8.1'
-import { CONFIG } from './poker.js?v=1.8.1'
-import * as cloud from './cloud.js?v=1.8.1'
-import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.8.1'
+import { connect } from './net.js?v=1.8.3'
+import { CONFIG } from './poker.js?v=1.8.3'
+import * as cloud from './cloud.js?v=1.8.3'
+import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.8.3'
 
 // 카카오톡·라인 같은 앱 안 브라우저는 외부 브라우저로 (Google 로그인이 막혀 있음. 로그인 화면도 따로 안내함)
 const UA = navigator.userAgent
@@ -15,7 +15,7 @@ else if (/\bLine\//i.test(UA) && !new URLSearchParams(location.search).has('open
   location.replace(u)
 }
 
-const VERSION = '1.8.1' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
+const VERSION = '1.8.3' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
 
 // 연습 토큰 시절의 브라우저 저장값 정리 (토큰은 코인으로 바뀜. 닉네임만 이어 씀)
 const NAME_KEY = 'casino:name'
@@ -211,6 +211,7 @@ function onServer(d) {
     case 'state': return onState(d.s)
     case 'hole': myHole = d; return render()
     case 'toast': return toast(d.msg)
+    case 'emoji': return showEmoji(d.id, d.e)
     case 'seated':
       coins = 0
       toast(d.pending ? `코인 ${d.staked.toLocaleString()}개를 맡겼어요. 이번 판이 끝나면 봇 대신 앉아요.` : `코인 ${d.staked.toLocaleString()}개를 맡기고 앉았어요.`)
@@ -241,9 +242,11 @@ function enterRoom(d) {
   render()
 }
 
+let exitTo = '' // 나간 뒤 갈 곳 ('' = 로비, '/' = JMTT 홈)
 function backToLobby() {
   clearInvite()
-  location.reload()
+  if (exitTo) location.href = exitTo
+  else location.reload()
 }
 
 function onState(s) {
@@ -412,6 +415,8 @@ function render() {
   $('#start').hidden = true // 판은 서버가 자동으로 시작
   $('#refill-btn').hidden = true
   $('#sit-btn').hidden = !!me || !!connectStage || !!state.waitingSeats?.includes(selfId)
+  $('#emoji-btn').hidden = $('#emoji-side').hidden = !me // 앉은 사람만 이모지를 보낼 수 있음 (PC는 확률 창 아래, 좁은 화면은 😀 버튼)
+  if (!me) closeEmoji()
   $('#back-btn').hidden = !(me && me.sitOut && !me.left)
 
   renderActions(me)
@@ -468,6 +473,40 @@ function showActionFx(a) {
   bub.style.top = 50 + (sy - 50) * 0.45 + '%'
   fx.appendChild(bub)
   setTimeout(() => bub.remove(), 1800)
+}
+
+// ---------- 이모지 ----------
+// server/room.mjs의 EMOJIS와 같게 (정해 둔 것만 오감)
+const EMOJIS = ['🥱', '👍', '😂', '😭', '🔥'] // 하품·좋아요·웃음·울음·불
+$('#emoji-panel').innerHTML = EMOJIS.map(e => `<button class="emoji-opt" data-e="${e}" role="menuitem" aria-label="${e} 보내기">${e}</button>`).join('')
+$('#emoji-side').innerHTML = EMOJIS.map(e => `<button class="emoji-opt" data-e="${e}" aria-label="${e} 보내기" title="${e} 보내기">${e}</button>`).join('')
+function closeEmoji() { $('#emoji-panel').hidden = true; $('#emoji-btn').setAttribute('aria-expanded', 'false') }
+$('#emoji-btn').onclick = () => {
+  const open = $('#emoji-panel').hidden
+  $('#emoji-panel').hidden = !open
+  $('#emoji-btn').setAttribute('aria-expanded', String(open))
+}
+let lastEmoji = 0
+$('#emoji-panel').onclick = $('#emoji-side').onclick = e => {
+  const b = e.target.closest('[data-e]')
+  if (!b) return
+  closeEmoji()
+  if (Date.now() - lastEmoji < 1200) return toast('이모지는 잠깐 쉬었다 보내 주세요.')
+  lastEmoji = Date.now()
+  net?.send({ t: 'emoji', e: b.dataset.e })
+}
+document.addEventListener('pointerdown', e => { if (!e.target.closest('.emoji-wrap')) closeEmoji() })
+// 보낸 사람 자리 위에 잠깐 떠올랐다 사라짐 (자리 그림은 자주 다시 그려서, 효과 층(#fx)에 띄움)
+function showEmoji(id, e) {
+  const seat = document.querySelector(`.seat[data-id="${CSS.escape(id)}"]`)
+  if (!seat || !EMOJIS.includes(e)) return
+  const pop = document.createElement('div')
+  pop.className = 'emoji-pop'
+  pop.textContent = e
+  pop.style.left = seat.style.left
+  pop.style.top = seat.style.top
+  $('#fx').appendChild(pop)
+  setTimeout(() => pop.remove(), 2600)
 }
 
 // ---------- 승리 연출 ----------
@@ -963,14 +1002,18 @@ $('#copy').onclick = async () => {
   catch { prompt('이 링크를 친구에게 보내세요', url) }
 }
 // 나가기: 남은 칩은 코인으로 돌려받음. 판 도중이면 이번 판에 건 칩은 잃음 (올인했으면 판이 끝난 뒤 정산)
-$('#leave').onclick = () => {
+function leaveTable(dest = '') {
   const meSeat = state?.seats.find(p => p.id === selfId)
   if (meSeat?.inHand && !meSeat.folded && BETTING.includes(state.phase)
     && !confirm('게임 중에 나가면 이번 판에 건 칩은 잃어요. 남은 칩은 코인으로 돌려받아요. 나갈까요?')) return
+  exitTo = dest
   if (!net?.ready) return backToLobby()
-  net.send({ t: 'leave' })
-  setTimeout(backToLobby, 3000) // 서버 답이 늦어도 로비로
+  net.send({ t: 'leave' }) // 자리에서 일어나 남은 칩을 코인으로 정산한 뒤 'left'가 오면 이동
+  setTimeout(backToLobby, 3000) // 서버 답이 늦어도 이동
 }
+$('#leave').onclick = () => leaveTable()
+// 게임 화면에서 JMTT 홈으로: 먼저 자리에서 일어나 정산하고 이동 (배지는 게임 중에 숨겨서 대신 위쪽 버튼으로)
+$('#to-jmtt').onclick = e => { e.preventDefault(); leaveTable('/') }
 
 // stay: 확인을 누르면 창만 닫고 지금 화면에 남음 (예: 코인이 없어 구경할 때)
 let overlayStay = false

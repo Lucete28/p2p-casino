@@ -8,6 +8,8 @@ const DISCONNECT_MS = 60000      // 연결이 끊긴 뒤 이만큼 지나면 자
 const AWAY_STAND_MS = 10 * 60000 // 자리 비움이 이만큼 이어지면 자리에서 일으켜 정산
 const AWAY_AFTER = 2             // 시간 초과 자동 행동이 연속 이만큼이면 자리 비움 (탭이 뒤에 있으면 1번)
 const EMPTY_CLOSE_MS = 30000     // 사람이 아무도 없으면 이만큼 뒤 방을 닫음
+// 게임 중 이모지 (app.js의 EMOJIS와 같게). 정해 둔 것만 보낼 수 있어서 글자 채팅 같은 내용은 오가지 않음
+export const EMOJIS = new Set(['🥱', '👍', '😂', '😭', '🔥'])
 
 export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, flush, onClose }) {
   class Room {
@@ -192,6 +194,16 @@ export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, flush, o
       this.kicked.add(m.user)
       this.sendTo(m, { t: 'kicked' })
       this.leave(m, '방장이 이 방에서 내보냈어요')
+    }
+
+    // ---------- 이모지 (앉은 사람만, 정해 둔 것만, 1.2초에 한 번) ----------
+    emoji(m, e) {
+      if (!EMOJIS.has(e) || !this.seatOf(m)) return
+      const now = Date.now()
+      if (now - (m.lastEmoji || 0) < 1200) return
+      m.lastEmoji = now
+      const msg = JSON.stringify({ t: 'emoji', id: m.seatId, e })
+      for (const o of this.members.values()) for (const ws of o.sockets) if (ws.readyState === 1) ws.send(msg)
     }
 
     // ---------- 행동 ----------
