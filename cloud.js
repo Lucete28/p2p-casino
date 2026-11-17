@@ -1,319 +1,56 @@
-// Firebase(구글 로그인 + Firestore) 연결. 토큰과 재지급 횟수를 계정에 저장해서 기기가 바뀌어도 이어진다.
-import { firebaseConfig } from './firebase-config.js?v=1.7.7'
+// JMTT 계정(로그인·코인)과 카지노 서버 API. Firebase는 v1.8.0부터 쓰지 않는다 (판 진행·코인 정산·랭킹·통계는 카지노 서버가 함)
 
-const SDK = 'https://www.gstatic.com/firebasejs/12.19.0/'
-// 로컬 테스트용: localhost에서 ?emu 를 붙이면 Firebase 에뮬레이터에 연결
-const EMU = new URLSearchParams(location.search).has('emu') && ['localhost', '127.0.0.1'].includes(location.hostname)
-
-// 로컬 개발용: localhost에서 ?local 을 붙이면 Firebase 없이 브라우저 저장만 사용
-const LOCAL = new URLSearchParams(location.search).has('local') && ['localhost', '127.0.0.1'].includes(location.hostname)
-
-export const enabled = !LOCAL && !!(firebaseConfig || EMU)
-
-let A, F, auth, db
-
-export async function initCloud(onUser) {
-  const [{ initializeApp }, authMod, fsMod] = await Promise.all([
-    import(SDK + 'firebase-app.js'),
-    import(SDK + 'firebase-auth.js'),
-    import(SDK + 'firebase-firestore.js'),
-  ])
-  A = authMod
-  F = fsMod
-  const app = initializeApp(EMU ? { apiKey: 'demo', projectId: 'demo-poker', authDomain: 'localhost' } : firebaseConfig)
-  auth = A.getAuth(app)
-  db = F.getFirestore(app)
-  if (EMU) {
-    A.connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true })
-    F.connectFirestoreEmulator(db, '127.0.0.1', 8080)
-  }
-  // JMTT 로그인과 Firebase 로그인을 맞춘 뒤에야 화면에 사용자를 알림 (엉뚱한 계정의 잔액을 쓰지 않게)
-  await auth.authStateReady()
-  if (!EMU) await syncJmtt()
-  A.onAuthStateChanged(auth, user => {
-    refreshToken()
-    // 로그인 서버 점검 중이면 Firebase에 남아 있는 로그인을 쓰지 않음
-    onUser(jmttState === 'down' ? null : user, { me: jmttMe, state: EMU ? 'in' : jmttState })
-  })
-  setInterval(refreshToken, 20 * 60000) // 로그인 토큰은 1시간짜리라 미리 갱신
-}
-
-// ---------- JMTT 로그인 (DEV_REFERENCE 2-1) ----------
-// 로그인은 JMTT 공통 화면(/auth/login)에서 하고, 카지노는 /auth/firebase-token으로 받은 커스텀 토큰으로 Firebase에 들어간다.
-// 기존 사용자는 예전 Firebase uid 그대로 들어가므로 Firestore 데이터와 규칙은 그대로다.
-let jmttMe = null          // /auth/me 응답 { id, name, picture }
-let jmttState = 'out'      // 'in' 로그인됨 · 'out' 로그인 안 함 · 'down' 로그인 서버 점검 중
-export const jmtt = () => ({ me: jmttMe, state: jmttState })
-
-async function syncJmtt() {
-  let r
-  try { r = await fetch('/auth/me', { credentials: 'same-origin', cache: 'no-store' }) } catch { r = null }
-  if (r?.status === 401) {
-    jmttMe = null; jmttState = 'out'
-    if (auth.currentUser) await A.signOut(auth).catch(() => {})
-    return
-  }
-  if (!r?.ok) { jmttMe = null; jmttState = 'down'; return }
-  jmttMe = await r.json()
-  // 이미 같은 JMTT 사용자로 Firebase에 들어가 있으면 그대로
-  if (auth.currentUser) {
-    try {
-      const t = await auth.currentUser.getIdTokenResult()
-      if (t.claims.jmtt === jmttMe.id) { jmttState = 'in'; return }
-    } catch {}
-  }
-  let tr
-  try { tr = await fetch('/auth/firebase-token', { credentials: 'same-origin', cache: 'no-store' }) } catch { tr = null }
-  if (tr?.status === 401) { jmttMe = null; jmttState = 'out'; if (auth.currentUser) await A.signOut(auth).catch(() => {}); return }
-  if (!tr?.ok) { jmttState = 'down'; return } // 502·503: 로그인 서버 점검 중
-  try {
-    const { token } = await tr.json()
-    await A.signInWithCustomToken(auth, token)
-    jmttState = 'in'
-  } catch (err) { console.warn('firebase custom token', err); jmttState = 'down' }
-}
-
-// 로비처럼 페이지를 떠나도 되는 곳: JMTT 로그인 화면으로 갔다가 이 화면으로 돌아옴 (초대 코드 #ABCDE도 그대로)
-export function loginRedirect() {
-  location.href = '/auth/login?next=' + encodeURIComponent(location.pathname + location.search + location.hash)
-}
-// 방 안이나 초대 링크처럼 페이지를 떠나면 안 되는 곳: 작은 창으로 로그인하고, 끝나면 다시 맞춤
-export function loginPopup() {
-  return new Promise((resolve, reject) => {
-    const w = window.open('/auth/login?popup=1', 'jmtt-login', 'width=480,height=640')
-    if (!w) return reject(new Error('popup_blocked'))
-    const done = async e => {
-      if (e.origin !== location.origin || e.data?.type !== 'jmtt:login') return
-      removeEventListener('message', done)
-      clearInterval(closed)
-      await syncJmtt()
-      resolve(jmttState)
-    }
-    addEventListener('message', done)
-    const closed = setInterval(() => { if (w.closed) { clearInterval(closed); setTimeout(() => { removeEventListener('message', done); resolve(jmttState) }, 500) } }, 500)
-  })
-}
-
-// ---------- 탭이 닫히는 순간에도 끝까지 가는 삭제 요청 ----------
-// 일반 SDK 요청은 탭이 닫히면 중간에 끊길 수 있어서, 브라우저가 닫힌 뒤에도 보내 주는 keepalive 요청을 씀
-let idToken = null
-async function refreshToken() {
-  try { idToken = (await auth.currentUser?.getIdToken()) || null } catch { idToken = null }
-}
-const restBase = () => (EMU
-  ? 'http://127.0.0.1:8080/v1/projects/demo-poker/databases/(default)/documents'
-  : `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents`)
-function deleteOnUnload(path) {
-  if (!idToken) return
-  fetch(`${restBase()}/${path}`, { method: 'DELETE', keepalive: true, headers: { Authorization: 'Bearer ' + idToken } })
-    .catch(() => {})
-}
-
-// 로컬 에뮬레이터(?emu)에서만 예전처럼 가짜 Google 로그인 창을 씀 (사이트에서는 JMTT 로그인)
-export const emuLogin = () => A.signInWithPopup(auth, new A.GoogleAuthProvider())
-export const isEmu = EMU
-// 로그아웃은 JMTT 전체에 적용: JMTT 세션을 지우고 Firebase도 나간 뒤 새로고침
-export async function logout() {
-  if (!EMU) await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {})
-  await A.signOut(auth).catch(() => {})
-  location.reload()
-}
-
-export async function loadPlayer(uid) {
-  const snap = await F.getDoc(F.doc(db, 'players', uid))
-  return snap.exists() ? snap.data() : null
-}
-
-export const savePlayer = (uid, data) => F.setDoc(F.doc(db, 'players', uid), data)
-
-export const uid = () => auth?.currentUser?.uid || null
-
-// ---------- 사용 통계 (관리자만 볼 수 있음) ----------
-// stats_days/{YYYY-MM-DD}/users/{uid}: 그날 접속한 사람 (하루 한 번만 기록)
-// stats_days/{YYYY-MM-DD}/rooms/{id}: 그날 만든 방 (최대 인원, 플레이한 판 수)
 export const dayKey = (t = Date.now()) => new Date(t + 9 * 3600e3).toISOString().slice(0, 10) // 한국 날짜
-
-// isNew: 오늘 처음 가입했는지, via: 초대 링크로 들어왔는지 ('invite' | 'direct')
-export async function recordVisit({ isNew = false, via = 'direct' } = {}) {
-  const u = uid()
-  if (!u) return
-  const day = dayKey()
-  const key = `casino:visit.${u}.${day}` // 지난 날짜 표시는 남기지 않음 (오늘 것만 있으면 됨)
-  try {
-    for (let i = localStorage.length - 1; i >= 0; i--) {
-      const k = localStorage.key(i)
-      if (k?.startsWith('casino:visit.') && !k.endsWith('.' + day)) localStorage.removeItem(k)
-    }
-  } catch {}
-  try { if (localStorage.getItem(key)) return } catch {}
-  await F.setDoc(F.doc(db, 'stats_days', day, 'users', u), { at: F.serverTimestamp(), isNew, via })
-  try { localStorage.setItem(key, '1') } catch {}
-}
-
-// ---------- 공개 방 목록 ----------
-// lobby/{방코드}: 방장 닉네임, 사람 수, 봇 수, 게임 중인지, 방에 있는 사람들의 계정(방장 이어받기용), 버전
-const LOBBY_FRESH_MS = 75000 // 방장은 30초마다 갱신. 이보다 오래 갱신이 없으면 닫힌 방으로 봄
-
-export function publishRoom(code, info) {
-  return F.setDoc(F.doc(db, 'lobby', code), { ...info, at: F.serverTimestamp() })
-}
-export const unpublishRoom = (code, { unload = false } = {}) =>
-  unload ? (deleteOnUnload(`lobby/${code}`), Promise.resolve()) : F.deleteDoc(F.doc(db, 'lobby', code))
-
-const lobbyQuery = () => F.query(F.collection(db, 'lobby'), F.orderBy('at', 'desc'), F.limit(30))
-const freshRooms = snap => snap.docs
-  .map(d => ({ code: d.id, ...d.data({ serverTimestamps: 'estimate' }) }))
-  .filter(r => Date.now() - (r.at?.toMillis?.() ?? Date.now()) < LOBBY_FRESH_MS)
-
-export function watchLobby(cb) {
-  return F.onSnapshot(lobbyQuery(), snap => cb(freshRooms(snap)), err => console.warn('lobby', err))
-}
-export async function listRooms() {
-  return freshRooms(await F.getDocs(lobbyQuery()))
-}
-
-// ---------- 월간 시즌 랭킹 ----------
-// seasons/{그 달 1일 날짜, 예: 2026-11-01}/players/{uid}: 이번 달 순수익(net), 판 수, 이긴 판 수
-// (v1.6까지는 주간이라 그 주 월요일 날짜를 썼음. 형식이 같아서 보안 규칙은 그대로)
-export function seasonKey(t = Date.now()) {
-  return new Date(t + 9 * 3600e3).toISOString().slice(0, 8) + '01'
-}
-// 지난달 시즌 키
+export const seasonKey = (t = Date.now()) => dayKey(t).slice(0, 8) + '01'                      // 월간 시즌 = 그 달 1일
 export function prevSeasonKey(key = seasonKey()) {
   const d = new Date(key + 'T00:00:00Z')
   d.setUTCMonth(d.getUTCMonth() - 1)
   return d.toISOString().slice(0, 10)
 }
 
-export async function recordHandResult(name, delta) {
-  const u = uid()
-  if (!u) return
-  await F.setDoc(F.doc(db, 'seasons', seasonKey(), 'players', u), {
-    name: String(name || '').slice(0, 12),
-    net: F.increment(delta),
-    hands: F.increment(1),
-    wins: F.increment(delta > 0 ? 1 : 0),
-    at: F.serverTimestamp(),
-  }, { merge: true })
+// 로그인 상태: { state: 'in'|'out'|'down', me: { id, name, picture } | null, coins }
+export async function me() {
+  try {
+    const r = await fetch('/auth/me?optional=1', { credentials: 'same-origin', cache: 'no-store' })
+    if (!r.ok) return { state: 'down', me: null }
+    const u = await r.json()
+    return u ? { state: 'in', me: { id: u.id, name: u.name, picture: u.picture }, coins: u.coins ?? null } : { state: 'out', me: null }
+  } catch { return { state: 'down', me: null } }
 }
 
-export async function loadSeason(season = seasonKey(), n = 10) {
-  const col = F.collection(db, 'seasons', season, 'players')
-  const top = await F.getDocs(F.query(col, F.orderBy('net', 'desc'), F.limit(n)))
-  const rows = top.docs.map(d => ({ uid: d.id, ...d.data() }))
-  let me = null
-  const u = uid()
-  if (u) {
-    const mine = await F.getDoc(F.doc(col, u))
-    if (mine.exists()) {
-      const ahead = await F.getCountFromServer(F.query(col, F.where('net', '>', mine.data().net)))
-      me = { ...mine.data(), rank: ahead.data().count + 1 }
+// 로비처럼 페이지를 떠나도 되는 곳: JMTT 로그인 화면으로 갔다가 이 화면으로 돌아옴 (초대 코드 #ABCDE도 그대로)
+export function loginRedirect() {
+  location.href = '/auth/login?next=' + encodeURIComponent(location.pathname + location.search + location.hash)
+}
+// 방 안이나 초대 링크처럼 페이지를 떠나면 안 되는 곳: 작은 창으로 로그인
+export function loginPopup() {
+  return new Promise((resolve, reject) => {
+    const w = window.open('/auth/login?popup=1', 'jmtt-login', 'width=480,height=640')
+    if (!w) return reject(new Error('popup_blocked'))
+    const done = e => {
+      if (e.origin !== location.origin || e.data?.type !== 'jmtt:login') return
+      removeEventListener('message', done)
+      clearInterval(closed)
+      resolve(true)
     }
-  }
-  const total = (await F.getCountFromServer(col)).data().count
-  return { season, rows, me, total }
+    addEventListener('message', done)
+    const closed = setInterval(() => { if (w.closed) { clearInterval(closed); setTimeout(() => { removeEventListener('message', done); resolve(false) }, 500) } }, 500)
+  })
+}
+// 로그아웃은 JMTT 전체에 적용
+export async function logout() {
+  await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {})
+  location.reload()
 }
 
-export async function recordRoom(code) {
-  if (!uid()) return null
-  return F.addDoc(F.collection(db, 'stats_days', dayKey(), 'rooms'),
-    { by: uid(), code, at: F.serverTimestamp(), maxPlayers: 1, hands: 0 })
+// ---------- 카지노 서버 API ----------
+async function api(path) {
+  const r = await fetch(path, { credentials: 'same-origin', cache: 'no-store' })
+  const body = await r.json().catch(() => ({}))
+  if (!r.ok) { const e = new Error(body.error || 'http_' + r.status); e.status = r.status; e.body = body; throw e }
+  return body
 }
-export const recordHand = ref => F.updateDoc(ref, { hands: F.increment(1) })
-export const recordPlayers = (ref, n) => F.updateDoc(ref, { maxPlayers: n })
-
-export async function isAdmin() {
-  const u = uid()
-  return !!u && (await F.getDoc(F.doc(db, 'admins', u))).exists()
-}
-
-export async function loadStats(days) {
-  return Promise.all(days.map(async day => {
-    const [users, rooms] = await Promise.all([
-      F.getDocs(F.collection(db, 'stats_days', day, 'users')),
-      F.getDocs(F.collection(db, 'stats_days', day, 'rooms')),
-    ])
-    return { day, users: users.docs.map(d => ({ uid: d.id, ...d.data() })), rooms: rooms.docs.map(d => d.data()) }
-  }))
-}
-
-export async function loadPlayers() {
-  const col = F.collection(db, 'players')
-  const [count, top] = await Promise.all([
-    F.getCountFromServer(col),
-    F.getDocs(F.query(col, F.orderBy('tokens', 'desc'), F.limit(10))),
-  ])
-  return { total: count.data().count, top: top.docs.map(d => d.data()) }
-}
-
-// ---------- 중계 (직접 연결이 안 될 때) ----------
-// rooms/{방코드}/peers/{peerId}: 방에 있는 사람 (주기적으로 갱신, 오래되면 나간 것으로 봄)
-// rooms/{방코드}/msgs/{id}: 받는 사람(toUid)만 읽을 수 있는 메시지. 받으면 바로 지움
-const BEAT_MS = 45000
-const STALE_MS = 120000
-
-export function joinRelay(code, selfId, { onPeers, onMessage }) {
-  const { doc, setDoc, deleteDoc, collection, onSnapshot, query, where, addDoc, serverTimestamp } = F
-  const me = auth.currentUser.uid
-  const peersCol = collection(db, 'rooms', code, 'peers')
-  const msgsCol = collection(db, 'rooms', code, 'msgs')
-  const myPeer = doc(peersCol, selfId)
-
-  const beat = () => setDoc(myPeer, { uid: me, at: serverTimestamp() }).catch(err => console.warn('relay beat', err))
-  beat()
-  const beatTimer = setInterval(beat, BEAT_MS)
-
-  let lastPeers = []
-  const emitPeers = () => {
-    const now = Date.now()
-    const fresh = new Map()
-    for (const p of lastPeers) if (p.id !== selfId && now - p.at < STALE_MS) fresh.set(p.id, p.uid)
-    onPeers(fresh)
-  }
-  const unsubPeers = onSnapshot(peersCol, snap => {
-    lastPeers = snap.docs.map(d => {
-      const v = d.data({ serverTimestamps: 'estimate' })
-      return { id: d.id, uid: v.uid, at: v.at?.toMillis?.() ?? Date.now() }
-    })
-    emitPeers()
-  }, err => console.warn('relay peers', err))
-  const staleTimer = setInterval(emitPeers, 20000)
-
-  const lastState = {}
-  const unsubMsgs = onSnapshot(query(msgsCol, where('toUid', '==', me)), snap => {
-    const mine = []
-    for (const c of snap.docChanges()) {
-      if (c.type !== 'added') continue
-      const m = c.doc.data({ serverTimestamps: 'estimate' })
-      if (m.to === selfId) { mine.push(m); deleteDoc(c.doc.ref).catch(() => {}) }
-      // 같은 계정의 예전 접속으로 온 오래된 메시지는 정리
-      else if (Date.now() - (m.t?.toMillis?.() ?? Date.now()) > STALE_MS) deleteDoc(c.doc.ref).catch(() => {})
-    }
-    mine.sort((a, b) => a.n - b.n)
-    for (const m of mine) {
-      if (m.a === 'state') {
-        if (m.n <= (lastState[m.from] ?? 0)) continue // 늦게 도착한 옛 상태는 버림
-        lastState[m.from] = m.n
-      }
-      let data
-      try { data = JSON.parse(m.d) } catch { continue }
-      onMessage(m.a, data, m.from)
-    }
-  }, err => console.warn('relay msgs', err))
-
-  let n = 0
-  return {
-    send(toId, toUid, a, data) {
-      addDoc(msgsCol, { to: toId, toUid, from: selfId, fromUid: me, a, d: JSON.stringify(data), n: ++n, t: serverTimestamp() })
-        .catch(err => console.warn('relay send', err))
-    },
-    leave(unload = false) {
-      clearInterval(beatTimer)
-      clearInterval(staleTimer)
-      unsubPeers()
-      unsubMsgs()
-      if (unload) deleteOnUnload(`rooms/${code}/peers/${selfId}`)
-      else deleteDoc(myPeer).catch(() => {})
-    },
-  }
-}
+// 월간 랭킹 (코인 순이익): { season, rows: [{ name, net, hands, me }], me: { rank, net, hands } | null, total }
+export const loadSeason = (month = seasonKey(), n = 10) => api(`api/season?month=${month}&n=${n}`)
+// 관리자 통계 (CASINO_ADMINS에 있는 JMTT 사용자만)
+export const loadStats = () => api('api/stats')

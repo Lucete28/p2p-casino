@@ -1,11 +1,10 @@
-﻿// P2P 연결 + 화면. 방을 만든 사람(호스트)이 딜러 역할을 하며 게임 상태를 결정한다.
-import { createNet, selfId } from './net.js?v=1.7.7'
-import { CONFIG, Table } from './poker.js?v=1.7.7'
-import * as cloud from './cloud.js?v=1.7.7'
-import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.7.7'
-import { botDecision, BOT_NAMES } from './bot.js?v=1.7.7'
+// 화면 + 카지노 서버 연결. 카드 섞기·판 진행·봇·코인 정산은 서버가 하고, 브라우저는 행동만 보내고 상태만 받는다 (v1.8.0~)
+import { connect } from './net.js?v=1.8.0'
+import { CONFIG } from './poker.js?v=1.8.0'
+import * as cloud from './cloud.js?v=1.8.0'
+import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.8.0'
 
-// 카카오톡·인스타그램 같은 앱 안 브라우저에서는 구글 로그인이 막혀서, 외부 브라우저로 열도록 유도
+// 카카오톡·라인 같은 앱 안 브라우저는 외부 브라우저로 (Google 로그인이 막혀 있음. 로그인 화면도 따로 안내함)
 const UA = navigator.userAgent
 const IN_APP = /KAKAOTALK|Instagram|FBAN|FBAV|NAVER\(inapp|DaumApps|everytimeApp|\bLine\//i.test(UA)
 const openExternal = () => { location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href) }
@@ -16,27 +15,17 @@ else if (/\bLine\//i.test(UA) && !new URLSearchParams(location.search).has('open
   location.replace(u)
 }
 
-const VERSION = '1.7.7' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
-const APP_ID = 'p2p-casino-poker-v1'
-const STORE = 'casino:wallet'
+const VERSION = '1.8.0' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
 
-// JMTT의 모든 앱이 같은 주소라 브라우저 저장소를 함께 쓴다. 그래서 저장 키는 'casino:'로 시작한다 (v1.7.1).
-// 예전 키(p2pcasino.*)에 있던 값은 새 키로 옮기고 지운다
-;(function migrateKeys() {
+// 연습 토큰 시절의 브라우저 저장값 정리 (토큰은 코인으로 바뀜. 닉네임만 이어 씀)
+const NAME_KEY = 'casino:name'
+;(function cleanupOldKeys() {
   try {
-    for (const [from, to] of [['p2pcasino.v1', STORE], ['p2pcasino.odds', 'casino:odds'], ['p2pcasino.raise', 'casino:raise']]) {
-      const v = localStorage.getItem(from)
-      if (v === null) continue
-      if (localStorage.getItem(to) === null) localStorage.setItem(to, v)
-      localStorage.removeItem(from)
-    }
-    // 하루 한 번 접속 기록 표시: 오늘 것만 새 이름으로 옮기고 지난 날짜 것은 지움
-    const today = cloud.dayKey()
+    const oldWallet = JSON.parse(localStorage.getItem('casino:wallet') || 'null')
+    if (oldWallet?.name && !localStorage.getItem(NAME_KEY)) localStorage.setItem(NAME_KEY, oldWallet.name)
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i)
-      if (!k?.startsWith('p2pcasino.visit.')) continue
-      if (k.endsWith('.' + today)) localStorage.setItem('casino:visit.' + k.slice('p2pcasino.visit.'.length), '1')
-      localStorage.removeItem(k)
+      if (k === 'casino:wallet' || k?.startsWith('casino:visit.') || k?.startsWith('p2pcasino.')) localStorage.removeItem(k)
     }
   } catch {}
 })()
@@ -50,94 +39,29 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
 const $ = s => document.querySelector(s)
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`)
 
-// ---------- 지갑 (토큰 + 오늘 재지급 횟수) ----------
-// Firebase를 설정했으면 로그인한 계정(Firestore)에, 아니면 이 브라우저(localStorage)에 저장한다.
-// 재지급 횟수는 화면에 보여주지 않고, 다 쓴 사람에게만 "내일 다시"를 알려준다.
-const today = () => Math.floor((Date.now() + 9 * 3600e3) / 86400e3) // 한국 시간 기준 날짜 번호
-function loadWallet() {
-  let w = null
-  try { w = JSON.parse(localStorage.getItem(STORE)) } catch {}
-  w = w || { name: '', tokens: CONFIG.START_TOKENS, day: today(), refills: 0 }
-  return { name: w.name || '', tokens: w.tokens | 0, day: w.day ?? today(), refills: w.refills | 0 }
-}
-let uid = null, cloudTimer = null, cloudWarned = false, lastSaved = ''
-function saveWallet() {
-  if (cloud.enabled) {
-    if (!uid) return
-    clearTimeout(cloudTimer)
-    cloudTimer = setTimeout(() => {
-      const data = { name: wallet.name, tokens: wallet.tokens, day: wallet.day, refills: wallet.refills }
-      const json = JSON.stringify(data)
-      if (json === lastSaved) return // 바뀐 게 없으면 저장 생략 (무료 쓰기 한도 절약)
-      lastSaved = json
-      cloud.savePlayer(uid, data).catch(err => {
-        lastSaved = ''
-        console.warn('저장 실패', err)
-        if (!cloudWarned) { cloudWarned = true; toast('토큰 저장에 실패했어요. 인터넷 연결을 확인하세요.') }
-      })
-    }, 600)
-  } else {
-    try { localStorage.setItem(STORE, JSON.stringify(wallet)) } catch {}
-  }
-}
-// 날짜가 바뀌면 재지급 횟수를 0으로.
-// topUp: 그날 처음 시작할 때(로비에서 불러올 때) 토큰이 기본 토큰보다 적으면 기본 토큰(1000)까지 채움. 재지급 횟수에는 안 셈
-let toppedUp = 0
-function rollover(topUp = false) {
-  if (wallet.day === today()) return
-  wallet.day = today()
-  wallet.refills = 0
-  if (topUp && wallet.tokens < CONFIG.START_TOKENS) {
-    toppedUp = CONFIG.START_TOKENS - wallet.tokens
-    wallet.tokens = CONFIG.START_TOKENS
-  }
-  saveWallet()
-}
-function showTopUp() {
-  if (!toppedUp) return
-  toast(`오늘 첫 접속! 토큰을 ${CONFIG.START_TOKENS.toLocaleString()}개로 채워 드렸어요.`)
-  toppedUp = 0
-}
-// 토큰이 바닥나면 기본 토큰을 다시 준다 (하루 DAILY_REFILLS번까지)
-function refillIfBroke() {
-  rollover()
-  if (wallet.tokens > 0 || wallet.refills >= CONFIG.DAILY_REFILLS) return false
-  wallet.refills++
-  wallet.tokens = CONFIG.START_TOKENS
-  saveWallet()
-  return true
-}
-const outForToday = () => { rollover(); return wallet.tokens <= 0 && wallet.refills >= CONFIG.DAILY_REFILLS }
-const canRefill = () => { rollover(); return wallet.tokens <= 0 && wallet.refills < CONFIG.DAILY_REFILLS }
-const wallet = cloud.enabled
-  ? { name: '', tokens: 0, day: today(), refills: 0 }
-  : loadWallet()
-if (!cloud.enabled) { rollover(true); saveWallet(); setTimeout(showTopUp, 0) } // 알림은 화면 준비가 끝난 뒤에
-
 // ---------- 상태 ----------
-let net = null, isHost = false, hostId = null
-let table = null          // 호스트만 가짐
-let state = null          // 화면에 그릴 공개 상태
-let myHole = null
-let refillPending = false
-let bustPrompted = null
-let running = false
-let turnTimer = null, timerSeq = -1, turnDeadline = 0, nextTimer = null
+let account = null        // JMTT 계정 { id, name, picture } (로그인 안 했으면 null)
+let coins = null          // 내 코인 (앉아 있지 않을 때의 잔액)
+let net = null            // 서버 연결
+let selfId = null         // 이 방에서의 내 자리 ID (서버가 정함)
+let isHost = false        // 방장: 봇 추가·내보내기
+let state = null          // 화면에 그릴 판 상태 (서버가 보냄)
+let myHole = null         // 내 카드 (서버가 나에게만 보냄)
+let turnDeadline = 0
 let raiseTo = 0
 let roomCode = ''
-
-// hidden: 내 탭이 뒤로 가 있는지 (방장이 자리 비움을 더 빨리 판단하는 데 씀). 자리 비움 여부 자체는 방장이 정함
-const myInfo = () => ({ name: wallet.name, tokens: wallet.tokens, uid, hidden: document.hidden })
+let connectStage = ''
+let loginDown = false
 
 // ---------- 로비 ----------
 const nameInput = $('#name'), codeInput = $('#code')
-nameInput.value = wallet.name
+try { nameInput.value = localStorage.getItem(NAME_KEY) || '' } catch {}
 codeInput.value = location.hash.slice(1).toUpperCase()
 $('#version').textContent = $('#version-game').textContent = 'v' + VERSION
 const inviteCode = location.hash.slice(1).toUpperCase()
 if (IN_APP) {
   $('#inapp').hidden = false
-  $('#inapp').innerHTML = `앱 안에서 열린 브라우저에서는 <b>구글 로그인이 안 될 수 있어요.</b><br>
+  $('#inapp').innerHTML = `앱 안에서 열린 브라우저에서는 <b>Google 로그인이 안 될 수 있어요.</b><br>
     오른쪽 위 메뉴(⋮)에서 <b>다른 브라우저로 열기</b>를 눌러 주세요.
     <div class="inapp-btns">${/KAKAOTALK/i.test(UA) ? '<button id="inapp-open" class="btn gold">외부 브라우저로 열기</button>' : ''}
     <button id="inapp-copy" class="btn">링크 복사</button></div>`
@@ -147,15 +71,11 @@ if (IN_APP) {
     catch { prompt('이 링크를 복사해서 크롬이나 사파리에서 열어 주세요', location.href) }
   }
 }
-let autoJoined = false
-updateLobbyWallet()
-if (!cloud.enabled && canRefill()) openBankrupt()
-if (!cloud.enabled) setTimeout(tryAutoJoin) // 스크립트가 모두 준비된 뒤 실행
 
-// 초대 링크(#방코드)로 들어오면 로그인/닉네임이 준비되는 대로 바로 그 방에 입장
+let autoJoined = false
+// 초대 링크(#방코드)로 들어오면 로그인·닉네임이 준비되는 대로 바로 그 방에 입장
 function tryAutoJoin() {
-  if (!inviteCode || autoJoined || roomCode) return
-  if (cloud.enabled && !uid) return
+  if (!inviteCode || autoJoined || roomCode || !net?.ready) return
   if (!nameInput.value.trim()) { nameInput.focus(); return }
   autoJoined = true
   $('#join').click()
@@ -165,595 +85,190 @@ function showInvite() {
   const box = $('#invite')
   box.hidden = !inviteCode
   if (!inviteCode) return
-  const next = cloud.enabled && !uid ? (loginDown ? '로그인 서버 점검 중이라 지금은 들어갈 수 없어요.' : 'Google로 로그인하면 바로 들어가요.')
+  const next = !account ? (loginDown ? '로그인 서버 점검 중이라 지금은 들어갈 수 없어요.' : 'Google로 로그인하면 바로 들어가요.')
     : !nameInput.value.trim() ? '닉네임을 입력하고 <b>참가하기</b>를 눌러 주세요.'
     : '방에 들어가는 중…'
   box.innerHTML = `🎟 <b>${esc(inviteCode)}</b> 방에 초대받았어요<br><small>${next}</small>`
 }
 
 function updateLobbyWallet() {
-  const needLogin = cloud.enabled && !uid
-  $('#lobby-wallet').hidden = needLogin
-  $('#create').disabled = $('#join').disabled = needLogin
-  if (needLogin) return
-  $('#lobby-wallet').innerHTML =
-    `보유 토큰 <b>${wallet.tokens.toLocaleString()}</b>` +
-    (canRefill() ? `<br><button id="lobby-refill" class="btn gold">🪙 기본 토큰 ${CONFIG.START_TOKENS.toLocaleString()} 받기</button>` : '') +
-    (outForToday() ? '<br><span class="out">오늘 받을 수 있는 토큰을 모두 받았어요.<br>내일 다시 참여할 수 있어요.</span>' : '')
-  const btn = $('#lobby-refill')
-  if (btn) btn.onclick = openBankrupt
+  const ready = !!account && !!net?.ready
+  $('#lobby-wallet').hidden = !account
+  $('#create').disabled = $('#join').disabled = $('#quick').disabled = !ready
+  if (account) {
+    $('#lobby-wallet').innerHTML = coins == null ? '코인 불러오는 중…'
+      : `보유 코인 <b>${coins.toLocaleString()}</b><br><small>방에 앉으면 가진 코인을 모두 맡기고, 일어나면 남은 칩을 돌려받아요.</small>`
+      + (coins === 0 ? '<br><span class="out">코인이 없어요. 오른쪽 아래 JMTT 배지에서 출석하면 코인을 받을 수 있어요.</span>' : '')
+  }
   showInvite()
 }
 
 function takeName() {
   const n = nameInput.value.trim().slice(0, 12)
-  if (!n) { nameInput.focus(); toast('닉네임을 입력하세요.'); return false }
-  wallet.name = n
-  saveWallet()
-  return true
+  if (!n) { nameInput.focus(); toast('닉네임을 입력하세요.'); return null }
+  try { localStorage.setItem(NAME_KEY, n) } catch {}
+  return n
 }
 
 $('#create').onclick = () => {
-  if (!takeName()) return
-  enter(newCode(), true, { public: cloud.enabled && !!uid && $('#public-check').checked })
+  const name = takeName()
+  if (name) net.send({ t: 'create', name, public: $('#public-check').checked })
 }
 $('#join').onclick = () => {
-  if (!takeName()) return
+  const name = takeName()
+  if (!name) return
   const code = codeInput.value.trim().toUpperCase()
   if (!code) { codeInput.focus(); toast('방 코드를 입력하세요.'); return }
-  enter(code, false)
+  net.send({ t: 'join', code, name })
 }
 codeInput.onkeydown = e => { if (e.key === 'Enter') $('#join').click() }
 nameInput.onkeydown = e => { if (e.key === 'Enter' && inviteCode) $('#join').click() } // 초대받았으면 닉네임 입력 후 Enter로 바로 입장
 
 // ---------- 공개 방 목록 · 빠른 시작 ----------
-let lobbyUnsub = null
-
-function newCode() {
-  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
-  let code = ''
-  for (let i = 0; i < 5; i++) code += chars[Math.floor(Math.random() * chars.length)]
-  return code
+let roomsTimer = null
+async function refreshRooms() {
+  if (roomCode || !account) return
+  try {
+    const { rooms } = await (await fetch('api/rooms', { cache: 'no-store' })).json()
+    $('#public-box').hidden = false
+    $('#room-list').innerHTML = rooms.length
+      ? rooms.map(r => `<li>
+          <div><b>${esc(r.name)}</b> 님의 방 <span class="rstate ${r.playing ? 'on' : ''}">${r.playing ? '게임 중' : '대기 중'}</span><br>
+          <small>👥 ${r.humans}명${r.bots ? ` (봇 ${r.bots})` : ''} / ${CONFIG.MAX_SEATS}자리</small></div>
+          <button class="btn" data-room="${esc(r.code)}" ${r.humans >= CONFIG.MAX_SEATS ? 'disabled' : ''}>참가</button>
+        </li>`).join('')
+      : '<li class="empty">지금 열린 방이 없어요.<br><b>⚡ 빠른 시작</b>을 누르면 봇과 바로 시작해요!</li>'
+  } catch {}
 }
-
-function startLobbyWatch() {
-  if (!cloud.enabled || !uid || lobbyUnsub || roomCode) return
-  $('#public-box').hidden = false
-  lobbyUnsub = cloud.watchLobby(renderRooms)
-}
-
-function renderRooms(rooms) {
-  const list = rooms.filter(r => r.v === VERSION) // 같은 버전끼리만 (다르면 서로 못 찾을 수 있음)
-  $('#room-list').innerHTML = list.length
-    ? list.map(r => `<li>
-        <div><b>${esc(r.name)}</b> 님의 방 <span class="rstate ${r.playing ? 'on' : ''}">${r.playing ? '게임 중' : '대기 중'}</span><br>
-        <small>👥 ${r.humans}명${r.bots ? ` (봇 ${r.bots})` : ''} / ${CONFIG.MAX_SEATS}자리</small></div>
-        <button class="btn" data-room="${esc(r.code)}" ${r.humans >= CONFIG.MAX_SEATS ? 'disabled' : ''}>참가</button>
-      </li>`).join('')
-    : '<li class="empty">지금 열린 방이 없어요.<br><b>⚡ 빠른 시작</b>을 누르면 봇과 바로 시작해요!</li>'
-}
-
 $('#room-list').onclick = e => {
   const b = e.target.closest('[data-room]')
-  if (b && takeName()) enter(b.dataset.room, false)
+  const name = b && takeName()
+  if (name) net.send({ t: 'join', code: b.dataset.room, name })
 }
-
-// 빈자리 있는 공개 방에 들어가고(사람 많은 방 우선), 없으면 공개 방을 만들어 봇과 바로 시작
-$('#quick').onclick = async () => {
-  if (!takeName()) return
-  $('#quick').disabled = true
-  let room = null
-  try {
-    const rooms = (await cloud.listRooms()).filter(r => r.v === VERSION && r.humans < CONFIG.MAX_SEATS)
-    rooms.sort((a, b) => b.humans - a.humans)
-    room = rooms[0] || null
-  } catch (err) { console.warn('lobby', err) }
-  $('#quick').disabled = false
-  if (room) enter(room.code, false, { quick: true })
-  else enter(newCode(), true, { public: true })
+// 빈자리 있는 공개 방에 서버가 자리를 정해 줌 (없으면 봇과 새 공개 방)
+$('#quick').onclick = () => {
+  const name = takeName()
+  if (name) net.send({ t: 'quick', name })
 }
 
 // ---------- 로그인: JMTT 계정 (DEV_REFERENCE 2-1) ----------
 // 로그인은 JMTT 공통 화면에서. 로비에서는 그 화면으로 갔다가 돌아오고, 방 안·초대 링크처럼 떠나면 안 될 때는 작은 창으로
-let loginDown = false // 로그인 서버 점검 중이면 게임 입장을 막음 (토큰을 엉뚱한 계정에 쓰지 않게)
-if (cloud.enabled) {
-  $('#auth').hidden = false
-  $('#login').onclick = async () => {
-    if (cloud.isEmu) return cloud.emuLogin().catch(err => toast('로그인하지 못했어요: ' + (err?.code || err)))
-    if (!roomCode && !inviteCode) return cloud.loginRedirect()
-    try { await cloud.loginPopup() } // 성공하면 Firebase 로그인이 바뀌면서 아래 onUser가 다시 불림
-    catch { toast('로그인 창이 막혔어요. 팝업을 허용하고 다시 눌러 주세요.') }
-  }
-  $('#logout').onclick = () => cloud.logout()
+$('#auth').hidden = false
+$('#login').onclick = async () => {
+  if (!roomCode && !inviteCode) return cloud.loginRedirect()
+  try { await cloud.loginPopup(); location.reload() }
+  catch { toast('로그인 창이 막혔어요. 팝업을 허용하고 다시 눌러 주세요.') }
+}
+$('#logout').onclick = () => cloud.logout()
+updateLobbyWallet()
+
+;(async function start() {
+  const r = await cloud.me()
+  loginDown = r.state === 'down'
+  account = r.me
+  $('#login').hidden = !!account
+  $('#login').disabled = loginDown
+  $('#login span').textContent = loginDown ? '로그인 서버 점검 중' : 'Google로 로그인'
+  $('#user-line').hidden = !account
+  document.querySelector('.login-note').hidden = !!account || loginDown
+  if (loginDown) toast('로그인 서버를 점검하고 있어요. 잠시 뒤 다시 들어와 주세요.')
+  if (!account) return updateLobbyWallet()
+  // 이름은 JMTT 계정 것, 게임 닉네임은 따로 (처음이면 JMTT 이름으로)
+  $('#user-name').textContent = account.name || '플레이어'
+  $('#user-pic').hidden = !account.picture
+  if (account.picture) $('#user-pic').src = account.picture
+  if (!nameInput.value) nameInput.value = (account.name || '').slice(0, 12)
+  coins = r.coins ?? null
   updateLobbyWallet()
-  cloud.initCloud(async (user, j) => {
-    uid = user?.uid || null
-    loginDown = j?.state === 'down'
-    $('#login').hidden = !!uid
-    $('#login').disabled = loginDown
-    $('#login span').textContent = loginDown ? '로그인 서버 점검 중' : 'Google로 로그인'
-    $('#user-line').hidden = !uid
-    document.querySelector('.login-note').hidden = !!uid || loginDown
-    if (loginDown) toast('로그인 서버를 점검하고 있어요. 잠시 뒤 다시 들어와 주세요.')
-    if (uid) {
-      // 이름은 JMTT 계정 것 (커스텀 토큰 사용자는 Firebase에 이름이 없음). 게임 닉네임은 지금처럼 따로
-      $('#user-name').textContent = j?.me?.name || user.displayName || '플레이어'
-      const pic = j?.me?.picture
-      $('#user-pic').hidden = !pic
-      if (pic) $('#user-pic').src = pic
-      try {
-        const saved = await cloud.loadPlayer(uid)
-        if (saved) Object.assign(wallet, saved)
-        else Object.assign(wallet, { name: (j?.me?.name || user.displayName || '').slice(0, 12), tokens: CONFIG.START_TOKENS, day: today(), refills: 0 })
-        rollover(true)
-        saveWallet()
-        showTopUp()
-        nameInput.value = wallet.name
-        if (canRefill()) openBankrupt()
-        cloud.recordVisit({ isNew: !saved, via: inviteCode ? 'invite' : 'direct' }).catch(err => console.warn('stats', err))
-      } catch (err) {
-        console.warn(err)
-        toast('저장된 정보를 불러오지 못했어요.')
-        uid = null
-      }
-    }
-    updateLobbyWallet()
-    if (uid) tryAutoJoin()
-    if (!roomCode) { loadSeasonInto($('#season-lobby'), 5, false); startLobbyWatch() }
-  }).catch(err => { console.warn(err); toast('Firebase에 연결하지 못했어요.') })
+  openNet()
+  loadSeasonInto($('#season-lobby'), 5, false)
+  refreshRooms()
+  roomsTimer = setInterval(refreshRooms, 5000)
+})()
+
+// ---------- 서버 연결 ----------
+function openNet() {
+  net = connect({
+    onOpen() {
+      connectStage = ''
+      updateLobbyWallet()
+      if (roomCode) net.send({ t: 'join', code: roomCode, name: nameInput.value.trim() || account?.name }) // 다시 연결되면 같은 자리로
+      else tryAutoJoin()
+    },
+    onClose(info) {
+      updateLobbyWallet()
+      if (info?.auth) { toast('로그인이 풀렸어요. 다시 로그인해 주세요.'); return setTimeout(() => location.reload(), 1500) }
+      if (roomCode) { connectStage = '서버와 다시 연결하는 중…'; render() }
+    },
+    onMessage: onServer,
+  })
 }
 
-// ---------- 방 입장 ----------
-const kicked = new Set() // 방장이 내보낸 사람 (이번 방에서 다시 받지 않음)
-let stateSeq = 0, lastStateSeq = 0
-let statRoom = null, statMax = 1 // 사용 통계: 이 방의 기록 문서와 최대 인원
+function onServer(d) {
+  switch (d.t) {
+    case 'me': coins = d.coins; updateLobbyWallet(); return
+    case 'joined': return enterRoom(d)
+    case 'state': return onState(d.s)
+    case 'hole': myHole = d; return render()
+    case 'toast': return toast(d.msg)
+    case 'seated': coins = 0; toast(`코인 ${d.staked.toLocaleString()}개를 맡기고 앉았어요.`); window.JMTT?.badge?.refresh?.(); return render()
+    case 'cashout':
+      toast(`${d.why ? d.why + ' · ' : ''}코인 ${d.amount.toLocaleString()}개를 돌려받았어요.`)
+      window.JMTT?.badge?.refresh?.()
+      return render()
+    case 'nocoins': return showOverlay('코인이 없어요', '앉으려면 코인이 필요해요. JMTT 배지에서 출석하면 하루 100코인을 받을 수 있어요. 지금은 구경만 할 수 있어요.', true)
+    case 'nojoin': toast(d.msg); clearInvite(); return
+    case 'kicked': clearInvite(); return showOverlay('방에서 나가게 됐어요', '방장이 이 방에서 내보냈어요. 맡긴 코인은 남은 칩만큼 돌려받았어요.')
+    case 'left': return backToLobby()
+    case 'restart': connectStage = '서버를 다시 시작하는 중… 잠시 뒤 자동으로 다시 들어가요.'; return render()
+  }
+}
 
-function enter(code, host, { public: pub = false, quick = false } = {}) {
-  roomCode = code
-  isHost = host
-  if (lobbyUnsub) { lobbyUnsub(); lobbyUnsub = null }
-  // 게스트만 주소에 방 코드를 남김 (새로고침하면 그 방으로 다시 들어감). 방장은 새로고침하면 로비로
-  history.replaceState(null, '', location.pathname + location.search + (host ? '' : '#' + code))
+function enterRoom(d) {
+  roomCode = d.code
+  selfId = d.seatId
+  myHole = null
+  clearInterval(roomsTimer)
+  history.replaceState(null, '', location.pathname + location.search + '#' + d.code) // 새로고침해도 같은 방·같은 자리로
   $('#lobby').hidden = true
   $('#game').hidden = false
-  window.JMTT?.badge?.hide() // 게임 중에는 JMTT 배지를 숨김 (로비로 돌아올 때는 새로고침이라 다시 보임)
-  $('#room-code').textContent = code
-
-  net = createNet(APP_ID, code, { onJoin: onPeerJoin, onLeave: onPeerLeave, onMessage: onNetMessage })
-
-  if (isHost) {
-    hostId = selfId
-    table = new Table()
-    table.addPlayer(selfId, wallet.name, wallet.tokens)
-    isPublic = autoBots = running = pub // 공개 방은 봇으로 채우고 바로 시작
-    maintainBots()
-    if (isPublic) startLobbyHeartbeat()
-    if (cloud.enabled) cloud.recordRoom(code).then(ref => { statRoom = ref }).catch(err => console.warn('stats', err))
-    window.addEventListener('beforeunload', warnUnload)
-    afterChange()
-  } else {
-    render()
-    watchConnection()
-    // 빠른 시작으로 들어간 방이 8초 안에 응답이 없으면(방장이 이미 나간 방) 새 공개 방을 만들어 바로 시작
-    if (quick) setTimeout(() => {
-      if (state || roomCode !== code) return
-      net.leave()
-      toast('그 방은 이미 닫혀서 새 방을 만들었어요.')
-      enter(newCode(), true, { public: true })
-    }, 8000)
-  }
-}
-
-function onPeerJoin(p) {
-  if (isHost) { if (!kicked.has(p)) net.send('state', publicState(), p) }
-  else net.send('info', myInfo(), p)
-}
-
-function onPeerLeave(p) {
-  if (isHost) { table.removePlayer(p); afterChange() }
-  else if (p === hostId) migrateHost(p)
-}
-
-function onNetMessage(a, d, from) {
-  if (a === 'state' && d?.hostId === from && from !== selfId) {
-    const ep = d.epoch || 0
-    if (isHost) {
-      if (ep > hostEpoch || (ep === hostEpoch && from < selfId)) stepDown(from, d)
-      return
-    }
-    if (from !== hostId) {
-      if (hostId && ep <= hostEpoch) return // 옛 방장이 보낸 상태는 무시
-      hostId = from
-      lastStateSeq = 0
-    }
-    if (d.seq && d.seq <= lastStateSeq) return // 늦게 도착한 옛 상태
-    lastStateSeq = d.seq || 0
-    hostEpoch = ep
-    lastHostMsg = Date.now()
-    migrating = null
-    return onState(d)
-  }
-  if (isHost) {
-    if (kicked.has(from)) return
-    if (a === 'info') onInfo(from, d)
-    else if (a === 'move') hostMove(from, d)
-    return
-  }
-  if (from !== hostId) return
-  lastHostMsg = Date.now()
-  if (a === 'hole') onHole(d)
-  else if (a === 'kick') onKicked()
-}
-
-// ---------- 연결 상태 ----------
-let connectStage = ''
-function watchConnection() {
-  connectStage = '방장을 찾는 중…'
+  window.JMTT?.badge?.hide() // 게임 중에는 JMTT 배지를 숨김
+  $('#room-code').textContent = d.code
   render()
-  setTimeout(() => {
-    if (state) return
-    connectStage = net.relayOn ? '직접 연결이 늦어서 중계 서버로도 찾는 중…' : '연결이 늦어지고 있어요…'
-    render()
-  }, 6000)
-  setTimeout(() => { if (!state) { connectStage = 'fail'; render() } }, 30000)
 }
 
-// ---------- 추방 ----------
-function kickPlayer(id) {
-  const s = table.seat(id)
-  if (!s || id === selfId) return
-  if (s.bot) {
-    autoBots = false
-    table.removePlayer(id, '자리를 비켜줬어요.')
-    return afterChange()
-  }
-  if (!confirm(`${s.name} 님을 방에서 내보낼까요?`)) return
-  kicked.add(id)
-  net.send('kick', {}, id)
-  table.removePlayer(id, '방장에 의해 퇴장했습니다.')
-  afterChange()
-}
-
-function onKicked() {
-  net.leave()
+function backToLobby() {
   clearInvite()
-  showOverlay('방에서 나가게 됐어요', '방장이 이 방에서 내보냈어요. 로비로 돌아가 다른 방에 참가할 수 있어요.')
+  location.reload()
 }
 
-$('#seats').addEventListener('click', e => {
-  const b = e.target.closest('[data-kick]')
-  if (b && isHost) kickPlayer(b.dataset.kick)
-})
-
-function clearInvite() { history.replaceState(null, '', location.pathname + location.search) }
-
-function sendInfo() {
-  if (isHost) { table.updateInfo(selfId, myInfo()); afterChange() }
-  else if (hostId) net.send('info', myInfo(), hostId)
-}
-
-
-// ---------- 공개 방 등록 (방장) ----------
-let isPublic = false, autoBots = false, lobbyKey = '', lobbyTimer = null
-const uidOf = {} // 접속 ID → 계정 uid (방장 이어받기 권한용)
-
-function lobbyInfo() {
-  const humans = table.seats.filter(p => !p.bot && !p.left)
-  return {
-    name: String(table.seat(selfId)?.name || wallet.name || '방장').slice(0, 12),
-    humans: humans.length,
-    bots: table.seats.filter(p => p.bot).length,
-    playing: table.isBetting(),
-    members: [...new Set([uid, ...humans.map(p => uidOf[p.id]).filter(Boolean)])].slice(0, 6),
-    hostUid: uid,
-    v: VERSION,
-  }
-}
-
-function syncLobby(force) {
-  if (!isPublic || !isHost || !cloud.enabled || !uid) return
-  const info = lobbyInfo()
-  const key = JSON.stringify(info)
-  if (!force && key === lobbyKey) return
-  lobbyKey = key
-  cloud.publishRoom(roomCode, info).catch(err => console.warn('lobby', err))
-}
-
-function startLobbyHeartbeat() {
-  clearInterval(lobbyTimer)
-  lobbyTimer = setInterval(() => syncLobby(true), 30000)
-}
-// 방장이 탭을 닫으면 목록에서 내리기를 시도 (안 되더라도 75초 뒤엔 목록에서 사라짐)
-addEventListener('pagehide', () => { if (isHost && isPublic && cloud.enabled) cloud.unpublishRoom(roomCode, { unload: true }).catch(() => {}) })
-
-// ---------- 봇 (방장 브라우저에서 운영) ----------
-let botTimerSeq = -1
-
-function addBot() {
-  if (table.seats.length >= CONFIG.MAX_SEATS) return false
-  const used = new Set(table.seats.map(p => p.name))
-  const name = BOT_NAMES.find(n => !used.has(n)) || '봇' // 이름이 '~봇'으로 끝나서 따로 아이콘·표시를 붙이지 않음
-  table.addPlayer('bot-' + Math.random().toString(36).slice(2, 8), name, CONFIG.START_TOKENS, { bot: true })
-  return true
-}
-
-function removeBot() {
-  const b = [...table.seats].reverse().find(p => p.bot && !(p.inHand && table.isBetting()))
-  if (b) table.removePlayer(b.id, '자리를 비켜줬어요.')
-  return !!b
-}
-
-// 공개 방: 사람이 3명이 안 되면 봇으로 3자리를 채우고, 사람이 늘면 봇이 비켜줌 (판 사이에만)
-function maintainBots() {
-  if (!autoBots || table.isBetting()) return
-  const humans = table.seats.filter(p => !p.bot && !p.left).length
-  const want = Math.max(0, 3 - humans)
-  let bots = table.seats.filter(p => p.bot).length
-  while (bots < want && addBot()) bots++
-  while (bots > want && removeBot()) bots--
-}
-
-function runBots() {
-  const id = table.toActId()
-  if (!id || !table.seat(id)?.bot || botTimerSeq === table.turnSeq) return
-  const seq = botTimerSeq = table.turnSeq
-  setTimeout(() => {
-    if (!isHost || table.turnSeq !== seq || table.toActId() !== id) return
-    const d = botDecision(table, id)
-    let r = table.act(id, d.type, d.amount)
-    if (!r.ok) { const s = table.seat(id); r = table.act(id, table.currentBet > s.bet ? 'call' : 'check') }
-    if (!r.ok) table.act(id, 'fold')
-    afterChange()
-  }, 700 + Math.random() * 1100)
-}
-
-$('#bot-add').onclick = () => {
-  if (!isHost) return
-  autoBots = false // 직접 조절하면 자동 채우기는 끔
-  if (!addBot()) toast('자리가 꽉 찼어요.')
-  afterChange()
-}
-
-// ---------- 방장 이어받기 ----------
-// 방장이 나가거나(탭 닫기) 한동안 아무 신호가 없으면(화면 켜짐 25초, 꺼짐 75초), 남은 사람 중 자리 순서상 첫 번째가 새 방장이 된다.
-// 모두 같은 규칙으로 계산하므로 따로 정할 필요 없음. 방장이 바뀔 때마다 epoch를 1씩 올려서,
-// 휴대폰 화면이 꺼지는 등 잠깐 멈췄던 옛 방장이 돌아와도 더 높은 epoch를 보면 스스로 일반 참가자로 내려온다.
-let hostEpoch = 0, lastHostMsg = Date.now(), migrating = null
-// 방장 화면이 켜져 있으면 25초, 꺼져 있다고 알려 왔으면(크롬은 숨겨진 탭의 타이머를 1분에 한 번까지 늦춤) 75초
-const HOST_SILENT_MS = 25000, HOST_HIDDEN_SILENT_MS = 75000
-
-function migrateHost(goneId, gone = new Set()) {
-  gone.add(goneId)
-  const prev = state
-  const next = prev?.seats.find(s => !s.bot && !s.left && !gone.has(s.id))
-  if (!next) {
-    migrating = null
-    clearInvite()
-    showOverlay('방장이 나갔습니다', '방에 남은 사람이 없어서 게임이 끝났어요. 로비로 돌아가 주세요.')
-    return
-  }
-  if (next.id === selfId) { migrating = null; return becomeHost(prev, gone) }
-  migrating = next.id
-  hostId = next.id
-  lastStateSeq = 0
-  lastHostMsg = Date.now()
-  toast(`방장이 나가서 ${next.name} 님이 방장을 이어받아요.`)
-  net.send('info', myInfo(), hostId)
-  // 이어받을 사람도 응답이 없으면 그다음 사람으로
-  setTimeout(() => { if (migrating === next.id && state === prev) migrateHost(next.id, gone) }, 12000)
-}
-
-function becomeHost(prev, gone) {
-  const aborted = BETTING.includes(prev.phase)
-  isHost = true
-  hostId = selfId
-  hostEpoch = (prev.epoch || 0) + 1
-  isPublic = !!prev.public
-  autoBots = !!prev.autoBots
-  running = !!prev.running
-  table = new Table()
-  table.seats = prev.seats.filter(p => !gone.has(p.id) && !p.left).map(p => ({
-    id: p.id, name: p.name,
-    stack: p.stack + (aborted && p.inHand ? p.total || 0 : 0), // 진행 중이던 판에 건 토큰은 돌려줌
-    bet: 0, total: 0, folded: false, allIn: false, acted: false, inHand: false,
-    sitOut: false, left: false, last: '', bot: !!p.bot,
-  }))
-  table.dealerId = prev.dealerId
-  table.handNo = prev.handNo
-  table.log = [...prev.log]
-  table.addLog(`방장이 나가서 ${table.seat(selfId)?.name || '내'} 님이 방장을 이어받았어요.`)
-  if (aborted) table.addLog('진행 중이던 판은 무효로 하고 건 토큰을 돌려줬어요.')
-  stateSeq = Math.max(stateSeq, prev.seq || 0)
-  kicked.clear()
-  timerSeq = -1
-  botTimerSeq = -1
-  window.addEventListener('beforeunload', warnUnload)
-  toast('방장이 나가서 내가 방장을 이어받았어요.')
-  if (isPublic) { startLobbyHeartbeat(); syncLobby(true) }
-  afterChange()
-}
-
-// 내가 방장인데 더 새로운 방장의 상태가 오면(내가 잠깐 멈춘 사이 이어받음) 일반 참가자로 내려옴
-function stepDown(from, d) {
-  isHost = false
-  hostId = from
-  hostEpoch = d.epoch || 0
-  running = isPublic = autoBots = false
-  statRoom = null
-  table = null
-  turnDeadline = 0
-  clearTimeout(turnTimer)
-  clearTimeout(nextTimer)
-  nextTimer = null
-  clearInterval(lobbyTimer)
-  toast('잠시 연결이 끊긴 사이 다른 사람이 방장을 이어받았어요.')
-  net.send('info', myInfo(), from)
-  lastStateSeq = d.seq || 0
-  lastHostMsg = Date.now()
-  onState(d)
-}
-
-// 방장은 10초마다 최신 상태를 보내 살아 있음을 알리고, 참가자는 한동안 소식이 없으면 이어받기 시작
-setInterval(() => {
-  if (!net || !state) return
-  if (isHost) net.send('state', publicState())
-  else if (hostId && migrating === null && Date.now() - lastHostMsg > (state.hidden ? HOST_HIDDEN_SILENT_MS : HOST_SILENT_MS)) migrateHost(hostId)
-}, 10000)
-// 내 화면이 잠깐 꺼졌다 켜진 경우엔 방장이 멈춘 걸로 착각하지 않도록 시간을 다시 잼
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) lastHostMsg = Date.now()
-  if (!isHost && hostId && net) net.send('info', myInfo(), hostId) // 탭이 뒤로 갔는지 방장에게 알림 (자리 비움 판단용)
-  if (isHost && net && state) net.send('state', publicState()) // 내 화면이 꺼지거나 켜졌다는 걸 바로 알림
-})
-// 탭을 닫으면 바로 연결을 정리해서 다른 사람들이 곧바로 알아채게 함
-addEventListener('pagehide', e => { if (!e.persisted) net?.leave({ unload: true }) })
-
-// 로컬 테스트용 (localhost에서 ?debug): 방장 이어받기를 강제로 일으킴
-if (['localhost', '127.0.0.1'].includes(location.hostname) && new URLSearchParams(location.search).has('debug')) {
-  window.__debug = { takeover: () => migrateHost(hostId), info: () => ({ isHost, hostId, hostEpoch, selfId }) }
-}
-
-// ---------- 호스트 전용 ----------
-function publicState() {
-  const s = table.publicState()
-  s.hostId = selfId
-  s.running = running
-  s.turnLeft = turnDeadline ? Math.max(0, turnDeadline - Date.now()) : 0
-  s.seq = ++stateSeq
-  s.public = isPublic
-  s.hidden = document.hidden
-  s.epoch = hostEpoch
-  s.autoBots = autoBots
-  return s
-}
-
-function onInfo(peerId, d) {
-  if (!d || typeof d !== 'object') return
-  const name = String(d.name || '손님').trim().slice(0, 12) || '손님'
-  if (typeof d.uid === 'string') uidOf[peerId] = d.uid.slice(0, 128)
-  if (!table.seat(peerId) && table.seats.length >= CONFIG.MAX_SEATS) removeBot()
-  hiddenOf[peerId] = !!d.hidden
-  if (table.seat(peerId)) table.updateInfo(peerId, { name, tokens: d.tokens | 0 }) // 자리 비움은 방장이 정하므로 여기서 바꾸지 않음
-  else table.addPlayer(peerId, name, Math.min(Math.max(0, d.tokens | 0), 1e9))
-  afterChange()
-}
-
-function hostMove(id, d) {
-  if (d?.type === 'back') return comeBack(id)
-  const r = table.act(id, d?.type, d?.amount)
-  if (!r.ok) { if (id === selfId) toast(r.error); return }
-  timeoutsOf[id] = 0 // 직접 행동했으면 시간 초과 횟수를 다시 셈
-  afterChange()
-}
-
-// ---------- 자리 비움 (방장이 판단) ----------
-// 다른 탭에 가 있는 사람 때문에 매번 30초씩 기다리지 않도록, 시간 초과로 자동 행동이 연속 AWAY_AFTER번이면
-// (탭이 뒤로 가 있으면 1번만으로) '자리 비움'으로 바꿔 다음 판부터 뺀다. 본인이 '다시 참여'를 누르면 돌아온다
-const AWAY_AFTER = 2
-const timeoutsOf = {}, hiddenOf = {}
-function markAway(s) {
-  if (s.bot || s.sitOut) return
-  timeoutsOf[s.id] = (timeoutsOf[s.id] || 0) + 1
-  const hidden = s.id === selfId ? document.hidden : hiddenOf[s.id]
-  if (timeoutsOf[s.id] < (hidden ? 1 : AWAY_AFTER)) return
-  s.sitOut = true
-  timeoutsOf[s.id] = 0
-  table.addLog(`${s.name} 님이 자리를 비워 다음 판부터 빠져요.`)
-}
-function comeBack(id) {
-  const s = table.seat(id)
-  if (!s || !s.sitOut) return
-  s.sitOut = false
-  timeoutsOf[id] = 0
-  table.addLog(`${s.name} 님이 돌아왔어요.`)
-  afterChange()
-}
-
-// 테이블이 바뀔 때마다: 타이머 관리 → 다음 판 예약 → 모두에게 전송
-function afterChange() {
-  if (table.turnSeq !== timerSeq) {
-    timerSeq = table.turnSeq
-    clearTimeout(turnTimer)
-    const id = table.toActId()
-    if (id) {
-      turnDeadline = Date.now() + CONFIG.TURN_MS
-      turnTimer = setTimeout(() => timeout(id), CONFIG.TURN_MS)
-    } else turnDeadline = 0
-  }
-  if (running && !table.isBetting()) scheduleNext()
-  runBots()
-  syncLobby()
-  const present = table.seats.filter(p => !p.left && !p.bot).length
-  if (statRoom && present > statMax) { statMax = present; cloud.recordPlayers(statRoom, present).catch(() => {}) }
-  const s = publicState()
-  net.send('state', s)
-  onState(s)
-}
-
-function timeout(id) {
-  const s = table.seat(id)
-  if (!s || table.toActId() !== id) return
-  table.act(id, table.currentBet > s.bet ? 'fold' : 'check')
-  s.last += ' (시간 초과)'
-  if (table.lastAction?.id === id) table.lastAction.label = s.last
-  markAway(s)
-  afterChange()
-}
-
-function scheduleNext() {
-  if (nextTimer) return
-  const delay = table.phase === 'showdown' ? CONFIG.NEXT_HAND_MS : 1500
-  nextTimer = setTimeout(() => { nextTimer = null; tryStart() }, delay)
-}
-
-function tryStart() {
-  for (const p of table.seats) if (p.bot && p.stack <= 0) p.stack = CONFIG.START_TOKENS // 봇은 무한 충전
-  maintainBots()
-  // 사람이 모두 자리를 비웠으면 봇끼리 돌리지 않고 기다림 (누군가 돌아오면 다시 시작)
-  if (!table.seats.some(p => !p.bot && !p.left && !p.sitOut && p.stack > 0)) { const s = publicState(); net.send('state', s); onState(s); return }
-  const holes = table.startHand()
-  if (!holes) { const s = publicState(); net.send('state', s); onState(s); return }
-  for (const [id, cards] of Object.entries(holes)) {
-    const msg = { handNo: table.handNo, cards }
-    if (id === selfId) onHole(msg)
-    else net.send('hole', msg, id) // 내 카드는 나에게만 전송
-  }
-  if (statRoom) cloud.recordHand(statRoom).catch(() => {})
-  afterChange()
-}
-
-// ---------- 모두 ----------
 function onState(s) {
   state = s
   turnDeadline = s.turnLeft ? Date.now() + s.turnLeft : 0
-  const me = s.seats.find(p => p.id === selfId)
-  if (me && !me.left) {
-    if (me.stack > 0) refillPending = false
-    if (!refillPending) { wallet.tokens = me.stack; saveWallet() }
-    const busy = me.inHand && BETTING.includes(s.phase)
-    // 파산: 판이 끝난 뒤 한 번 안내창을 띄운다 ("나중에"를 누르면 아래 버튼으로 다시 열 수 있음)
-    if (me.stack === 0 && !busy && !refillPending && bustPrompted !== s.handNo) {
-      bustPrompted = s.handNo
-      openBankrupt()
-    }
-  }
-  trackHandResult(s, me)
-  // 자리 비움으로 바뀐 순간 한 번 알림 (돌아왔을 때 화면에서 바로 보이게)
-  if (me && me.sitOut && !wasAway) toast('시간 안에 행동하지 않아 자리 비움이 됐어요. 다시 참여를 누르면 돌아와요.')
-  wasAway = !!me?.sitOut
+  isHost = !!selfId && s.hostId === selfId
+  const meSeat = s.seats.find(p => p.id === selfId)
+  // 자리 비움으로 바뀐 순간 한 번 알림
+  if (meSeat && meSeat.sitOut && !wasAway) toast('시간 안에 행동하지 않아 자리 비움이 됐어요. 다시 참여를 누르면 돌아와요.')
+  wasAway = !!meSeat?.sitOut
   render()
 }
 let wasAway = false
 
-function onHole(d) {
-  myHole = d
-  render()
-}
+function sendMove(type, amount) { net?.send({ t: 'move', type, amount }) }
 
-function sendMove(type, amount) {
-  if (isHost) hostMove(selfId, { type, amount })
-  else net.send('move', { type, amount }, hostId)
-}
+$('#seats').addEventListener('click', e => {
+  const b = e.target.closest('[data-kick]')
+  if (!b || !isHost) return
+  const p = state?.seats.find(x => x.id === b.dataset.kick)
+  if (p && !p.bot && !confirm(`${p.name} 님을 방에서 내보낼까요? (남은 칩은 그 사람에게 코인으로 돌아가요)`)) return
+  net.send({ t: 'kick', id: b.dataset.kick })
+})
+$('#bot-add').onclick = () => net?.send({ t: 'bot' })
+$('#sit-btn').onclick = () => { $('#sit-btn').hidden = true; net?.send({ t: 'sit' }) }
+// 탭이 뒤로 갔는지 서버에 알림 (자리 비움을 더 빨리 판단)
+document.addEventListener('visibilitychange', () => { if (roomCode) net?.send({ t: 'hidden', v: document.hidden }) })
+
+function clearInvite() { history.replaceState(null, '', location.pathname + location.search) }
 
 // ---------- 칩 그림 ----------
 // 금액을 큰 칩부터 나눠 색 칩으로 쌓아 보여 준다 (그림 파일 없이 CSS로 그림)
@@ -788,15 +303,14 @@ function cardHtml(c, cls = '') {
 
 function render() {
   const me = state?.seats.find(p => p.id === selfId)
-  $('#my-tokens').textContent = (me ? me.stack + me.bet : wallet.tokens).toLocaleString()
+  $('#my-tokens').textContent = (me ? me.stack + me.bet : 0).toLocaleString() // 테이블에 맡긴 칩
 
   if (!state) {
     $('#status').innerHTML = connectStage === 'fail'
-      ? `<div class="connect-fail"><b>방을 찾지 못했어요</b>
-          <ul><li>방 코드가 맞는지, 방장이 아직 방에 있는지 확인해 주세요.</li>
-          <li>방장과 버전이 같은지 첫 화면 아래 번호로 확인해 주세요. (지금 v${VERSION})</li></ul>
+      ? `<div class="connect-fail"><b>서버에 연결하지 못했어요</b>
+          <ul><li>인터넷 연결을 확인하고 다시 시도해 주세요.</li></ul>
           <button class="btn gold" onclick="location.reload()">다시 시도</button></div>`
-      : `<span class="connecting">${esc(connectStage || '방장을 찾는 중…')}</span>`
+      : `<span class="connecting">${esc(connectStage || '테이블에 들어가는 중…')}</span>`
     return
   }
 
@@ -826,7 +340,7 @@ function render() {
     const tags = [
       p.id === state.hostId ? '<i class="tag">방장</i>' : '',
       p.left ? '<i class="tag">나감</i>' : p.sitOut ? '<i class="tag">자리 비움</i>' : '',
-      !p.inHand && p.stack <= 0 ? '<i class="tag">토큰 없음</i>' : '',
+      !p.inHand && p.stack <= 0 ? '<i class="tag">칩 없음</i>' : '',
     ].join('')
     const win = state.result?.winners.find(w => w.id === p.id)
     return `<div class="seat ${turn ? 'turn' : ''} ${p.folded ? 'folded' : ''} ${p.id === selfId ? 'me' : ''} ${win ? 'winner' : ''}"
@@ -879,23 +393,20 @@ function render() {
   if (actor) status += ` · ${actor.id === selfId ? '내 차례!' : esc(actor.name) + ' 님 차례'}`
   else if (state.phase === 'waiting' || state.phase === 'showdown') {
     const ready = seats.filter(p => !p.left && !p.sitOut && p.stack > 0).length
-    if (!state.running) status += ready < 2 ? '' : isHost ? ' · 시작 버튼을 누르세요' : ' · 방장이 시작하길 기다리는 중'
-    else if (ready < 2) status += ' · 참여 가능한 플레이어가 2명 이상 필요합니다'
+    if (ready < 2) status += ' · 참여 가능한 플레이어가 2명 이상 필요합니다'
     else if (!seats.some(p => !p.bot && !p.left && !p.sitOut && p.stack > 0)) status += ' · 모두 자리를 비워 기다리는 중'
     else if (state.phase === 'showdown') status += ' · 곧 다음 판이 시작됩니다'
   }
-  if (!me) status += ' · 자리가 꽉 차서 관전 중'
+  if (connectStage) status = `<span class="connecting">${esc(connectStage)}</span>`
+  else if (!me) status += ' · 구경 중 · <b>앉기</b>를 누르면 가진 코인을 모두 맡기고 다음 판부터 함께해요'
   else if (me.sitOut && !me.inHand) {
     status = '<span class="out">자리 비움 · 시간 안에 행동하지 않아 다음 판부터 빠졌어요. <b>다시 참여</b>를 누르면 다음 판부터 함께해요.</span>'
   }
-  else if (me.stack === 0 && !me.inHand && outForToday()) {
-    status = '<span class="out">오늘 받을 수 있는 토큰을 모두 썼어요. 내일 다시 참여할 수 있어요. (관전은 계속 가능)</span>'
-  }
   $('#status').innerHTML = status
 
-  $('#start').hidden = !(isHost && !state.running)
-  const busyMe = me && me.inHand && BETTING.includes(state.phase)
-  $('#refill-btn').hidden = !(me && me.stack === 0 && !busyMe && !refillPending && canRefill())
+  $('#start').hidden = true // 판은 서버가 자동으로 시작
+  $('#refill-btn').hidden = true
+  $('#sit-btn').hidden = !!me || !!connectStage
   $('#back-btn').hidden = !(me && me.sitOut && !me.left)
 
   renderActions(me)
@@ -910,7 +421,7 @@ function renderWaiting(seats) {
   $('#headcount').textContent = `👥 ${humans + bots} / ${CONFIG.MAX_SEATS}`
   $('#headcount').title = `사람 ${humans}명${bots ? ` · 봇 ${bots}` : ''}`
   $('#bot-add').hidden = !(isHost && seats.length < CONFIG.MAX_SEATS)
-  const waiting = !BETTING.includes(state.phase) && (state.phase === 'waiting' || !state.running)
+  const waiting = !BETTING.includes(state.phase) && state.phase === 'waiting'
   $('#waiting').hidden = !waiting
   $('#board').hidden = waiting
   $('#result').hidden = waiting
@@ -919,47 +430,14 @@ function renderWaiting(seats) {
   const ready = seats.filter(p => kind(p) === 'ready' || kind(p) === 'bot').length
   const need = Math.max(0, 2 - ready)
   const sub = need > 0 ? `<b>${need}명</b> 더 모이면 시작할 수 있어요`
-    : !state.running ? (isHost ? '준비됐어요! 아래 <b>게임 시작</b>을 눌러 주세요' : '방장이 시작하길 기다리는 중')
     : '곧 다음 판이 시작됩니다'
-  const label = { ready: '참가', sitout: '자리 비움', broke: '토큰 없음', left: '나감', bot: '봇' }
+  const label = { ready: '참가', sitout: '자리 비움', broke: '칩 없음', left: '나감', bot: '봇' }
   $('#waiting').innerHTML = `
     <div class="wait-count">👥 <b>${humans}</b><span>명${bots ? ` (봇 ${bots})` : ''} / ${CONFIG.MAX_SEATS}자리</span></div>
     <div class="wait-sub">${sub}</div>
     <div class="wait-list">${seats.map(p => `<span class="wchip ${kind(p)}" title="${label[kind(p)]}">${WAIT_ICON[kind(p)]} ${esc(p.name)}</span>`).join('')}</div>
     ${seats.length < CONFIG.MAX_SEATS ? `<div class="wait-hint">위쪽 <b>초대 링크 복사</b>로 친구를 부르거나${isHost ? ' 아래 <b>봇 추가</b>로 자리를 채워 보세요' : ''}</div>` : ''}`
 }
-
-// ---------- 파산 안내 ----------
-function openBankrupt() {
-  const box = $('#bankrupt')
-  if (canRefill()) {
-    $('#bk-icon').textContent = '💸'
-    $('#bk-title').textContent = '토큰을 모두 잃었어요'
-    $('#bk-msg').innerHTML = `괜찮아요! 기본 토큰 <b>${CONFIG.START_TOKENS.toLocaleString()}</b>개를 받아서 다시 도전할 수 있어요.`
-    $('#bk-claim').hidden = false
-    $('#bk-later').textContent = '나중에'
-  } else if (outForToday()) {
-    $('#bk-icon').textContent = '🌙'
-    $('#bk-title').textContent = '오늘은 여기까지'
-    $('#bk-msg').innerHTML = '오늘 받을 수 있는 토큰을 모두 받았어요.<br>내일 다시 참여할 수 있어요. 관전은 계속 할 수 있어요.'
-    $('#bk-claim').hidden = true
-    $('#bk-later').textContent = '확인'
-  } else return
-  box.hidden = false
-  $(canRefill() ? '#bk-claim' : '#bk-later').focus()
-}
-
-function claimRefill() {
-  $('#bankrupt').hidden = true
-  if (!refillIfBroke()) return
-  toast(`🪙 기본 토큰 ${CONFIG.START_TOKENS.toLocaleString()}개를 받았어요!`)
-  updateLobbyWallet()
-  if (net) { refillPending = true; sendInfo() }
-  if (state) render()
-}
-$('#bk-claim').onclick = claimRefill
-$('#bk-later').onclick = () => { $('#bankrupt').hidden = true; if (state) render() }
-$('#refill-btn').onclick = openBankrupt
 
 // ---------- 행동 효과 ----------
 let actShown = null
@@ -1069,7 +547,7 @@ const myHandLive = () => !!(myHole && state && myHole.handNo === state.handNo &&
 
 function renderOdds(me, hasMyHole) {
   const box = $('#odds')
-  const show = !!me && (state.running || state.phase !== 'waiting')
+  const show = !!me && state.phase !== 'waiting'
   $('#game').classList.toggle('side', show) // 넓은 PC 화면에서 오른쪽 칸을 쓸지 (게임 전에는 테이블을 가운데로)
   if (!show) { box.hidden = true; return }
   box.hidden = false
@@ -1140,19 +618,7 @@ function openRanks() {
 $('#ranks-btn').onclick = openRanks
 
 // ---------- 월간 시즌 랭킹 ----------
-let handTrack = { hand: 0, start: 0, done: true }
-
-// 내가 참여한 판이 끝나면 그 판의 손익을 이번 달 시즌 기록에 더함
-function trackHandResult(s, me) {
-  if (!cloud.enabled || !uid || !me) return
-  if (me.inHand && BETTING.includes(s.phase) && handTrack.hand !== s.handNo) {
-    handTrack = { hand: s.handNo, start: me.stack + me.bet, done: false }
-  }
-  if (handTrack.hand === s.handNo && !handTrack.done && s.phase === 'showdown' && s.result) {
-    handTrack.done = true
-    cloud.recordHandResult(wallet.name, me.stack - handTrack.start).catch(err => console.warn('season', err))
-  }
-}
+// 랭킹은 카지노 서버가 판마다 코인 순이익을 기록한다 (예전에는 브라우저가 Firestore에 직접 씀)
 
 // 다음 달 1일 0시(한국 시간)
 function seasonEnd(key) {
@@ -1174,26 +640,26 @@ function seasonLeft() {
 const signed = n => (n > 0 ? '+' : '') + n.toLocaleString()
 const MEDAL = ['🥇', '🥈', '🥉']
 
-function seasonList(rows, myUid) {
+function seasonList(rows) {
   return `<ol class="season-list">${rows.map((r, i) => `
-    <li class="${r.uid === myUid ? 'me' : ''}">
+    <li class="${r.me ? 'me' : ''}">
       <span class="rk">${MEDAL[i] || i + 1}</span>
-      <span class="nm">${esc(r.name || '이름 없음')}${r.uid === myUid ? ' <i>나</i>' : ''}</span>
+      <span class="nm">${esc(r.name || '이름 없음')}${r.me ? ' <i>나</i>' : ''}</span>
       <span class="net ${r.net > 0 ? 'up' : r.net < 0 ? 'down' : ''}">${signed(r.net || 0)}</span>
       <span class="hd">${(r.hands || 0).toLocaleString()}판</span>
     </li>`).join('')}</ol>`
 }
 
 async function loadSeasonInto(el, n, withPrev) {
-  if (!cloud.enabled || !uid) { el.hidden = true; return }
+  if (!account) { el.hidden = true; return }
   el.hidden = false
   el.innerHTML = '<p class="season-note">랭킹 불러오는 중…</p>'
   try {
     const cur = await cloud.loadSeason(cloud.seasonKey(), n)
     let html = `<div class="season-head"><b>🏆 ${seasonMonth(cur.season)} 랭킹</b><span>${seasonRange(cur.season)} · 끝까지 ${seasonLeft()}</span></div>`
-    html += cur.rows.length ? seasonList(cur.rows, uid)
+    html += cur.rows.length ? seasonList(cur.rows)
       : '<p class="season-note">아직 이번 달 기록이 없어요. 첫 판을 쳐서 1위를 차지해 보세요!</p>'
-    if (cur.me && !cur.rows.some(r => r.uid === uid)) {
+    if (cur.me && !cur.rows.some(r => r.me)) {
       html += `<p class="season-me">내 순위 <b>${cur.me.rank}위</b> / ${cur.total}명 · ${signed(cur.me.net)}</p>`
     }
     if (withPrev) {
@@ -1202,7 +668,7 @@ async function loadSeasonInto(el, n, withPrev) {
         html += `<div class="season-prev"><b>지난달(${seasonMonth(prev.season)}) TOP 3</b><br>${prev.rows.map((r, i) =>
           `${MEDAL[i]} ${esc(r.name || '이름 없음')} ${signed(r.net)}`).join(' · ')}</div>`
       }
-      html += '<p class="season-note">이번 달에 딴 토큰에서 잃은 토큰을 뺀 순수익으로 순위를 매겨요. 기본 토큰 재지급은 들어가지 않아요. 매달 1일 0시(한국 시간)에 새 시즌이 시작돼요.</p>'
+      html += '<p class="season-note">이번 달 카지노에서 딴 코인에서 잃은 코인을 뺀 순수익으로 순위를 매겨요. 출석·가입 코인은 들어가지 않아요. 매달 1일 0시(한국 시간)에 새 시즌이 시작돼요.</p>'
     }
     el.innerHTML = html
   } catch (err) {
@@ -1215,7 +681,7 @@ function openSeason() {
   $('#season').hidden = false
   loadSeasonInto($('#season-body'), 10, true)
 }
-$('#season-btn').hidden = !cloud.enabled
+$('#season-btn').hidden = false
 $('#season-btn').onclick = openSeason
 $('#season-close').onclick = () => { $('#season').hidden = true }
 $('#season').onclick = e => { if (e.target.id === 'season') $('#season').hidden = true }
@@ -1485,33 +951,37 @@ setInterval(() => {
   if (bar && turnDeadline) bar.style.width = Math.max(0, (turnDeadline - Date.now()) / CONFIG.TURN_MS * 100) + '%'
 }, 200)
 
-$('#start').onclick = () => { running = true; tryStart() }
 $('#back-btn').onclick = () => { $('#back-btn').hidden = true; sendMove('back') } // 자리 비움에서 돌아오기
 $('#copy').onclick = async () => {
   const url = location.href.split('#')[0] + '#' + roomCode
   try { await navigator.clipboard.writeText(url); toast('초대 링크를 복사했어요!') }
   catch { prompt('이 링크를 친구에게 보내세요', url) }
 }
-$('#leave').onclick = async () => {
-  if (state?.toActId && !confirm('게임 중에 나가면 이번 판에 건 토큰은 잃습니다. 나갈까요?')) return
-  leaving = true
-  if (isHost && isPublic && cloud.enabled) await cloud.unpublishRoom(roomCode).catch(() => {})
-  net?.leave()
-  location.hash = ''
-  location.reload()
+// 나가기: 남은 칩은 코인으로 돌려받음. 판 도중이면 이번 판에 건 칩은 잃음 (올인했으면 판이 끝난 뒤 정산)
+$('#leave').onclick = () => {
+  const meSeat = state?.seats.find(p => p.id === selfId)
+  if (meSeat?.inHand && !meSeat.folded && BETTING.includes(state.phase)
+    && !confirm('게임 중에 나가면 이번 판에 건 칩은 잃어요. 남은 칩은 코인으로 돌려받아요. 나갈까요?')) return
+  if (!net?.ready) return backToLobby()
+  net.send({ t: 'leave' })
+  setTimeout(backToLobby, 3000) // 서버 답이 늦어도 로비로
 }
 
-// 방장은 실수로 탭을 닫지 않게 브라우저의 '사이트를 떠나시겠습니까?'를 띄운다.
-// 다만 나가기 버튼 등으로 스스로 나갈 때는 이미 확인했으므로 두 번 묻지 않는다
-var leaving = false
-function warnUnload(e) { if (leaving) return; e.preventDefault(); e.returnValue = '' }
-
-function showOverlay(title, msg) {
+// stay: 확인을 누르면 창만 닫고 지금 화면에 남음 (예: 코인이 없어 구경할 때)
+let overlayStay = false
+function showOverlay(title, msg, stay = false) {
+  overlayStay = stay
   $('#overlay').hidden = false
   $('#overlay-title').textContent = title
   $('#overlay-msg').textContent = msg
+  $('#overlay-btn').textContent = stay ? '확인' : '로비로'
 }
-$('#overlay-btn').onclick = () => { leaving = true; net?.leave(); clearInvite(); location.reload() }
+$('#overlay-btn').onclick = () => {
+  $('#overlay').hidden = true
+  if (overlayStay) return
+  net?.send({ t: 'leave' })
+  backToLobby()
+}
 
 let toastTimer
 function toast(msg) {

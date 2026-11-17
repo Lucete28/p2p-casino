@@ -1,16 +1,17 @@
-# 서버 이미지에 넣지 않을 것 (개발·설정용 파일)
-# nginx.conf는 Dockerfile이 복사하므로 여기에 넣으면 안 됨
+# 서버 이미지에 넣지 않을 것 (Dockerfile이 필요한 파일만 골라 복사하지만 빌드 재료도 가볍게)
 .git
 .github
 .claude
-Dockerfile
-.dockerignore
-README.md
-dev-harness.html
+node_modules
+server/node_modules
+server/test-*.mjs
+data
+보고.md
+*.md
+casino.webp
 set-version.py
 *.py
-firebase.json
 firestore.rules
-*.md
-보고.md
-casino.webp
+firebase.json
+dev-harness.html
+보류

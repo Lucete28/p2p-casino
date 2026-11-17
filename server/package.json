@@ -1,0 +1,10 @@
+{
+  "name": "jmtt-casino-server",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs",
+  "engines": { "node": ">=22.13" },
+  "dependencies": {
+    "ws": "8.18.0"
+  }
+}
