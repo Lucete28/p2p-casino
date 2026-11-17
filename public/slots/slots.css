@@ -143,12 +143,60 @@ body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, 
 .sl-howto span { font-size: 13px; color: var(--c-muted); }
 .sl-help .row { margin-top: 14px; }
 
-/* ---------- 777 동전 비 ---------- */
-.sl-rain { position: fixed; inset: 0; pointer-events: none; z-index: 40; overflow: hidden; }
-.sl-rain i { position: absolute; top: -40px; width: 22px; height: 22px; border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #fff1b8, #e8c26a 45%, #a9833a); box-shadow: inset 0 0 0 2px rgba(122,90,26,.6);
-  animation: sl-fall linear forwards; }
-@keyframes sl-fall { to { transform: translateY(110vh) rotate(720deg); } }
+/* ---------- 당첨 연출 (fx.js) ---------- */
+.sl-fx { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 55; }
+.sl-fly { position: fixed; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 50%; pointer-events: none; z-index: 56;
+  background: radial-gradient(circle at 35% 30%, #fff3c0, #eec767 45%, #9c7425); box-shadow: 0 0 10px rgba(255,210,110,.8); }
+.sl-bump { animation: sl-bump .25s ease-out; }
+@keyframes sl-bump { 40% { transform: scale(1.15); box-shadow: 0 0 16px rgba(255,210,110,.8); } }
+
+/* 줄 끝에 떠오르는 +칩 */
+.sl-fxtext { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.sl-float { position: absolute; transform: translate(-50%, -50%); font: 900 24px/1 "Pretendard", sans-serif; white-space: nowrap;
+  -webkit-text-stroke: 1px rgba(0,0,0,.6); text-shadow: 0 2px 0 #000, 0 0 14px currentColor; animation: sl-float 1.6s ease-out forwards; }
+.sl-float.big { font-size: clamp(44px, 14vw, 72px); font-style: italic; letter-spacing: .04em; animation: sl-pop 1.6s cubic-bezier(.2,1.6,.4,1) forwards; }
+@keyframes sl-float { 0% { opacity: 0; transform: translate(-50%, -20%) scale(.6); } 15% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); } 70% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -170%) scale(1); } }
+@keyframes sl-pop { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.2) rotate(-8deg); } 25% { opacity: 1; transform: translate(-50%, -50%) scale(1.1) rotate(-4deg); } 75% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -60%) scale(1.25) rotate(-4deg); } }
+
+/* 당첨하면 몸체가 번쩍 */
+.sl.win .sl-cabinet { animation: sl-flash .7s ease-out; }
+.sl.tier-nice .sl-cabinet, .sl.big .sl-cabinet { animation: sl-flash .5s ease-out 3; }
+@keyframes sl-flash { 30% { box-shadow: inset 0 0 0 4px #120406, inset 0 0 0 6px #ffe69a, 0 0 70px 6px rgba(255,214,120,.65); } }
+.sl.tier-nice .sl-result-title, .sl.big .sl-result-title { animation: sl-glow .6s ease-in-out infinite alternate; }
+@keyframes sl-glow { to { text-shadow: 0 0 16px rgba(255,210,110,.9); } }
+
+/* 두근두근: 마지막 릴만 금빛, 나머지는 어둡게 */
+.sl-reel.tease { box-shadow: 0 0 0 3px #ffd36b, 0 0 26px 6px rgba(255,200,90,.75); animation: sl-tease .33s ease-in-out infinite alternate; z-index: 1; }
+@keyframes sl-tease { to { box-shadow: 0 0 0 3px #fff1b8, 0 0 40px 12px rgba(255,200,90,.95); } }
+.sl.teasing .sl-reel:not(.tease) { filter: brightness(.55); transition: filter .2s; }
+.sl.teasing .sl-result-title { color: #ffd36b; animation: sl-glow .33s ease-in-out infinite alternate; }
+
+/* BIG WIN · MEGA WIN · JACKPOT 전체 화면 */
+.sl-cele { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; overflow: hidden; cursor: pointer;
+  background: radial-gradient(circle at 50% 45%, rgba(60,30,4,.88), rgba(0,0,0,.92) 70%); animation: sl-cele-in .25s ease-out; }
+.sl-cele.out { animation: sl-cele-out .25s ease-in forwards; }
+@keyframes sl-cele-in { from { opacity: 0; } }
+@keyframes sl-cele-out { to { opacity: 0; } }
+.sl-cele-rays { position: absolute; left: 50%; top: 45%; width: 220vmax; height: 220vmax; margin: -110vmax 0 0 -110vmax; opacity: .35;
+  background: repeating-conic-gradient(from 0deg, rgba(255,214,120,.55) 0deg 8deg, transparent 8deg 22deg); animation: sl-rays 14s linear infinite; }
+@keyframes sl-rays { to { transform: rotate(360deg); } }
+.sl-cele-box { position: relative; text-align: center; padding: 0 16px; }
+.sl-cele-kind { margin: 0; font: 900 italic clamp(44px, 13vw, 96px)/1 "Pretendard", sans-serif; letter-spacing: .02em;
+  background: linear-gradient(180deg, #fffbe6 0%, #ffd36b 45%, #b37a1c 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 4px 0 #4a2a05) drop-shadow(0 0 24px rgba(255,190,70,.7)); animation: sl-kind .7s cubic-bezier(.2,1.7,.4,1) both; }
+@keyframes sl-kind { from { transform: scale(.2) rotate(-10deg); opacity: 0; } }
+.sl-cele-amt { display: block; margin-top: 10px; font: 900 clamp(40px, 12vw, 84px)/1.05 "Pretendard", sans-serif; font-variant-numeric: tabular-nums;
+  color: #fff1b8; text-shadow: 0 0 24px rgba(255,200,90,.85), 0 4px 0 #3a2203; }
+.sl-cele-amt.land { animation: sl-land .45s cubic-bezier(.2,1.8,.4,1); }
+@keyframes sl-land { 40% { transform: scale(1.25); } }
+.sl-cele-sub { margin: 12px 0 0; font-size: 15px; color: var(--c-ink); }
+.sl-cele-skip { margin: 18px 0 0; font-size: 12px; color: var(--c-muted); }
+.sl-cele.mega .sl-cele-kind { background-image: linear-gradient(180deg, #fff 0%, #ffe08a 35%, #ff9a3c 70%, #b0400f 100%); }
+.sl-cele.jackpot { background: radial-gradient(circle at 50% 45%, rgba(110,8,16,.9), rgba(0,0,0,.94) 70%); }
+.sl-cele.jackpot .sl-cele-rays { opacity: .55; animation-duration: 6s; }
+.sl-cele.jackpot .sl-cele-kind { background-image: linear-gradient(180deg, #fff 0%, #ff8a8a 30%, #e3192a 65%, #6d0410 100%);
+  filter: drop-shadow(0 4px 0 #f3cf74) drop-shadow(0 0 30px rgba(255,80,80,.9)); animation: sl-kind .7s cubic-bezier(.2,1.7,.4,1) both, sl-throb .5s ease-in-out .7s infinite alternate; }
+@keyframes sl-throb { to { transform: scale(1.06); } }
 
 @media (max-width: 520px) {
   .sl { --lever: 40px; padding: 12px 16px 40px; }
@@ -168,6 +216,7 @@ body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, 
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sl-bulbs i, .sl-cell.hit::before, .sl-cell.hit svg, .sl.jackpot .sl-logo-7, .sl-lever-tip { animation: none; }
+  .sl-bulbs i, .sl-cell.hit::before, .sl-cell.hit svg, .sl.jackpot .sl-logo-7, .sl-lever-tip, .sl.win .sl-cabinet, .sl-reel.tease,
+  .sl-cele-rays, .sl-cele-kind, .sl-float, .sl-result-title { animation: none !important; }
   .sl-bulbs i { background: #ffe69a; }
 }

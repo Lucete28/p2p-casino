@@ -4,7 +4,8 @@
 // 화면에서는 '라인'을 고르지 않는다. 베팅 금액 하나만 고르고 라인은 거기서 정해진다:
 //   베팅 1 → 가운데 줄 1개 · 베팅 3 → 가로 3줄 · 베팅 5 이상(5의 배수) → 5줄 모두, 줄마다 베팅 ÷ 5
 import { startGame } from '../shared/casino.js'
-import { STRIPS, REEL_LEN, LINES, PAY3, PAY_CHERRY2, PAY_CHERRY1, checkBet } from './rules.mjs'
+import { STRIPS, REEL_LEN, LINES, PAY3, PAY_CHERRY2, PAY_CHERRY1, TEASE_MS, checkBet } from './rules.mjs'
+import { burst, flyCoins, floatText, shake, celebrate, celebrating } from './fx.js'
 
 const $ = id => document.getElementById(id)
 const fmt = n => Number(n || 0).toLocaleString('ko-KR')
@@ -95,8 +96,12 @@ function spinTo(r, target, duration, loops) {
     { transform: tr(end, count) },                                                              // 제자리
   ], { duration, fill: 'forwards' })
   setTimeout(() => strip.classList.remove('blur'), duration * 0.78)
-  return anim.finished.then(() => { anim.cancel(); setStatic(r, target); sfx.stop() })
+  return anim.finished.then(() => { anim.cancel(); setStatic(r, target); sfx.stop(); thunk() })
 }
+
+// 릴이 멈출 때 몸체가 살짝 덜컹
+const cabinet = document.querySelector('.sl-cabinet')
+function thunk() { if (!reduced) cabinet.animate([{ transform: 'translateY(0)' }, { transform: 'translateY(2px)' }, { transform: 'translateY(0)' }], { duration: 120 }) }
 
 // ---------- 줄 그리기 ----------
 const svgNS = 'http://www.w3.org/2000/svg'
@@ -121,7 +126,7 @@ function clearHits() {
   clearTimeout(previewT)
   $('paylines').replaceChildren()
   document.querySelectorAll('.sl-cell.hit').forEach(c => c.classList.remove('hit'))
-  main.classList.remove('win', 'big', 'jackpot', 'lose')
+  main.classList.remove('win', 'big', 'jackpot', 'lose', 'tier-small', 'tier-win', 'tier-nice', 'tier-big', 'tier-mega', 'tier-jackpot')
 }
 
 // ---------- 소리 (WebAudio, 파일 없음) ----------
@@ -143,6 +148,8 @@ const sfx = {
   tick() { tone(1100 + (tickN++ % 4) * 90, 0, 0.018, 'square', 0.012) },
   stop() { tone(170, 0, 0.08, 'square', 0.06); tone(70, 0, 0.14, 'sine', 0.12) },
   coin() { tone(1568, 0, 0.05, 'square', 0.02); tone(2093, 0.04, 0.06, 'square', 0.015) },
+  heart(k) { tone(70 + k * 40, 0, 0.12, 'sine', 0.16); tone(70 + k * 40, 0.16, 0.1, 'sine', 0.1); tone(600 + k * 500, 0, 0.05, 'square', 0.015) },
+  nice() { [784, 988, 1175, 1568].forEach((f, i) => tone(f, i * 0.07, 0.14, 'square', 0.045)) },
   lose() { tone(330, 0, 0.12, 'triangle', 0.04); tone(247, 0.12, 0.2, 'triangle', 0.04) },
   win(big) {
     const notes = big ? [523, 659, 784, 1047, 784, 1047, 1319] : [659, 784, 1047]
@@ -184,43 +191,76 @@ function countUp(to) {
   countRaf = requestAnimationFrame(step)
 }
 
-function coinRain() {
-  if (reduced) return
-  const rain = $('rain')
-  for (let i = 0; i < 46; i++) {
-    const c = document.createElement('i')
-    c.style.left = ((i * 37) % 100) + '%'
-    c.style.animationDuration = 1.6 + ((i * 13) % 10) / 8 + 's'
-    c.style.animationDelay = ((i * 7) % 16) / 10 + 's'
-    rain.append(c)
-  }
-  setTimeout(() => rain.replaceChildren(), 4800)
+// 당첨 크기에 따라 연출 단계: 손해(돌려받음) < 당첨 < 나이스 < 빅윈 < 메가 < 잭팟
+function tierOf(m) {
+  if (m.wins.some(w => w.kind === 'seven3')) return 'jackpot'
+  const k = m.back / m.total
+  return k >= 50 ? 'mega' : k >= 10 ? 'big' : k >= 3 ? 'nice' : k >= 1 ? 'win' : k > 0 ? 'small' : 'lose'
 }
+let streak = 0
+const chipPill = () => document.querySelector('[data-chips-pill]')
 
 function showResult(m) {
-  const wins = [...m.wins].sort((a, b) => b.pay - a.pay)
-  for (const w of m.wins) {
-    drawLine(w.line, 'win')
-    LINES[w.line].slice(0, w.n).forEach((row, r) => { const c = cellAt(r, row); c.style.setProperty('--lc', LINE_COLORS[w.line]); c.classList.add('hit') })
-  }
-  if (!wins.length) {
-    main.classList.add('lose')
-    say('꽝', '', `${fmt(m.total)}칩을 잃었어요 · 다시 해 볼까요?`)
-    sfx.lose()
-    return
-  }
-  const net = m.back - m.total
-  const jackpot = wins.some(w => w.kind === 'seven3')
-  const big = m.back >= m.total * 10
-  main.classList.add('win')
-  if (big) main.classList.add('big')
-  say(KIND[wins[0].kind] + (wins.length > 1 ? ` 외 ${wins.length - 1}줄` : ''), '', '')
-  countUp(m.back)
-  $('resSub').textContent = `${fmt(m.total)}칩 걸고 ${fmt(m.back)}칩 받음 · ` + (net > 0 ? `${fmt(net)}칩 이득` : net === 0 ? '본전' : `${fmt(-net)}칩 손해`)
-  if (jackpot) { main.classList.add('jackpot'); coinRain(); sfx.jackpot() }
-  else if (net > 0) sfx.win(big)
-  else sfx.coin()
-  if (jackpot || big) setAuto(false)
+  return new Promise(resolve => {
+    const wins = [...m.wins].sort((a, b) => b.pay - a.pay)
+    const tier = tierOf(m)
+    const net = m.back - m.total
+    streak = net > 0 ? streak + 1 : 0
+    const winRect = $('reels').getBoundingClientRect()
+    const hitRects = []
+    for (const w of m.wins) {
+      drawLine(w.line, 'win')
+      LINES[w.line].slice(0, w.n).forEach((row, r) => {
+        const c = cellAt(r, row); c.style.setProperty('--lc', LINE_COLORS[w.line]); c.classList.add('hit')
+        hitRects.push(c.getBoundingClientRect())
+      })
+      // 줄 끝에 그 줄이 받은 칩
+      const lastReel = w.n - 1, row = LINES[w.line][lastReel]
+      if (tier !== 'small') setTimeout(() => floatText($('fxText'), (lastReel * 2 + 1) / 6 * 100, (row * 2 + 1) / 6 * 100, '+' + fmt(w.pay), LINE_COLORS[w.line]), 150)
+    }
+    if (tier === 'lose') {
+      main.classList.add('lose')
+      say('꽝', '', `${fmt(m.total)}칩을 잃었어요 · 다시 해 볼까요?`)
+      sfx.lose()
+      return resolve()
+    }
+    main.classList.add('win', 'tier-' + tier)
+    if (['big', 'mega', 'jackpot'].includes(tier)) main.classList.add('big')
+    if (tier === 'jackpot') main.classList.add('jackpot')
+    say(KIND[wins[0].kind] + (wins.length > 1 ? ` 외 ${wins.length - 1}줄` : ''), '', '')
+    const sub = `${fmt(m.total)}칩 걸고 ${fmt(m.back)}칩 받음 · ` + (net > 0 ? `${fmt(net)}칩 이득` : net === 0 ? '본전' : `${fmt(-net)}칩 손해`)
+      + (streak >= 2 ? ` · 🔥 ${streak}연속!` : '')
+    $('resSub').textContent = sub
+    const center = r => [r.left + r.width / 2, r.top + r.height / 2]
+
+    if (tier === 'small') { countUp(m.back); sfx.coin(); return resolve() }
+
+    // 당첨 칸에서 동전이 튀고, 윗줄 칩으로 날아감
+    const uniq = hitRects.slice(0, 6)
+    const power = tier === 'win' ? 0.7 : 1
+    uniq.forEach(r => burst(...center(r), tier === 'win' ? 6 : 12, { power, confetti: tier === 'win' ? 0 : 8 }))
+    flyCoins(uniq, chipPill(), tier === 'win' ? 6 : 12)
+
+    if (tier === 'win') { countUp(m.back); sfx.win(false); return resolve() }
+    if (tier === 'nice') {
+      countUp(m.back); sfx.nice()
+      floatText($('fxText'), 50, 50, 'NICE!', '#fff1b8', true)
+      shake(document.querySelector('.sl-machine'), 0.5)
+      return resolve()
+    }
+
+    // 빅윈 이상: 줄을 잠깐 보여 준 뒤 전체 화면
+    setAuto(false)
+    shake(document.querySelector('.sl-machine'), tier === 'big' ? 1 : 1.6)
+    burst(winRect.left + winRect.width / 2, winRect.top + winRect.height / 2, 30, { power: 1.3, confetti: 30 })
+    if (tier === 'jackpot') sfx.jackpot(); else sfx.win(true)
+    $('resAmt').textContent = '+' + fmt(m.back)
+    setTimeout(() => celebrate({
+      tier, amount: m.back, sub: `${KIND[wins[0].kind]} · ${fmt(m.total)}칩 걸고 ${fmt(m.back)}칩!`, fmt,
+      onTick: () => sfx.coin(),
+      onDone: resolve,
+    }), 650)
+  })
 }
 
 // ---------- 배당표 (지금 베팅으로 받는 칩) ----------
@@ -309,11 +349,26 @@ async function onSpun(m) {
   awaiting = false
   setBusy(true)
   ticking(true)
-  await Promise.all(m.stops.map((s, r) => spinTo(r, s, STOP_MS[r], 2 + r)))
+  const times = [...STOP_MS]
+  if (m.tease) times[2] += TEASE_MS // 서버도 정산을 그만큼 늦춤 (rules.mjs teases)
+  const spins = m.stops.map((s, r) => spinTo(r, s, times[r], r === 2 && m.tease ? 6 : 2 + r))
+  if (m.tease) {
+    // 두 릴이 맞았을 때: 마지막 릴만 금빛으로 두근두근
+    await spins[1]
+    ticking(false)
+    reels[2].el.classList.add('tease'); main.classList.add('teasing')
+    say('두근두근…', '', '마지막 하나만 맞으면!')
+    let k = 0
+    const beat = setInterval(() => sfx.heart(Math.min(1, k++ / 8)), 330)
+    await spins[2]
+    clearInterval(beat)
+    reels[2].el.classList.remove('tease'); main.classList.remove('teasing')
+  }
+  await Promise.all(spins)
   ticking(false)
-  showResult(m)
+  await showResult(m)
   setBusy(false)
-  if (auto) setTimeout(() => { if (auto) requestSpin() }, m.wins.length ? 1300 : 450)
+  if (auto && !celebrating()) setTimeout(() => { if (auto) requestSpin() }, m.wins.length ? 1300 : 450)
 }
 
 // ---------- 레버 ----------

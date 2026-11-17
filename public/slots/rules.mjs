@@ -59,6 +59,19 @@ export function lineWin(a, b, c) {
   return null
 }
 
+// 두근두근: 켠 줄에서 첫 두 릴이 세븐·바·종으로 같으면 마지막 릴을 TEASE_MS만큼 더 돌린다 (연출만, 결과는 이미 정해짐).
+// 서버도 같은 판단으로 정산을 그만큼 늦춰서, 윗줄 칩 숫자가 마지막 릴보다 먼저 바뀌지 않게 한다.
+export const TEASE = new Set(['seven', 'bar', 'bell'])
+export const TEASE_MS = 1300
+export function teases(stops, lines) {
+  const g = window3(stops)
+  for (let i = 0; i < lines; i++) {
+    const [a, b] = LINES[i]
+    if (g[0][a] === g[1][b] && TEASE.has(g[0][a])) return true
+  }
+  return false
+}
+
 // 브라우저가 보낸 베팅 검사 → { lineBet, lines, total } 또는 { error }
 export function checkBet(lineBet, lines) {
   lineBet = Number(lineBet); lines = Number(lines)

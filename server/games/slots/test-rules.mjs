@@ -1,8 +1,8 @@
 // 슬롯 규칙·서버 모듈 테스트: node server/games/slots/test-rules.mjs
 import assert from 'node:assert/strict'
 import * as rng from '../../core/rng.mjs'
-import slots from './index.mjs'
-import { STRIPS, REEL_LEN, LINES, PAY3, window3, lineWin, checkBet, evaluate, exactRtp, MAX_LINE_BET } from '../../../public/slots/rules.mjs'
+import slots, { SPIN_MS } from './index.mjs'
+import { STRIPS, REEL_LEN, LINES, PAY3, window3, lineWin, checkBet, evaluate, exactRtp, MAX_LINE_BET, teases, TEASE_MS } from '../../../public/slots/rules.mjs'
 
 let n = 0
 const ok = (name, fn) => { fn(); n++; console.log('✓', name) }
@@ -44,7 +44,7 @@ ok('베팅 검사', () => {
 })
 
 // 777이 가운데 줄에 서는 자리 찾기
-const sevenAt = STRIPS.map(s => s.indexOf('seven'))
+const sevenAt = STRIPS.map(s => s.indexOf('seven')), sevens = sevenAt
 ok('777 가운데 → 라인 1만 켜도 777배, 대각선은 라인 5개일 때만', () => {
   const r = evaluate(sevenAt, 1, 10)
   assert.equal(r.back, 7770)
@@ -69,6 +69,20 @@ ok('켠 라인만 본다, 한 줄에 하나만', () => {
       assert.equal(new Set(r.wins.map(w => w.line)).size, r.wins.length)
     }
   }
+})
+
+ok('두근두근: 켠 줄에서 첫 두 릴이 세븐·바·종으로 같을 때만', () => {
+  // 세븐이 가운데에 둘: 라인 1만 켜도 두근
+  assert.equal(teases([sevens[0], sevens[1], 0], 1), true)
+  // 첫 릴 세븐은 위, 둘째는 가운데 (↘ 대각선) → 5줄일 때만
+  const d = [sevens[0] + 1, sevens[1], 0]
+  assert.equal(teases(d, 3), false)
+  assert.equal(teases(d, 5), true)
+  // 레몬·체리 둘은 두근 없음
+  const lemon = STRIPS.map(s => s.indexOf('lemon')), cherry = STRIPS.map(s => s.indexOf('cherry'))
+  assert.equal(window3([lemon[0], lemon[1], 0])[0][1], 'lemon')
+  assert.equal(teases([lemon[0], lemon[1], 0], 1), false)
+  assert.equal(teases([cherry[0], cherry[1], 0], 1), false)
 })
 
 // ---------- 서버 모듈 (가짜 ctx) ----------
@@ -129,13 +143,16 @@ ok('다시 들어오면 마지막 그림, 서버 종료 때 정산', () => {
   assert.equal(p.chips, 47 + spun.back)
 })
 
-// payout은 SPIN_MS 뒤 저절로
+// payout은 SPIN_MS 뒤 저절로 (두근두근이면 TEASE_MS 더 늦게). 세븐 둘이 가운데 → 두근 판
 const p = { id: 'u_t4', chips: 10, inPlay: 0, limits: {} }
 const ctx = fakeCtx(p)
 slots.message(p, { t: 'spin', lineBet: 1, lines: 1 }, ctx)
 const spun = ctx.sent.at(-1)
+assert.equal(spun.tease, teases(spun.stops, 1))
+const due = SPIN_MS + (spun.tease ? TEASE_MS : 0)
+setTimeout(() => assert.equal(p.inPlay, 1, '너무 일찍 정산'), due - 150)
 setTimeout(() => {
   assert.equal(p.inPlay, 0)
   assert.equal(p.chips, 9 + spun.back)
   console.log(`통과 (${n}개)`)
-}, 2500)
+}, due + 150)
