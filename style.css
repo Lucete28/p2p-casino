@@ -133,16 +133,27 @@ header .me-info b { color: var(--gold); }
 /* 승리 연출 레이어 */
 .fx { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
 /* 이모지: 보낸 사람 자리 위로 떠올랐다 사라짐 */
-.emoji-pop { position: absolute; transform: translate(-50%, -50%); font-size: 40px; line-height: 1; filter: drop-shadow(0 3px 6px #000a);
-  animation: emoji-pop 2.6s ease-out forwards; }
-@keyframes emoji-pop {
-  0% { opacity: 0; transform: translate(-50%, -20%) scale(.4); }
-  12% { opacity: 1; transform: translate(-50%, -90%) scale(1.15); }
-  25% { transform: translate(-50%, -100%) scale(1); }
-  80% { opacity: 1; transform: translate(-50%, -130%) scale(1); }
-  100% { opacity: 0; transform: translate(-50%, -150%) scale(.9); }
-}
-@media (prefers-reduced-motion: reduce) { .emoji-pop { animation-duration: 2.6s; animation-timing-function: steps(1); } }
+/* 이모지: 자리 위 말풍선이 통통 튀어나와 잠깐 머물다 작아지며 사라짐. 안의 이모지는 종류별로 다르게 움직임 */
+.emoji-pop { position: absolute; z-index: 5; pointer-events: none; transform: translate(-50%, calc(-50% - 84px)); }
+.emoji-bubble { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 50%;
+  background: #f4f1e8; box-shadow: 0 6px 18px #0008, inset 0 -3px 0 #0001; position: relative;
+  transform-origin: 50% 120%; animation: emoji-in .45s cubic-bezier(.34, 1.7, .5, 1) both, emoji-out .35s ease-in 2.25s forwards; }
+.emoji-bubble::after { content: ''; position: absolute; left: 50%; bottom: -6px; width: 12px; height: 12px; background: #f4f1e8; transform: translateX(-50%) rotate(45deg); border-radius: 2px; }
+.emoji-face { font-size: 32px; line-height: 1; display: block; z-index: 1; }
+@keyframes emoji-in { 0% { opacity: 0; transform: scale(.2) translateY(14px); } 100% { opacity: 1; transform: none; } }
+@keyframes emoji-out { to { opacity: 0; transform: scale(.6) translateY(-10px); } }
+.emoji-face.fx-yawn { animation: fx-yawn 1.6s ease-in-out .35s 1 both; }
+.emoji-face.fx-thumb { transform-origin: 50% 90%; animation: fx-thumb .5s ease-out .35s 2; }
+.emoji-face.fx-laugh { animation: fx-laugh .18s ease-in-out .35s 8; }
+.emoji-face.fx-cry { animation: fx-cry .12s linear .35s 12; }
+.emoji-face.fx-fire { transform-origin: 50% 100%; animation: fx-fire .3s ease-in-out .3s 6 alternate; }
+@keyframes fx-yawn { 0%, 100% { transform: none; } 40% { transform: scale(1.18, .9) rotate(-6deg); } 70% { transform: scale(1.05) rotate(4deg); } }
+@keyframes fx-thumb { 0%, 100% { transform: none; } 40% { transform: translateY(-6px) rotate(-14deg) scale(1.15); } }
+@keyframes fx-laugh { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-12deg) translateY(-2px); } 75% { transform: rotate(12deg) translateY(-2px); } }
+@keyframes fx-cry { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(-2px) translateY(1px); } }
+@keyframes fx-fire { from { transform: scale(1, 1); filter: brightness(1); } to { transform: scale(1.12, 1.22); filter: brightness(1.25); } }
+@media (prefers-reduced-motion: reduce) { .emoji-bubble, .emoji-face { animation: none !important; } }
+.emoji-opt:active { transform: scale(.85); }
 .emoji-wrap { position: relative; }
 .emoji-side { display: none; justify-content: space-between; gap: 6px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
 .emoji-side .emoji-opt { flex: 1; width: auto; height: 44px; font-size: 24px; }
