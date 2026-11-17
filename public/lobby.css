@@ -103,6 +103,8 @@ dialog .bal { font-size: 34px; font-weight: 800; margin: 6px 0 4px; font-variant
 .cashier-note { margin: 0; color: var(--muted); font-size: 13px; }
 .refill-note { margin: 12px 0 0; padding: 10px 12px; border-radius: 10px; background: rgba(232,194,106,.08); border: 1px solid rgba(232,194,106,.25); font-size: 13px; line-height: 1.5; }
 .refill-note b { color: var(--accent); }
+.earn-note { margin: 10px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.6; }
+.earn-note a { color: var(--accent); text-underline-offset: 2px; white-space: nowrap; }
 .cashier-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 14px; }
 .btn { height: 42px; padding: 0 18px; border: 0; border-radius: 12px; cursor: pointer; font: 700 14px "Pretendard", sans-serif; color: #1a1205; background: var(--accent); }
 .btn.ghost { background: transparent; color: var(--muted); border: 1px solid rgba(245,239,224,.2); }

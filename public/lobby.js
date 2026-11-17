@@ -1,6 +1,8 @@
 // 카지노 로비: 아이소메트릭 카지노 홀을 그리고, 테이블을 누르면 그 게임으로 (CASINO.md 1장)
-// 게임 상태·인원은 /casino/api/lobby, 코인·출석은 JMTT(/auth). 게임 목록의 정본은 server/core/registry.mjs
+// 게임 상태·인원은 /casino/api/lobby, 코인은 JMTT(/auth), 파산 지원금은 /casino/api/refill. 게임 목록의 정본은 server/core/registry.mjs
+import { earnHtml } from './shared/earn.js'
 const $ = id => document.getElementById(id)
+$('earn-note').innerHTML = earnHtml()
 
 // ───────── 게임 상태 (API가 오기 전 기본값) ─────────
 const games = {

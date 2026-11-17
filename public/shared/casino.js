@@ -17,6 +17,7 @@
 // 윗줄(← 로비 · 게임 이름 · 코인 · 칩 · 칩 바꾸기 · 코인으로), 칩 바꾸기 창, 알림, 다시 연결을 이 파일이 맡는다.
 // 칩 숫자는 서버가 보낸 값만 보여 준다 (브라우저에서 계산하지 않음)
 
+import { earnHtml } from './earn.js'
 const fmt = n => Number(n || 0).toLocaleString('ko-KR')
 const el = (tag, attrs = {}, html = '') => { const e = document.createElement(tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); e.innerHTML = html; return e }
 const store = {
@@ -84,6 +85,7 @@ export async function startGame(opts = {}) {
   const bk = el('dialog', { class: 'casino-dialog' }, `
     <h2 data-bk-title>칩을 모두 잃었어요</h2>
     <p data-bk-msg></p>
+    <p class="casino-earn">${earnHtml()}</p>
     <div class="row"><button class="casino-btn ghost" type="button" data-bk-close>닫기</button><button class="casino-btn" type="button" data-bk-go>캐셔로 가기</button></div>`)
   document.body.append(bk)
   bk.querySelector('[data-bk-close]').onclick = () => bk.close()

@@ -1049,6 +1049,7 @@ async function offerRefill(title) {
     : s.why === 'daily_limit' ? `오늘 받을 수 있는 파산 지원금(하루 ${s.perDay}번)을 다 받았어요. 내일 다시 받을 수 있어요.`
     : `<b>${s.seat?.title || '다른 게임'}</b>에 칩이 남아 있어요. 그 칩을 코인으로 바꾸면 캐셔에서 파산 지원금을 받을 수 있어요.`
   $('#bk-go').hidden = s.why === 'daily_limit'
+  try { $('#bk-earn').innerHTML = (await import('../shared/earn.js')).earnHtml() } catch {} // 다른 JMTT 게임에서 코인 벌기
   $('#bankrupt').hidden = false
   return true
 }

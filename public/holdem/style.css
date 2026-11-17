@@ -442,6 +442,8 @@ label.public-check { flex-direction: row; align-items: center; gap: 6px; font-si
 .bankrupt-box p b { color: var(--gold); }
 .bk-icon { font-size: 44px; animation: pop .45s cubic-bezier(.2, 1.6, .4, 1); }
 .bk-actions { display: flex; gap: 8px; justify-content: center; margin-top: 14px; }
+.bankrupt-box p.bk-earn { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.bk-earn a { color: var(--gold); white-space: nowrap; }
 .bk-actions .btn { flex: 1; }
 #lobby-refill { margin-top: 8px; }
 
