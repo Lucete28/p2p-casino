@@ -59,6 +59,21 @@ body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, 
 .sl-paylines polyline.win { stroke-dasharray: 600; stroke-dashoffset: 600; animation: sl-draw .5s ease-out forwards; }
 @keyframes sl-draw { to { stroke-dashoffset: 0; } }
 
+/* 남은 칩: 윗줄 대신 몸체에 (이 페이지에서는 윗줄 칩 표시를 숨김) */
+.casino-top [data-chips-pill] { display: none !important; }
+.sl-credit { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 8px 8px 8px 14px; border-radius: 12px;
+  background: linear-gradient(180deg, #1a0f05, #0b0704); border: 1px solid var(--c-gold-2); box-shadow: inset 0 0 14px rgba(0,0,0,.8); }
+.sl-credit-label { font-size: 13px; font-weight: 700; color: var(--c-muted); white-space: nowrap; }
+.sl-credit-label::before { content: ""; display: inline-block; width: 14px; height: 14px; margin-right: 6px; vertical-align: -2px; border-radius: 50%;
+  background: #c81e2c; box-shadow: inset 0 0 0 3px #c81e2c, inset 0 0 0 5px #fff; }
+.sl-credit-num { flex: 1; min-width: 0; text-align: right; font: 900 26px/1.1 "Pretendard", sans-serif; font-variant-numeric: tabular-nums;
+  color: #ffd36b; text-shadow: 0 0 10px rgba(255,190,70,.55); overflow: hidden; text-overflow: ellipsis; }
+.sl-credit-add { flex: none; height: 40px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--c-line); background: rgba(232,194,106,.1);
+  color: var(--c-gold); font: 700 13px "Pretendard", sans-serif; cursor: pointer; }
+.sl-credit-add:focus-visible { outline: 2px solid var(--c-gold); outline-offset: 2px; }
+.sl-credit-num.sl-bump { animation: sl-credit-bump .25s ease-out; }
+@keyframes sl-credit-bump { 40% { transform: scale(1.08); color: #fff1b8; } }
+
 /* 결과판: 무슨 일이 있었는지 쉬운 말로 */
 .sl-result { margin: 12px 0; padding: 10px 14px; border-radius: 12px; background: #060504; border: 1px solid #2d2617; box-shadow: inset 0 0 18px rgba(0,0,0,.9); }
 .sl-result-main { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-height: 34px; }
@@ -148,7 +163,7 @@ body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, 
 .sl-fly { position: fixed; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 50%; pointer-events: none; z-index: 56;
   background: radial-gradient(circle at 35% 30%, #fff3c0, #eec767 45%, #9c7425); box-shadow: 0 0 10px rgba(255,210,110,.8); }
 .sl-bump { animation: sl-bump .25s ease-out; }
-@keyframes sl-bump { 40% { transform: scale(1.15); box-shadow: 0 0 16px rgba(255,210,110,.8); } }
+@keyframes sl-bump { 40% { transform: scale(1.15); } }
 
 /* 줄 끝에 떠오르는 +칩 */
 .sl-fxtext { position: absolute; inset: 0; pointer-events: none; overflow: visible; }

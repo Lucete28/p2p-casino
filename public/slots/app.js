@@ -198,7 +198,7 @@ function tierOf(m) {
   return k >= 50 ? 'mega' : k >= 10 ? 'big' : k >= 3 ? 'nice' : k >= 1 ? 'win' : k > 0 ? 'small' : 'lose'
 }
 let streak = 0
-const chipPill = () => document.querySelector('[data-chips-pill]')
+const chipPill = () => $('credit') // 당첨 동전이 날아가는 곳: 몸체의 '남은 칩'
 
 function showResult(m) {
   return new Promise(resolve => {
@@ -290,6 +290,25 @@ function paintPaytables() {
   document.querySelectorAll('[data-paytable]').forEach(el => { el.innerHTML = html })
   $('payFor').textContent = $('helpFor').textContent = `베팅 ${fmt(bet)}칩일 때 받는 칩`
 }
+
+// ---------- 남은 칩 (몸체 숫자판). 숫자는 서버가 보낸 칩만, 늘어날 때는 굴러 올라가게 ----------
+let creditShown = null, creditRaf = 0
+function paintCredit(chips) {
+  const el = $('credit')
+  $('creditBar').hidden = !game?.me
+  cancelAnimationFrame(creditRaf)
+  const from = creditShown ?? chips
+  creditShown = chips
+  if (chips <= from || reduced) { el.textContent = fmt(chips); return }
+  const t0 = performance.now(), dur = Math.min(1200, 300 + Math.log10(chips - from + 1) * 250)
+  const step = now => {
+    const k = Math.min(1, (now - t0) / dur)
+    el.textContent = fmt(Math.round(from + (chips - from) * (1 - (1 - k) ** 3)))
+    if (k < 1) creditRaf = requestAnimationFrame(step)
+  }
+  creditRaf = requestAnimationFrame(step)
+}
+$('creditAdd').onclick = () => game?.openBuyIn()
 
 // ---------- 돌리기 ----------
 let game = null, busy = false, queued = false, waitT = null, awaiting = false, auto = false
@@ -457,9 +476,10 @@ game = await startGame({
   autoBuyIn: !firstVisit, // 처음이면 안내를 먼저 보고 '시작하기'에서 칩 바꾸기
   bustDelay: 1500, // 칩을 다 잃었을 때 파산 안내는 릴이 멈추고 결과를 본 뒤에 (정산은 서버 SPIN_MS 뒤)
   onToast(d) { refused(d.msg) }, // 알림 자체는 기본대로 띄움
-  onLoggedOut() { say('로그인하면 할 수 있어요', '', '로그인 버튼을 눌러 시작해요'); paintSpin() },
-  onReady() { paintBet() },
-  onChips({ inPlay }) {
+  onLoggedOut() { $('creditBar').hidden = true; say('로그인하면 할 수 있어요', '', '로그인 버튼을 눌러 시작해요'); paintSpin() },
+  onReady() { paintBet(); paintCredit(game?.chips ?? 0) },
+  onChips({ chips, inPlay }) {
+    paintCredit(chips)
     paintBet()
     if (!inPlay && queued && !busy) requestSpin()
   },
