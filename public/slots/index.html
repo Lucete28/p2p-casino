@@ -70,50 +70,38 @@
           <div class="sl-bulbs" aria-hidden="true"></div>
           <div class="sl-logo"><span class="sl-logo-7">7</span><span class="sl-logo-7">7</span><span class="sl-logo-7">7</span><b>JMTT SLOTS</b></div>
           <div class="sl-bulbs" aria-hidden="true"></div>
+          <button type="button" class="sl-sound" id="sound" aria-pressed="true" aria-label="소리 끄기"></button>
         </header>
 
         <div class="sl-glass">
-          <ol class="sl-marks left" aria-hidden="true"><li data-line="1" style="--row:0">2</li><li data-line="3" style="--row:0">4</li><li data-line="0" style="--row:1">1</li><li data-line="2" style="--row:2">3</li><li data-line="4" style="--row:2">5</li></ol>
           <div class="sl-window">
             <div class="sl-reels" id="reels"></div>
             <svg class="sl-paylines" id="paylines" viewBox="0 0 300 300" preserveAspectRatio="none" aria-hidden="true"></svg>
           </div>
-          <ol class="sl-marks right" aria-hidden="true"><li data-line="1" style="--row:0">2</li><li data-line="4" style="--row:0">5</li><li data-line="0" style="--row:1">1</li><li data-line="2" style="--row:2">3</li><li data-line="3" style="--row:2">4</li></ol>
         </div>
 
-        <div class="sl-led" aria-live="polite">
-          <span class="sl-led-label">WIN</span>
-          <b class="sl-led-num" id="win">0</b>
-          <span class="sl-led-msg" id="msg">레버를 당기거나 SPIN을 눌러요</span>
+        <div class="sl-result" id="result" aria-live="polite">
+          <div class="sl-result-main">
+            <b class="sl-result-title" id="resTitle">레버를 당겨 보세요</b>
+            <b class="sl-result-amt" id="resAmt"></b>
+          </div>
+          <p class="sl-result-sub" id="resSub">같은 그림 3개가 한 줄로 서면 당첨!</p>
         </div>
 
-        <div class="sl-controls">
-          <div class="sl-ctl">
-            <span class="sl-ctl-label">라인</span>
-            <div class="sl-seg" role="radiogroup" aria-label="라인 수" id="lines">
-              <button type="button" role="radio" data-lines="1">1</button>
-              <button type="button" role="radio" data-lines="3">3</button>
-              <button type="button" role="radio" data-lines="5">5</button>
-            </div>
+        <div class="sl-bet">
+          <span class="sl-bet-label">베팅</span>
+          <div class="sl-step">
+            <button type="button" id="betDown" aria-label="베팅 줄이기">−</button>
+            <output id="bet" aria-live="polite">5</output>
+            <button type="button" id="betUp" aria-label="베팅 늘리기">+</button>
           </div>
-          <div class="sl-ctl">
-            <span class="sl-ctl-label">라인당</span>
-            <div class="sl-step">
-              <button type="button" id="betDown" aria-label="베팅 줄이기">−</button>
-              <input id="lineBet" type="number" inputmode="numeric" min="1" step="1" value="1" aria-label="라인당 베팅">
-              <button type="button" id="betUp" aria-label="베팅 늘리기">+</button>
-            </div>
-          </div>
-          <div class="sl-ctl sl-total">
-            <span class="sl-ctl-label">총 베팅</span>
-            <b id="total">5</b>
-          </div>
+          <span class="sl-bet-hint" id="betHint">줄 5개 모두</span>
         </div>
 
         <div class="sl-actions">
           <button type="button" class="sl-small" id="auto" aria-pressed="false">자동</button>
           <button type="button" class="sl-spin" id="spin">SPIN</button>
-          <button type="button" class="sl-small" id="sound" aria-pressed="true" aria-label="소리">소리 켬</button>
+          <button type="button" class="sl-small" id="help">배당표</button>
         </div>
       </section>
 
@@ -123,15 +111,28 @@
           <div class="sl-lever-knob" id="leverKnob"></div>
         </div>
         <div class="sl-lever-base"></div>
+        <span class="sl-lever-tip" id="leverTip" aria-hidden="true">당겨요!</span>
       </div>
     </div>
 
     <section class="sl-pay" aria-labelledby="payTitle">
-      <h2 id="payTitle">배당표 <small>라인당 베팅 × 배수 · 왼쪽 릴부터</small></h2>
-      <ul class="sl-paylist" id="paylist"></ul>
-      <p class="sl-note">한 라인에서는 가장 큰 당첨 하나만 받아요. 라인 1은 가운데, 2·3은 위·아래, 4·5는 대각선. 이론 환급률(RTP) 95.0% · 결과는 서버가 정해요. 코인은 게임용이며 현금이나 상품으로 바꿀 수 없어요.</p>
+      <h2 id="payTitle">배당표 <small id="payFor"></small></h2>
+      <div class="sl-paytable" data-paytable></div>
     </section>
   </main>
+
+  <!-- 하는 법 + 배당표. 처음 들어오면 한 번 자동으로 열림 -->
+  <dialog class="casino-dialog sl-help" id="helpDlg" aria-labelledby="helpTitle">
+    <h2 id="helpTitle">슬롯머신 하는 법</h2>
+    <ol class="sl-howto">
+      <li><b>칩 바꾸기</b><span>코인을 칩으로 바꿔요. 남은 칩은 나갈 때 코인으로 돌아와요.</span></li>
+      <li><b>베팅 고르기</b><span>− + 로 한 번에 걸 칩을 골라요.</span></li>
+      <li><b>레버 당기기</b><span>오른쪽 레버를 아래로 당기거나 SPIN을 눌러요.</span></li>
+    </ol>
+    <h3>이러면 당첨 <small id="helpFor"></small></h3>
+    <div class="sl-paytable" data-paytable></div>
+    <div class="row"><button class="casino-btn" type="button" id="helpOk">시작하기</button></div>
+  </dialog>
 
   <div class="sl-rain" id="rain" aria-hidden="true"></div>
 
