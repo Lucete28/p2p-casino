@@ -78,7 +78,13 @@ input:focus { outline: 2px solid var(--gold-dark); border-color: transparent; }
 .user-pic[hidden] { display: none; }
 .login-note { margin: 6px 0 0; font-size: 12px; color: var(--muted); text-align: center; }
 .login-note[hidden] { display: none; }
-.btn.google:disabled { opacity: .6; cursor: not-allowed; }
+/* JMTT 공통 로그인 버튼 (DEV_REFERENCE 2-1, Google 브랜드 규칙: 공식 G 로고 그대로, 어두운 화면은 .dark) */
+.jmtt-google { display: inline-flex; align-items: center; justify-content: center; gap: 10px; height: 40px; padding: 0 12px; border-radius: 20px;
+  background: #fff; border: 1px solid #747775; color: #1f1f1f; font: 500 14px/1 Roboto, "Pretendard", sans-serif; text-decoration: none; cursor: pointer; }
+.jmtt-google.dark { background: #131314; border-color: #8e918f; color: #e3e3e3; }
+.jmtt-google img { width: 18px; height: 18px; flex: none; }
+.jmtt-google:disabled { opacity: .6; cursor: not-allowed; }
+#auth .jmtt-google { display: flex; margin: 0 auto; padding: 0 16px; }
 .or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
 .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .note { margin: 4px 0 0; font-size: 12px; color: var(--muted); text-align: center; line-height: 1.6; }

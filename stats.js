@@ -1,5 +1,5 @@
 // 관리자 전용 사용 통계. 보안 규칙에서 admins/{uid} 문서가 있는 계정만 데이터를 읽을 수 있다.
-import * as cloud from './cloud.js?v=1.7.6'
+import * as cloud from './cloud.js?v=1.7.7'
 
 const $ = s => document.querySelector(s)
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`)
@@ -21,7 +21,7 @@ else {
       $('#who').textContent = ''
       $('#refresh').hidden = true
       if (j?.state === 'down') return gate('로그인 서버를 점검하고 있어요. 잠시 뒤 다시 열어 주세요.')
-      gate(`관리자 계정으로 로그인해 주세요.<br><br><button id="login" class="btn big google">JMTT로 로그인</button>`)
+      gate(`관리자 계정으로 로그인해 주세요.<br><br><button id="login" class="jmtt-google dark" type="button"><img src="/google-g.svg" alt="" width="18" height="18"><span>Google로 로그인</span></button>`)
       $('#login').onclick = () => (cloud.isEmu ? cloud.emuLogin() : cloud.loginRedirect())
       return
     }

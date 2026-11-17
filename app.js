@@ -1,9 +1,9 @@
 ﻿// P2P 연결 + 화면. 방을 만든 사람(호스트)이 딜러 역할을 하며 게임 상태를 결정한다.
-import { createNet, selfId } from './net.js?v=1.7.6'
-import { CONFIG, Table } from './poker.js?v=1.7.6'
-import * as cloud from './cloud.js?v=1.7.6'
-import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.7.6'
-import { botDecision, BOT_NAMES } from './bot.js?v=1.7.6'
+import { createNet, selfId } from './net.js?v=1.7.7'
+import { CONFIG, Table } from './poker.js?v=1.7.7'
+import * as cloud from './cloud.js?v=1.7.7'
+import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.7.7'
+import { botDecision, BOT_NAMES } from './bot.js?v=1.7.7'
 
 // 카카오톡·인스타그램 같은 앱 안 브라우저에서는 구글 로그인이 막혀서, 외부 브라우저로 열도록 유도
 const UA = navigator.userAgent
@@ -16,7 +16,7 @@ else if (/\bLine\//i.test(UA) && !new URLSearchParams(location.search).has('open
   location.replace(u)
 }
 
-const VERSION = '1.7.6' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
+const VERSION = '1.7.7' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
 const APP_ID = 'p2p-casino-poker-v1'
 const STORE = 'casino:wallet'
 
@@ -165,7 +165,7 @@ function showInvite() {
   const box = $('#invite')
   box.hidden = !inviteCode
   if (!inviteCode) return
-  const next = cloud.enabled && !uid ? (loginDown ? '로그인 서버 점검 중이라 지금은 들어갈 수 없어요.' : 'JMTT로 로그인하면 바로 들어가요.')
+  const next = cloud.enabled && !uid ? (loginDown ? '로그인 서버 점검 중이라 지금은 들어갈 수 없어요.' : 'Google로 로그인하면 바로 들어가요.')
     : !nameInput.value.trim() ? '닉네임을 입력하고 <b>참가하기</b>를 눌러 주세요.'
     : '방에 들어가는 중…'
   box.innerHTML = `🎟 <b>${esc(inviteCode)}</b> 방에 초대받았어요<br><small>${next}</small>`
@@ -271,7 +271,7 @@ if (cloud.enabled) {
     loginDown = j?.state === 'down'
     $('#login').hidden = !!uid
     $('#login').disabled = loginDown
-    $('#login').textContent = loginDown ? '로그인 서버 점검 중' : 'JMTT로 로그인'
+    $('#login span').textContent = loginDown ? '로그인 서버 점검 중' : 'Google로 로그인'
     $('#user-line').hidden = !uid
     document.querySelector('.login-note').hidden = !!uid || loginDown
     if (loginDown) toast('로그인 서버를 점검하고 있어요. 잠시 뒤 다시 들어와 주세요.')
