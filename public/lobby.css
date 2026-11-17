@@ -64,6 +64,28 @@ body { min-height: 100vh; color: var(--ink); background: var(--bg); font-family:
 .bulb { animation: blink 1.3s infinite; }
 .bulb.b2 { animation-delay: .65s; }
 
+/* ── 마우스를 올리면 움직이는 효과 (룰렛 휠이 빨라지는 것처럼, 테이블마다) ── */
+/* 슬롯머신: 릴이 돌고 불빛이 빨라짐 */
+@keyframes reel { from { transform: translateY(0); } to { transform: translateY(-160px); } }
+.g:hover .reel, .g:focus-visible .reel { animation: reel .42s linear infinite; }
+.g:hover .reel.r1, .g:focus-visible .reel.r1 { animation-duration: .5s; }
+.g:hover .reel.r2, .g:focus-visible .reel.r2 { animation-duration: .6s; }
+.g:hover .bulb, .g:focus-visible .bulb { animation-duration: .35s; }
+/* 카드 뒤집기 (홀덤 커뮤니티 카드, 블랙잭 딜러 카드, 바카라) */
+@keyframes flipOut { to { transform: scaleX(0); } }
+@keyframes flipIn { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.flip-down, .flip-up { transform-box: fill-box; transform-origin: 50% 50%; }
+.flip-up { transform: scaleX(0); }
+.g:hover .flip-down, .g:focus-visible .flip-down { animation: flipOut .22s ease-in forwards; }
+.g:hover .flip-up, .g:focus-visible .flip-up { animation: flipIn .22s .22s ease-out forwards; }
+/* 칩 더미가 통통 */
+@keyframes hop { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-9px); } 60% { transform: translateY(-9px); } }
+.g:hover .hop, .g:focus-visible .hop { animation-name: hop; animation-duration: .7s; animation-iteration-count: infinite; animation-timing-function: ease-in-out; }
+/* 블랙잭: 카드 슈에서 손님 자리로 카드가 나감 */
+@keyframes deal { 0% { opacity: 0; transform: translate(0, 0); } 12% { opacity: 1; } 70% { opacity: 1; transform: translate(-108px, 74px); } 100% { opacity: 0; transform: translate(-108px, 74px); } }
+.deal { opacity: 0; }
+.g:hover .deal, .g:focus-visible .deal { animation: deal 1.1s ease-out infinite; }
+
 /* 좁은 화면용 게임 목록 */
 .game-list { display: none; }
 @media (max-width: 760px) {
@@ -111,6 +133,9 @@ dialog .bal { font-size: 34px; font-weight: 800; margin: 6px 0 4px; font-variant
 .btn[disabled] { opacity: .5; cursor: default; }
 
 @media (prefers-reduced-motion: reduce) {
-  .spin, .bulb { animation: none; }
+  .spin, .bulb, .g .reel, .g .hop, .g .deal { animation: none !important; }
   .g, .g .art, .g .spot { transition: none; }
+  /* 움직임을 줄인 사람에게는 카드를 뒤집는 대신 앞면을 바로 보여 줌 */
+  .g:hover .flip-down, .g:focus-visible .flip-down { animation: none; opacity: 0; }
+  .g:hover .flip-up, .g:focus-visible .flip-up { animation: none; transform: none; }
 }

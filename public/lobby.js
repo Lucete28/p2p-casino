@@ -51,6 +51,11 @@ function card(x, y, label, red) {
   if (!label) return `<rect x="${x}" y="${y}" width="32" height="44" rx="4" fill="#1f3f8a" stroke="#c9d6ff" stroke-width="1.5"/>`
   return `<rect x="${x}" y="${y}" width="32" height="44" rx="4" fill="#fff8e6"/><text x="${x + 16}" y="${y + 29}" text-anchor="middle" font-family="Pretendard,sans-serif" font-weight="800" font-size="17" fill="${red ? '#c81e2c' : '#111'}">${label}</text>`
 }
+// ── 마우스를 올리면 움직이는 효과 (룰렛 휠처럼. 움직임은 lobby.css) ──
+// 뒷면 → 앞면으로 뒤집히는 카드
+const flipCard = (x, y, label, red) => `<g class="flip-down">${card(x, y)}</g><g class="flip-up">${card(x, y, label, red)}</g>`
+// 통통 튀는 칩 더미 (delay로 하나씩 엇갈리게)
+const hop = (inner, delay = 0) => `<g class="hop" style="animation-delay:${delay}s">${inner}</g>`
 // 간판: 어두운 판 + 이름 + 상태 알약 (+ 마우스를 올리면 "입장하기")
 function sign(x, y, id, { name = true } = {}) {
   const g = games[id], pill = pillOf(g)
@@ -96,7 +101,13 @@ function slotFace() {
   let s = `<rect x="6" y="6" width="78" height="16" rx="5" style="fill:var(--slot-trim)"/>`
   for (let i = 0; i < 5; i++) s += `<circle class="bulb ${i % 2 ? 'b2' : ''}" cx="${17 + i * 14}" cy="14" r="4" fill="#fff6c8"/>`
   s += `<rect x="8" y="30" width="74" height="48" rx="5" fill="#0b0912" style="stroke:var(--slot-trim);stroke-width:2.5"/>`
-  for (let i = 0; i < 3; i++) s += `<rect x="${12 + i * 23}" y="34" width="20" height="40" rx="3" fill="#fff8e6"/><text x="${22 + i * 23}" y="63" text-anchor="middle" font-family="Pretendard,sans-serif" font-weight="900" font-size="24" fill="#d0202f">7</text>`
+  // 릴: 칸 안에서만 보이는 기호 띠. 마우스를 올리면 띠가 돌아간다 (마지막 7 = 처음 7이라 이어짐)
+  const SYM = [['7', '#d0202f'], ['★', '#d39b00'], ['♦', '#2a63c4'], ['♣', '#1f9b52'], ['7', '#d0202f']]
+  for (let i = 0; i < 3; i++) {
+    s += `<rect x="${12 + i * 23}" y="34" width="20" height="40" rx="3" fill="#fff8e6"/>`
+    s += `<svg x="${12 + i * 23}" y="34" width="20" height="40" overflow="hidden"><g class="reel r${i}">${SYM.map((m, k) =>
+      `<text x="10" y="${29 + k * 40}" text-anchor="middle" font-family="Pretendard,sans-serif" font-weight="900" font-size="24" fill="${m[1]}">${m[0]}</text>`).join('')}</g></svg>`
+  }
   s += `<rect x="10" y="88" width="70" height="12" rx="4" fill="#00000066"/><rect x="30" y="112" width="30" height="7" rx="3" fill="#00000088"/>`
   return s
 }
@@ -139,8 +150,8 @@ function holdem() {
   art += E(x, y, rx - 32, ry - 12, 'var(--felt)')
   art += flat(x, y, `<ellipse rx="188" ry="118" fill="none" style="stroke:var(--felt-line);stroke-width:2"/>
     <text class="felt-t" y="-72" text-anchor="middle">TEXAS HOLD'EM</text>
-    ${card(-90, -24, 'K♠')}${card(-54, -24, 'Q♥', 1)}${card(-18, -24, 'J♦', 1)}${card(18, -24)}${card(54, -24)}`)
-  art += chips(x - 34, y + 46, '#d0283a') + chips(x + 6, y + 50, '#2a63c4', 2) + chips(x + 40, y + 44, '#1f9b52', 4)
+    ${card(-90, -24, 'K♠')}${card(-54, -24, 'Q♥', 1)}${card(-18, -24, 'J♦', 1)}${flipCard(18, -24, '10♣')}${flipCard(54, -24, 'A♠')}`)
+  art += hop(chips(x - 34, y + 46, '#d0283a')) + hop(chips(x + 6, y + 50, '#2a63c4', 2), .15) + hop(chips(x + 40, y + 44, '#1f9b52', 4), .3)
   art += cyl(x + 170, y + 40, 14, 7, 4, '#999', '#fff') + `<text x="${r1(x + 170)}" y="${r1(y + 45)}" text-anchor="middle" font-size="11" font-weight="800" fill="#111">D</text>`
   art += seats.filter(c => c[2] >= 0).map(c => chair(c[0], c[1])).join('')
   return zone('holdem', spot(x, y0 + 10, rx + 120, ry + 80) + `<g class="art">${art}</g>` + sign(x, y - ry - 112, 'holdem'))
@@ -159,8 +170,10 @@ function blackjack() {
   art += flat(x, y, `${angs.map(t => `<circle cx="${r1(Math.cos(t) * 122)}" cy="${r1(Math.sin(t) * 92)}" r="14" fill="none" style="stroke:var(--felt-line);stroke-width:2"/>`).join('')}
     <text class="felt-t" y="56" text-anchor="middle" style="font-size:13px">BLACKJACK PAYS 3 TO 2</text>
     <rect x="-56" y="6" width="112" height="22" rx="4" fill="#00000055"/>
-    ${card(-34, 32, 'A', 1)}`)
+    ${card(-34, 32, 'A', 1)}${flipCard(2, 32, 'K')}`)
   art += cyl(x + 150, y + 6, 22, 10, 18, '#111', '#2b2b2b')
+  // 카드 슈에서 손님 자리로 카드가 미끄러져 나감 (마우스를 올렸을 때만 보임)
+  art += flat(x, y, `<g class="deal">${card(106, -14)}</g>`)
   art += angs.map(t => chair(x + Math.cos(t) * (a + 52) * K, y0 + Math.sin(t) * (b + 50) * Q)).join('')
   return zone('blackjack', spot(x, y0 + 30, rx + 60, ry + 40) + `<g class="art">${art}</g>` + sign(x, y - 112, 'blackjack'))
 }
@@ -203,7 +216,7 @@ function baccarat() {
     <text x="0" y="-38" text-anchor="middle" class="felt-t" style="font-size:13px">TIE 8 : 1</text>
     <text x="0" y="22" text-anchor="middle" font-family="Pretendard,sans-serif" font-weight="800" font-size="17" fill="#8cc2ff" letter-spacing="3">PLAYER</text>
     <text x="0" y="62" text-anchor="middle" font-family="Pretendard,sans-serif" font-weight="800" font-size="15" fill="#ff9a9a" letter-spacing="3">BANKER</text>
-    ${card(-150, -10, '9', 0)}${card(118, -10)}`)
+    ${card(-150, -10, '9', 0)}${flipCard(118, -10, '8', 1)}`)
   art += angs.map(t => chair(x + Math.cos(t) * (a + 50) * K, y0 + Math.sin(t) * (b + 48) * Q)).join('')
   return zone('baccarat', spot(x, y0 + 30, rx + 60, ry + 40) + `<g class="art">${art}</g>` + sign(x, y - ry - 82, 'baccarat'))
 }
@@ -218,7 +231,7 @@ function cashier() {
   art += R(x - 150, y0 - 92, 300, 26, 'var(--trim)', 'rx="4"')
   art += R(x - 150, y0 - 66, 300, 66, 'var(--rail)', 'rx="4"')
   art += `<text x="${r1(x)}" y="${r1(y0 - 24)}" text-anchor="middle" font-family="Pretendard,sans-serif" font-weight="800" font-size="25" fill="#ffe39b">코인 · 지원금</text>`
-  art += chips(x - 90, y0 - 92, '#e8c26a', 4) + chips(x - 56, y0 - 92, '#d0283a', 2)
+  art += hop(chips(x - 90, y0 - 92, '#e8c26a', 4)) + hop(chips(x - 56, y0 - 92, '#d0283a', 2), .2)
   return `<a class="g cashier" href="#cashier" data-cashier aria-label="캐셔: 코인 확인과 파산 지원금">${spot(x, y0 + 10, 230, 70)}<g class="art">${art}</g></a>`
 }
 
