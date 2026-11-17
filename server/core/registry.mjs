@@ -7,7 +7,7 @@ export const GAMES = [
   { id: 'baccarat', title: '바카라', status: 'wip' },
   { id: 'roulette', title: '룰렛', status: 'wip' },
   // welcome: 이 게임에 처음 들어온 사람(계정당 한 번)에게 주는 기념 칩 (운영자 결정 2026-11-17: 슬롯 5,000). core/house.mjs가 지급
-  { id: 'slots', title: '슬롯머신', status: 'wip', welcome: { chips: 5000, title: '첫 방문 기념' } },
+  { id: 'slots', title: '슬롯머신', status: 'live', welcome: { chips: 5000, title: '첫 방문 기념' } }, // 2026-11-17 오픈 (운영자 결정)
 ]
 
 // 로컬 테스트 전용 게임 (CASINO_TEST_GAMES=1일 때만). 코어의 관리 모드·칩 지갑을 시험한다
