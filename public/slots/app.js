@@ -207,7 +207,7 @@ function showResult(m) {
 }
 
 // ---------- 돌리기 ----------
-let game = null, busy = false, queued = false, waitT = null, auto = false
+let game = null, busy = false, queued = false, waitT = null, awaiting = false, auto = false
 function setBusy(on) {
   busy = on
   $('spin').disabled = on
@@ -237,11 +237,21 @@ function requestSpin() {
   sfx.lever()
   game.send({ t: 'spin', lineBet: bet.lineBet, lines: bet.lines })
   clearTimeout(waitT)
-  waitT = setTimeout(() => { setBusy(false); setAuto(false); $('msg').textContent = '다시 눌러 주세요' }, 2500) // 서버가 거절하면 (알림으로 옴)
+  awaiting = true
+  waitT = setTimeout(() => refused('다시 눌러 주세요'), 2500) // 답이 없으면 (연결 끊김 등)
+}
+// 서버가 스핀을 거절하면 (onToast) 바로 다시 누를 수 있게
+function refused(msg) {
+  if (!awaiting) return
+  awaiting = false
+  clearTimeout(waitT)
+  setBusy(false); setAuto(false)
+  $('msg').textContent = msg
 }
 
 async function onSpun(m) {
   clearTimeout(waitT)
+  awaiting = false
   setBusy(true)
   ticking(true)
   await Promise.all(m.stops.map((s, r) => spinTo(r, s, STOP_MS[r], 2 + r)))
@@ -337,6 +347,8 @@ sevens.forEach((s, r) => setStatic(r, s))
 paintBet(); paintSound(); layoutLever()
 
 game = await startGame({
+  bustDelay: 1500, // 칩을 다 잃었을 때 파산 안내는 릴이 멈추고 결과를 본 뒤에 (정산은 서버 SPIN_MS 뒤)
+  onToast(d) { refused(d.msg) }, // 알림 자체는 기본대로 띄움
   onLoggedOut() { $('msg').textContent = '로그인하면 돌릴 수 있어요' },
   onReady() { paintBet() },
   onChips({ inPlay }) {
