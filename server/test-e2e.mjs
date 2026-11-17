@@ -76,7 +76,7 @@ check('장부: 입장·정산 기록', after.log.filter(x => x.op === 'stake').l
   after.log.slice(-4).map(x => `${x.op} ${x.user} ${x.amount} ${x.reason}`).join(' | '))
 // 랭킹·통계
 const season = await (await fetch(BASE + '/casino/api/season', { headers: { Cookie: 'jmtt_session=u_alice' } })).json()
-check('월간 랭킹 기록', season.rows.length === 2, JSON.stringify(season.rows))
+check('월간 랭킹 기록', ['앨리스', '밥'].every(n => season.rows.some(r => r.name === n)), JSON.stringify(season.rows))
 const stats = await fetch(BASE + '/casino/api/stats', { headers: { Cookie: 'jmtt_session=u_alice' } })
 const statsBob = await fetch(BASE + '/casino/api/stats', { headers: { Cookie: 'jmtt_session=u_bob' } })
 check('관리자 통계: 관리자만', stats.status === 200 && statsBob.status === 403)

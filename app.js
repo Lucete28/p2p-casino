@@ -1,8 +1,8 @@
 // 화면 + 카지노 서버 연결. 카드 섞기·판 진행·봇·코인 정산은 서버가 하고, 브라우저는 행동만 보내고 상태만 받는다 (v1.8.0~)
-import { connect } from './net.js?v=1.8.0'
-import { CONFIG } from './poker.js?v=1.8.0'
-import * as cloud from './cloud.js?v=1.8.0'
-import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.8.0'
+import { connect } from './net.js?v=1.8.1'
+import { CONFIG } from './poker.js?v=1.8.1'
+import * as cloud from './cloud.js?v=1.8.1'
+import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.8.1'
 
 // 카카오톡·라인 같은 앱 안 브라우저는 외부 브라우저로 (Google 로그인이 막혀 있음. 로그인 화면도 따로 안내함)
 const UA = navigator.userAgent
@@ -15,7 +15,7 @@ else if (/\bLine\//i.test(UA) && !new URLSearchParams(location.search).has('open
   location.replace(u)
 }
 
-const VERSION = '1.8.0' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
+const VERSION = '1.8.1' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
 
 // 연습 토큰 시절의 브라우저 저장값 정리 (토큰은 코인으로 바뀜. 닉네임만 이어 씀)
 const NAME_KEY = 'casino:name'
@@ -211,7 +211,11 @@ function onServer(d) {
     case 'state': return onState(d.s)
     case 'hole': myHole = d; return render()
     case 'toast': return toast(d.msg)
-    case 'seated': coins = 0; toast(`코인 ${d.staked.toLocaleString()}개를 맡기고 앉았어요.`); window.JMTT?.badge?.refresh?.(); return render()
+    case 'seated':
+      coins = 0
+      toast(d.pending ? `코인 ${d.staked.toLocaleString()}개를 맡겼어요. 이번 판이 끝나면 봇 대신 앉아요.` : `코인 ${d.staked.toLocaleString()}개를 맡기고 앉았어요.`)
+      window.JMTT?.badge?.refresh?.()
+      return render()
     case 'cashout':
       toast(`${d.why ? d.why + ' · ' : ''}코인 ${d.amount.toLocaleString()}개를 돌려받았어요.`)
       window.JMTT?.badge?.refresh?.()
@@ -398,6 +402,7 @@ function render() {
     else if (state.phase === 'showdown') status += ' · 곧 다음 판이 시작됩니다'
   }
   if (connectStage) status = `<span class="connecting">${esc(connectStage)}</span>`
+  else if (!me && state.waitingSeats?.includes(selfId)) status += ' · <b>이번 판이 끝나면 봇 대신 앉아요</b>'
   else if (!me) status += ' · 구경 중 · <b>앉기</b>를 누르면 가진 코인을 모두 맡기고 다음 판부터 함께해요'
   else if (me.sitOut && !me.inHand) {
     status = '<span class="out">자리 비움 · 시간 안에 행동하지 않아 다음 판부터 빠졌어요. <b>다시 참여</b>를 누르면 다음 판부터 함께해요.</span>'
@@ -406,7 +411,7 @@ function render() {
 
   $('#start').hidden = true // 판은 서버가 자동으로 시작
   $('#refill-btn').hidden = true
-  $('#sit-btn').hidden = !!me || !!connectStage
+  $('#sit-btn').hidden = !!me || !!connectStage || !!state.waitingSeats?.includes(selfId)
   $('#back-btn').hidden = !(me && me.sitOut && !me.left)
 
   renderActions(me)

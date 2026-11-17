@@ -21,17 +21,21 @@ await import('node:fs').then(fs => fs.mkdirSync(DATA, { recursive: true }))
 const store = openStore(join(DATA, 'casino.db'))
 
 // ---------- 정산 대기열: auth에 cashout을 보낸다 (실패하면 30초마다 다시, ref가 같아 두 번 들어가지 않음) ----------
-let flushing = null
+let flushing = null, flushAgain = false
 function flush() {
-  if (flushing) return flushing
+  // 보내는 중에 새 정산이 들어오면 끝난 뒤 바로 한 번 더 돈다 (30초를 기다리지 않게)
+  if (flushing) { flushAgain = true; return flushing }
   flushing = (async () => {
-    for (const p of store.pendingAll()) {
-      try {
-        const r = await jmtt.coin('cashout', p.user_id, p.amount, p.reason, p.ref)
-        if (r.status === 200) store.pendingDone(p.ref)
-        else { store.pendingTried(p.ref); console.warn('cashout', p.ref, r.status, r.error) }
-      } catch (err) { store.pendingTried(p.ref); console.warn('cashout', p.ref, err.message) }
-    }
+    do {
+      flushAgain = false
+      for (const p of store.pendingAll()) {
+        try {
+          const r = await jmtt.coin('cashout', p.user_id, p.amount, p.reason, p.ref)
+          if (r.status === 200) store.pendingDone(p.ref)
+          else { store.pendingTried(p.ref); console.warn('cashout', p.ref, r.status, r.error) }
+        } catch (err) { store.pendingTried(p.ref); console.warn('cashout', p.ref, err.message) }
+      }
+    } while (flushAgain)
   })().finally(() => { flushing = null })
   return flushing
 }
@@ -81,7 +85,11 @@ function send(res, code, body, headers = {}) {
   res.end(json ? JSON.stringify(body) : body)
 }
 
-const ipOf = req => req.headers['cf-connecting-ip'] || req.socket.remoteAddress || ''
+// 기기 표시: 브라우저마다 무작위 번호를 쿠키로 하나 준다 (한 기기에서 여러 계정으로 같은 테이블에 앉지 못하게, 운영자 결정 2026-11-17)
+const DEVICE_COOKIE = 'casino_device'
+const deviceOf = req => (req.headers.cookie || '').match(/(?:^|;\s*)casino_device=([A-Za-z0-9_-]{16,40})/)?.[1] || null
+const isHttps = req => req.headers['x-forwarded-proto'] === 'https' || /"scheme":"https"/.test(req.headers['cf-visitor'] || '')
+const deviceCookie = (id, req) => `${DEVICE_COOKIE}=${id}; Path=${BASE}; Max-Age=${2 * 365 * 86400}; HttpOnly; SameSite=Lax${isHttps(req) ? '; Secure' : ''}`
 
 async function api(req, res, path) {
   let who = null
@@ -123,13 +131,15 @@ const server = http.createServer(async (req, res) => {
   try {
     await stat(file)
     const body = await readFile(file)
-    res.writeHead(200, { 'Content-Type': TYPES[extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-store' })
+    const extra = name === 'index.html' && !deviceOf(req) ? { 'Set-Cookie': deviceCookie(randomBytes(16).toString('base64url'), req) } : {}
+    res.writeHead(200, { 'Content-Type': TYPES[extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-store', ...extra })
     res.end(body)
   } catch { send(res, 404, 'not found') }
 })
 
 // ---------- 웹소켓 ----------
 const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 })
+wss.on('headers', (headers, req) => { if (req.newDevice) headers.push('Set-Cookie: ' + deviceCookie(req.device, req)) })
 server.on('upgrade', async (req, socket, head) => {
   if (new URL(req.url, 'http://x').pathname !== BASE + '/ws') return socket.destroy()
   let who = null
@@ -138,9 +148,12 @@ server.on('upgrade', async (req, socket, head) => {
   }
   // 로그인한 사람만 (브라우저가 보낸 ID는 쓰지 않음)
   if (!who) { socket.end('HTTP/1.1 401 Unauthorized\r\n\r\n'); return }
+  // 기기 쿠키가 없으면(처음 온 기기) 이 연결 응답에서 하나 준다
+  req.device = deviceOf(req) || randomBytes(16).toString('base64url')
+  req.newDevice = !deviceOf(req)
   wss.handleUpgrade(req, socket, head, ws => {
     ws.who = who
-    ws.ip = ipOf(req)
+    ws.device = req.device
     ws.room = null
     try { store.visit(who.id, who.name) } catch (err) { console.warn('visit', err.message) }
     onConnect(ws)
@@ -177,7 +190,7 @@ const cleanName = (n, fallback) => String(n || '').trim().slice(0, 12) || String
 function enterRoom(ws, room, nick) {
   if (ws.room && ws.room !== room) { const old = ws.room; const m = old.members.get(ws.who.id); old.detach(ws); if (m && !m.sockets.size) old.leave(m) }
   if (room.kicked.has(ws.who.id)) return out(ws, { t: 'toast', msg: '이 방에서는 내보내졌어요.' })
-  const m = room.attach(ws, { ...ws.who, nick: cleanName(nick, ws.who.name) }, ws.ip)
+  const m = room.attach(ws, { ...ws.who, nick: cleanName(nick, ws.who.name) }, ws.device)
   return room.sit(m)
 }
 
@@ -197,8 +210,8 @@ async function handle(ws, d) {
     }
     case 'quick': { // 빈자리 있는 공개 방에 자동 배정, 없으면 봇과 새 공개 방
       const open = [...rooms.values()].filter(r => r.isPublic && !r.kicked.has(ws.who.id)
-        && r.table.seats.filter(s => !s.left && !s.bot).length < CONFIG.MAX_SEATS
-        && (process.env.CASINO_ALLOW_SAME_IP === '1' || ![...r.members.values()].some(o => o.user !== ws.who.id && o.session && o.ip === ws.ip)))
+        && r.humanSeats() < CONFIG.MAX_SEATS
+        && ![...r.members.values()].some(o => o.user !== ws.who.id && o.session && o.device === ws.device))
       open.sort((a, b) => b.summary().humans - a.summary().humans)
       let r = open[0]
       if (!r) { r = new Room({ code: newCode(), isPublic: true, autoBots: true, owner: ws.who.id }); rooms.set(r.code, r) }

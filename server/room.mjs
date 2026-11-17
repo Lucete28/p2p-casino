@@ -8,7 +8,6 @@ const DISCONNECT_MS = 60000      // 연결이 끊긴 뒤 이만큼 지나면 자
 const AWAY_STAND_MS = 10 * 60000 // 자리 비움이 이만큼 이어지면 자리에서 일으켜 정산
 const AWAY_AFTER = 2             // 시간 초과 자동 행동이 연속 이만큼이면 자리 비움 (탭이 뒤에 있으면 1번)
 const EMPTY_CLOSE_MS = 30000     // 사람이 아무도 없으면 이만큼 뒤 방을 닫음
-const ALLOW_SAME_IP = process.env.CASINO_ALLOW_SAME_IP === '1' // 로컬 테스트용 (한 컴퓨터에서 두 사람)
 
 export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, flush, onClose }) {
   class Room {
@@ -19,7 +18,7 @@ export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, flush, o
       this.autoBots = autoBots
       this.owner = owner                   // 방장 사용자 ID (봇 추가·내보내기 권한)
       this.table = new Table()
-      this.members = new Map()             // 사용자 ID → { user, name, seatId, session, sockets:Set, ip, hidden, ... }
+      this.members = new Map()             // 사용자 ID → { user, name, seatId, session, sockets:Set, device, hidden, ... }
       this.kicked = new Set()
       this.seq = 0
       this.turnTimer = null; this.timerSeq = -1; this.turnDeadline = 0
@@ -29,6 +28,7 @@ export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, flush, o
       this.handLog = null
       this.timeouts = {}
       this.closeTimer = null
+      this.waiting = []                    // 봇 대신 앉으려고 판이 끝나길 기다리는 사람
       store.roomOpened(this.id)
     }
 
@@ -38,17 +38,17 @@ export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, flush, o
     hostSeatId() { return this.members.get(this.owner)?.seatId || null }
 
     // 연결 하나를 이 방에 붙인다. 이미 있던 사람이면(새로고침·다른 탭) 그 자리 그대로
-    attach(ws, who, ip) {
+    attach(ws, who, device) {
       clearTimeout(this.closeTimer)
       let m = this.members.get(who.id)
       if (!m) {
         m = { user: who.id, name: who.nick || who.name, picture: who.picture, seatId: rid('p_', 6), session: null,
-          sockets: new Set(), ip, hidden: false, disconnectedAt: 0, awaySince: 0, pendingLeave: null, sitting: false }
+          sockets: new Set(), device, hidden: false, disconnectedAt: 0, awaySince: 0, pendingLeave: null, sitting: false }
         this.members.set(who.id, m)
         if (!this.owner || !this.members.has(this.owner)) this.owner = who.id
       }
       m.sockets.add(ws)
-      m.ip = ip
+      m.device = device
       m.disconnectedAt = 0
       ws.room = this
       this.send(ws, { t: 'joined', code: this.code, seatId: m.seatId, isPublic: this.isPublic })
@@ -76,10 +76,11 @@ export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, flush, o
     async sit(m) {
       if (m.session || m.sitting) return
       if (this.seatOf(m)) return
-      // 같은 IP는 한 테이블에 한 자리 (여러 계정으로 몰아주기 막기)
-      const sameIp = !ALLOW_SAME_IP && m.ip && this.humans().some(o => o !== m && o.session && o.ip === m.ip)
-      if (sameIp) return this.tell(m, '같은 인터넷(IP)에서는 한 테이블에 한 명만 앉을 수 있어요. 구경은 할 수 있어요.')
-      if (this.table.seats.filter(s => !s.left).length >= CONFIG.MAX_SEATS && !this.removeBot()) return this.tell(m, '자리가 꽉 찼어요. 구경하다가 자리가 나면 앉을 수 있어요.')
+      // 한 기기(브라우저)는 한 테이블에 한 자리 (여러 계정으로 몰아주기 막기). 같은 와이파이의 다른 기기는 괜찮음
+      const sameDevice = m.device && this.humans().some(o => o !== m && o.session && o.device === m.device)
+      if (sameDevice) return this.tell(m, '이 기기에서는 이미 다른 계정이 이 테이블에 앉아 있어요. 한 기기에서는 한 명만 앉을 수 있어요.')
+      // 사람으로 꽉 찼으면 구경만. 봇이 있으면 봇 하나를 치우고 앉는다 (봇이 판 중이면 그 판이 끝난 뒤)
+      if (this.humanSeats() >= CONFIG.MAX_SEATS) return this.tell(m, '자리가 꽉 찼어요. 구경하다가 자리가 나면 앉을 수 있어요.')
       m.sitting = true
       try {
         let bal
@@ -99,11 +100,35 @@ export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, flush, o
         if (!staked) { store.seatClose(session, 0, '카지노 정산', jmtt.MAX_AMOUNT); return this.tell(m, '코인을 맡기지 못했어요. 잠시 뒤 다시 앉아 주세요.') }
         if (!this.members.has(m.user)) { this.closeSeat(m, session, staked); return } // 맡기는 사이 나감
         m.session = session
-        if (this.table.seats.filter(s => !s.left).length >= CONFIG.MAX_SEATS) this.removeBot()
-        if (!this.table.addPlayer(m.seatId, m.name, staked)) { this.closeSeat(m, session, staked); return this.tell(m, '자리가 꽉 찼어요.') }
-        this.sendTo(m, { t: 'seated', staked })
+        m.staked = staked
+        if (this.placeHuman(m)) this.sendTo(m, { t: 'seated', staked })
+        else if (this.waiting.includes(m)) this.sendTo(m, { t: 'seated', staked, pending: true })
+        else { this.closeSeat(m, session, staked); return this.tell(m, '자리가 꽉 찼어요.') }
         this.after()
       } finally { m.sitting = false }
+    }
+
+    // 앉은 사람 수 (봇 빼고, 봇 대신 앉으려고 기다리는 사람 포함)
+    humanSeats() { return this.table.seats.filter(p => !p.bot && !p.left).length + this.waiting.length }
+
+    // 맡긴 칩으로 자리에 앉힌다. 빈자리가 없으면 봇을 치우고, 봇이 모두 판 중이면 그 판이 끝날 때 앉힘(대기)
+    placeHuman(m) {
+      const t = this.table
+      if (t.seats.length >= CONFIG.MAX_SEATS) this.removeBot()
+      if (t.seats.length < CONFIG.MAX_SEATS) {
+        this.waiting = this.waiting.filter(x => x !== m)
+        return t.addPlayer(m.seatId, m.name, m.staked)
+      }
+      if (this.waiting.includes(m)) return false
+      const target = t.seats.find(p => p.bot && !p.left && !p.leaveAfterHand)
+      // 봇이 없어도 이번 판에 나간 사람 자리가 있으면 판이 끝날 때 앉을 수 있음
+      const freeing = t.seats.filter(p => p.left).length > this.waiting.filter(w => !w.botFor).length
+      if (!target && !freeing) return false
+      if (target) target.leaveAfterHand = true
+      m.botFor = target?.id || null
+      this.waiting.push(m)
+      t.addLog(target ? `${m.name} 님이 이번 판이 끝나면 ${target.name} 대신 앉아요.` : `${m.name} 님이 이번 판이 끝나면 앉아요.`)
+      return false
     }
 
     closeSeat(m, session, amount) {
@@ -116,6 +141,16 @@ export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, flush, o
     // 자리에서 일어나 남은 칩을 정산. 올인한 채로 판이 진행 중이면 판이 끝난 뒤에
     standUp(m, why) {
       const s = this.seatOf(m)
+      // 봇 대신 앉으려고 기다리던 중이면 맡긴 코인 그대로 돌려줌
+      if (!s && m.session && this.waiting.includes(m)) {
+        this.waiting = this.waiting.filter(x => x !== m)
+        const bot = this.table.seat(m.botFor)
+        if (bot) bot.leaveAfterHand = false
+        const amount = m.staked
+        this.closeSeat(m, m.session, amount)
+        this.sendTo(m, { t: 'cashout', amount, why: why || '' })
+        return this.after()
+      }
       if (!s || !m.session) return
       if (this.table.isBetting() && s.inHand && !s.folded && s.allIn) { m.pendingLeave = why || 'leave'; return 'later' }
       this.table.removePlayer(m.seatId, '자리에서 일어났습니다.') // 판 도중이면 폴드 처리, 건 칩은 팟에 남음
@@ -217,7 +252,7 @@ export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, flush, o
     // 공개 방: 사람이 3명이 안 되면 봇으로 3자리를 채우고, 사람이 늘면 봇이 비켜줌 (판 사이에만)
     maintainBots() {
       if (!this.autoBots || this.table.isBetting()) return
-      const humans = this.table.seats.filter(p => !p.bot && !p.left).length
+      const humans = this.humanSeats()
       const want = humans ? Math.max(0, 3 - humans) : 0
       let bots = this.table.seats.filter(p => p.bot && !p.left).length
       while (bots < want && this.addBot()) bots++
@@ -269,6 +304,13 @@ export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, flush, o
     startHand() {
       const t = this.table
       for (const p of t.seats) if (p.bot && p.stack <= 0) p.stack = CONFIG.START_TOKENS // 봇은 하우스가 다시 채움
+      // 봇 대신 앉기로 한 사람: 판이 끝났으니 그 봇을 치우고 앉힘
+      for (const m of [...this.waiting]) {
+        const bot = t.seat(m.botFor)
+        if (bot) t.removePlayer(bot.id, `${m.name} 님에게 자리를 비켜줬어요.`)
+        t.seats = t.seats.filter(p => !p.left)
+        if (this.placeHuman(m)) this.sendTo(m, { t: 'seated', staked: m.staked })
+      }
       this.maintainBots()
       // 사람이 모두 자리를 비웠거나 없으면 봇끼리 돌리지 않고 기다림
       if (!t.seats.some(p => !p.bot && !p.left && !p.sitOut && p.stack > 0)) return this.broadcast()
@@ -353,6 +395,7 @@ export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, flush, o
       s.autoBots = this.autoBots
       s.code = this.code
       s.watching = this.humans().filter(m => !this.seatOf(m)).length
+      s.waitingSeats = this.waiting.map(m => m.seatId)
       return s
     }
     broadcast() {
