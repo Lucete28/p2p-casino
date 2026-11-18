@@ -244,20 +244,19 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
 .bj-odds-head .eq b { color: #3fb950; font-size: 17px; font-variant-numeric: tabular-nums; }
 .bj-odds-head .eq em { font-style: normal; font-size: 12px; }
 .bj-odds-head .caret { color: var(--c-muted); }
-.bj-odds-rows { display: grid; gap: 6px; padding: 0 12px 4px; }
-.bj-odds-row { display: grid; grid-template-columns: minmax(0, 11em) 1fr 3em; align-items: center; gap: 8px; font-size: 12.5px; }
-.bj-odds-row .nm { display: flex; flex-direction: column; min-width: 0; color: var(--c-ink); font-weight: 600; }
-.bj-odds-row .nm small { color: var(--c-muted); font-weight: 500; font-size: 11px; }
-.bj-odds-row .bar { height: 8px; border-radius: 4px; background: #ffffff12; overflow: hidden; }
-.bj-odds-row .bar i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #2f6b47, #3fb950); transition: width .4s; }
-.bj-odds-row.bad .bar i { background: linear-gradient(90deg, #7a2228, #ff6b6b); }
-.bj-odds-row.dealer .bar i { background: linear-gradient(90deg, var(--c-gold-2), var(--c-gold)); }
-.bj-odds-row .pc { text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; }
-.bj-odds-dealer { display: grid; grid-template-columns: auto repeat(6, 1fr); align-items: center; gap: 4px; margin: 8px 12px 0; padding: 6px 8px; border-radius: 10px; background: #ffffff08; font-size: 11px; color: var(--c-muted); font-variant-numeric: tabular-nums; }
-.bj-odds-dealer .lbl { padding-right: 4px; color: var(--c-gold); font-weight: 700; white-space: nowrap; }
-.bj-odds-dealer span:not(.lbl) { display: flex; flex-direction: column; align-items: center; line-height: 1.25; }
-.bj-odds-dealer b { color: var(--c-ink); font-size: 12px; }
-.bj-odds-dealer .bust b { color: #ff9a9a; }
+.bj-odds-head .eq b.hi { color: #ff8a8a; }
+.bj-odds-head .eq b.n { color: var(--c-ink); font-size: 15px; }
+.bj-deck { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; height: 92px; padding: 0 12px; }
+.bj-deck-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; min-width: 0; }
+.bj-deck-col em { font-style: normal; font-size: 10.5px; color: var(--c-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bj-deck-col i { display: block; width: 70%; max-width: 22px; border-radius: 4px 4px 2px 2px; background: linear-gradient(180deg, #8fa6c9, #4b6185); transition: height .3s; }
+.bj-deck-col b { width: 100%; max-width: 28px; padding: 2px 0; border-radius: 5px; text-align: center; font-size: 12px; font-weight: 900; color: #16130f; background: #f3efe6; }
+.bj-deck-col.bust i { background: linear-gradient(180deg, #ff8a8a, #a3242c); }
+.bj-deck-col.bust b { background: #ffd0d0; color: #8a1018; }
+.bj-deck-col.t21 i { background: linear-gradient(180deg, #ffe39b, #c99a3c); }
+.bj-deck-col.t21 b { background: #ffe39b; }
+.bj-odds-note .k { display: inline-block; width: 9px; height: 9px; margin: 0 3px 0 0; border-radius: 2px; vertical-align: -1px; }
+.bj-odds-note .k.bust { background: #ff6b6b; } .bj-odds-note .k.t21 { background: var(--c-gold); margin-left: 6px; }
 .bj-odds-note { margin: 6px 12px 10px; font-size: 11px; color: var(--c-muted); }
 
 /* 칩 버튼 */
@@ -374,8 +373,7 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
   .bj-btn { height: 66px; } .bj-btn b { font-size: 17px; } .bj-btn small { font-size: 10.5px; }
   .bj-act-grid { gap: 6px; }
   .bj-odds { margin-bottom: 8px; } .bj-odds-head { min-height: 38px; padding: 6px 10px; }
-  .bj-odds-row { grid-template-columns: minmax(0, 9.5em) 1fr 2.8em; font-size: 12px; }
-  .bj-odds-dealer { margin: 6px 10px 0; gap: 2px; }
+  .bj-deck { height: 80px; gap: 2px; padding: 0 8px; } .bj-deck-col em { font-size: 9.5px; } .bj-deck-col b { font-size: 11px; }
 }
 @media (max-width: 360px) { .bj { --cw: 44px; --cw-mini: 26px; } .bj-btn small { display: none; } }
 @media (prefers-reduced-motion: reduce) { .card-in { transition: none; } .bj-float.show { animation: none; opacity: 1; } }
