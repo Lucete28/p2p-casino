@@ -11,7 +11,6 @@ body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, 
 .sl[data-machine="diamond"] { --cab-1: #0b2a45; --cab-2: #071a2d; --cab-3: #04101d; --trim-glow: rgba(120,210,255,.45); }
 .sl[data-machine="fruit5"] { --cab-1: #11361a; --cab-2: #0a2210; --cab-3: #061509; --trim-glow: rgba(140,230,120,.4); }
 .sl[data-machine="lucky"] { --cab-1: #2c1150; --cab-2: #1b0a33; --cab-3: #10061f; --trim-glow: rgba(200,150,255,.45); }
-.sl[data-machine="jackpot"] { --cab-1: #4a0610; --cab-2: #2a0309; --cab-3: #190205; --trim-glow: rgba(255,120,90,.5); }
 
 .sl-cabinet {
   flex: 1; min-width: 0; position: relative; padding: 14px 14px 16px; border-radius: 26px 26px 20px 20px;
@@ -69,9 +68,7 @@ body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, 
 .sl-jp span { font: 900 12px/1 "Pretendard", sans-serif; letter-spacing: .2em; color: #ff8a7a; }
 .sl-jp b { font: 900 30px/1.05 "Pretendard", sans-serif; font-variant-numeric: tabular-nums; color: #fff1b8; text-shadow: 0 0 14px rgba(255,120,80,.9), 0 0 2px #000; }
 .sl-jp small { flex-basis: 100%; text-align: center; font-size: 11px; color: var(--c-muted); min-height: 1em; }
-.sl[data-machine="jackpot"] .sl-logo { display: none; }
-@media (max-width: 859px) { .sl[data-machine="jackpot"] .sl-jp small { display: none; } .sl[data-machine="jackpot"] .sl-jp b { font-size: 24px; } }
-.sl[data-machine="jackpot"] .sl-jp b { animation: sl-jp-glow 1.6s ease-in-out infinite alternate; }
+.sl-jp b { animation: sl-jp-glow 1.6s ease-in-out infinite alternate; }
 @keyframes sl-jp-glow { to { text-shadow: 0 0 26px rgba(255,150,90,1), 0 0 2px #000; } }
 
 /* 프리스핀: 시작 배너 + 진행 줄 */

@@ -17,9 +17,9 @@ const at = (m, r, sym) => m.strips[r].indexOf(sym) // 그 그림이 가운데(s)
 // 창 세 칸에 별이 없는 멈춤 자리 (럭키 스타)
 const noStar = (m, r) => m.strips[r].findIndex((_, i) => [i - 1, i, i + 1].every(k => m.strips[r][(k + m.strips[r].length) % m.strips[r].length] !== 'star'))
 
-ok('머신 다섯 대, 종류·릴·줄 모양이 맞다', () => {
-  assert.deepEqual(Object.keys(M), ['classic', 'diamond', 'fruit5', 'lucky', 'jackpot'])
-  assert.deepEqual(Object.values(M).map(m => m.type), ['lines', 'gem', 'cascade', 'lines', 'lines'])
+ok('머신 네 대, 종류·릴·줄 모양이 맞다', () => {
+  assert.deepEqual(Object.keys(M), ['classic', 'diamond', 'fruit5', 'lucky'])
+  assert.deepEqual(Object.values(M).map(m => m.type), ['lines', 'gem', 'cascade', 'lines'])
   for (const m of Object.values(M)) {
     assert.equal(m.strips.length, m.reels, m.id)
     for (const l of m.lines || []) { assert.equal(l.length, m.reels); assert.ok(l.every(r => r >= 0 && r <= 2)) }
@@ -34,18 +34,17 @@ ok('클래식 띠는 처음 그대로 (세븐 1 · 바 2 · 종 4 · 수박 5 ·
   for (const s of M.classic.strips) assert.deepEqual(s.reduce((m, x) => (m[x] = (m[x] || 0) + 1, m), {}), { seven: 1, bar: 2, bell: 4, melon: 5, lemon: 7, cherry: 5 })
 })
 
-ok('다른 머신의 띠: 그림 수가 릴마다 같고, 별·잭팟 동전은 릴마다 하나', () => {
-  for (const m of [M.diamond, M.fruit5, M.lucky, M.jackpot]) {
+ok('다른 머신의 띠: 그림 수가 릴마다 같고, 별은 릴마다 하나', () => {
+  for (const m of [M.diamond, M.fruit5, M.lucky]) {
     const counts = m.strips.map(s => JSON.stringify(Object.entries(s.reduce((a, x) => (a[x] = (a[x] || 0) + 1, a), {})).sort()))
     assert.equal(new Set(counts).size, 1, m.id)
     assert.notEqual(m.strips[0].join(), m.strips[1].join(), m.id + ' 릴이 다 같음')
   }
   for (const st of M.lucky.strips) assert.equal(st.filter(s => s === 'star').length, 1)
-  for (const st of M.jackpot.strips) assert.equal(st.filter(s => s === 'jp').length, 1)
 })
 
 ok('환급률: 머신 기본 99.5% ~ 101% (운영자 결정: 기본 약 100% + 모두의 잭팟 2%)', () => {
-  const want = { classic: 1.0009, diamond: 1.0078, jackpot: 1.0005 }
+  const want = { classic: 1.0009, diamond: 1.0078 }
   for (const m of Object.values(M)) {
     const rtp = exactRtp(m).rtp ?? m.rtpRef
     assert.ok(rtp > 0.995 && rtp < 1.01, `${m.id} ${rtp}`)
@@ -55,8 +54,8 @@ ok('환급률: 머신 기본 99.5% ~ 101% (운영자 결정: 기본 약 100% + �
   assert.equal(JACKPOT.contribute + JACKPOT.reserve, 0.02)
 })
 
-ok('정확한 계산이 모든 경우를 직접 센 것과 같다 (클래식 · 다이아몬드 · 메가 잭팟)', () => {
-  for (const m of [M.classic, M.jackpot]) {
+ok('정확한 계산이 모든 경우를 직접 센 것과 같다 (클래식 · 다이아몬드)', () => {
+  for (const m of [M.classic]) {
     const L = m.strips[0].length
     let sum = 0, cnt = 0
     for (let a = 0; a < L; a++) for (let b = 0; b < L; b++) for (let c = 0; c < L; c++) { sum += evaluate(m, [a, b, c], 5, 1).back; cnt++ }
@@ -158,12 +157,10 @@ ok('베팅 검사: 클래식 줄 1·3·5, 다이아 1, 과일 폭탄 25, 나머�
   for (const [b, l] of [[0, 5], [1.5, 5], [-1, 1], [1, 2], [NaN, 5], ['x', 3], [MAX_LINE_BET + 1, 1]]) assert.ok(checkBet(M.classic, b, l).error, `${b} ${l}`)
 })
 
-ok('두근두근: 마지막 릴만 남았을 때 큰 그림·잭팟 동전·별', () => {
+ok('두근두근: 마지막 릴만 남았을 때 큰 그림·별', () => {
   const c = M.classic
   assert.equal(teases(c, [at(c, 0, 'seven'), at(c, 1, 'seven'), 0], 1), true)
   assert.equal(teases(c, [at(c, 0, 'lemon'), at(c, 1, 'lemon'), 0], 1), false)
-  const j = M.jackpot
-  assert.equal(teases(j, [at(j, 0, 'jp'), at(j, 1, 'jp'), 0], 5), true)
   const l = M.lucky
   assert.equal(teases(l, [at(l, 0, 'star'), at(l, 1, 'star'), noStar(l, 2), noStar(l, 3), 0], 10), true)
   assert.equal(teases(M.fruit5, [0, 0, 0, 0, 0], 25), false)
@@ -231,7 +228,7 @@ ok('모든 머신 1,000판: 칩이 맞게 오가고 back = 첫 화면 + 프리�
   }
 })
 
-ok('모두의 잭팟: 어느 머신이든 2% 쌓이고, 미스터리는 전부, 메가 잭팟 줄은 베팅 비율만큼, 파일에 저장', () => {
+ok('모두의 잭팟: 어느 머신이든 2% 쌓이고, 미스터리로 터지면 전부, 파일에 저장', () => {
   const p = { id: 'u_jp', name: '잭팟테스트', chips: 1e9, inPlay: 0, limits: {} }
   const q = { id: 'u_jp2', chips: 1e9, inPlay: 0, limits: {} }
   const ctx = { ...fakeCtx(p, q), rng: noMystery }
@@ -245,23 +242,13 @@ ok('모두의 잭팟: 어느 머신이든 2% 쌓이고, 미스터리는 전부, 
   const pool = jackpotState().pool + 25 * JACKPOT.contribute
   slots.message(p, { t: 'spin', machine: 'fruit5', lineBet: 1, lines: 25 }, { ...ctx, rng: mystery })
   const s = ctx.sent.at(-1)
-  assert.equal(s.jackpot.kind, 'mystery'); assert.equal(s.jackpot.share, 1)
+  assert.equal(s.jackpot.kind, 'mystery')
   assert.equal(s.jackpot.win, Math.floor(pool))
   slots.message(p, { t: 'skip' }, ctx)
   assert.ok(ctx.all.some(([id, m]) => id === 'u_jp2' && m.t === 'jackpot' && m.last?.win === s.jackpot.win && m.last.machine === 'fruit5'), '다른 사람에게도 알림')
   assert.ok(jackpotState().pool >= JACKPOT.floor)
   const saved = JSON.parse(readFileSync(join(process.env.DATA_DIR, 'slots-jackpot.json'), 'utf8'))
   assert.equal(saved.last.name, '잭팟테스트')
-  // 메가 잭팟 줄: 베팅 50 → 절반
-  const j = M.jackpot, stops = [0, 1, 2].map(r => j.strips[r].indexOf('jp'))
-  let k = 0
-  const fixed = { ...noMystery, int: nMax => (nMax === j.strips[0].length && k < 3 ? stops[k++] : noMystery.int(nMax)) }
-  const before = jackpotState().pool + 50 * JACKPOT.contribute
-  slots.message(p, { t: 'spin', machine: 'jackpot', lineBet: 10, lines: 5 }, { ...ctx, rng: fixed })
-  const s2 = ctx.sent.at(-1)
-  assert.equal(s2.jackpot.kind, 'line'); assert.equal(s2.jackpot.share, 0.5)
-  assert.equal(s2.jackpot.win, Math.floor(before * 0.5))
-  slots.message(p, { t: 'skip' }, ctx)
 })
 
 ok('다시 들어오면 머신별 마지막 그림, 서버 종료 때 정산하고 잭팟 저장', () => {
@@ -273,7 +260,7 @@ ok('다시 들어오면 머신별 마지막 그림, 서버 종료 때 정산하�
   const hello = ctx.sent.at(-1)
   assert.deepEqual(hello.stops.diamond, spun.stops)
   assert.equal(hello.spinning, true)
-  assert.ok(hello.jackpot.pool > 0) // 절반만 가져간 뒤라 floor보다 적을 수 있음 (floor는 전부 가져갔을 때만)
+  assert.ok(hello.jackpot.pool >= JACKPOT.floor)
   slots.shutdown(ctx)
   assert.equal(p.inPlay, 0)
   assert.equal(p.chips, 480 + spun.back)

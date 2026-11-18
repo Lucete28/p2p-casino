@@ -21,7 +21,7 @@ let allStaked = 0, allJpWins = 0, allHits = 0
 for (const m of Object.values(MACHINES)) {
   if (only && m.id !== only) continue
   const lines = (m.lineChoices || [linesOf(m)]).at(-1)
-  const lineBet = m.jackpotLine ? Math.ceil(JACKPOT.fullBet / lines) : 1 // 메가 잭팟은 동전 셋에 잭팟 전부 받는 베팅
+  const lineBet = 1
   const p = { id: 'u_sim_' + m.id, name: 'sim', chips: 1e15, inPlay: 0, limits: {} }
   let staked = 0, returned = 0, spins = 0, last = null, bonuses = 0, jpWins = 0, jpHits = 0, wins = 0, mystery = 0
   const ctx = {
@@ -44,7 +44,7 @@ for (const m of Object.values(MACHINES)) {
   const got = (returned - jpWins) / staked
   console.log(`[${m.name}] 판 ${spins.toLocaleString()} · 건 칩 ${staked.toLocaleString()} · ${sec}초`)
   console.log(`  환급률 ${(got * 100).toFixed(3)}% (기준 ${(want * 100).toFixed(3)}%${x.rtp ? '' : ' 시뮬레이션'}, 허용 ±0.3%p, 잭팟 빼고) · 뭐라도 받은 판 ${(wins / spins * 100).toFixed(1)}%`
-    + (m.scatter ? ` · 프리스핀 ${bonuses.toLocaleString()}번 (이론 ${Math.round(SPINS * x.trigger).toLocaleString()})` : '')
+    + (m.scatter ? ` · 보너스 ${bonuses.toLocaleString()}번 (이론 ${Math.round(SPINS * x.trigger).toLocaleString()})` : '')
     + ` · 잭팟 ${jpHits}번 (미스터리 ${mystery}, 이론 ${(staked / JACKPOT.odds).toFixed(0)})`)
   assert.equal(spins, SPINS)
   assert.equal(p.inPlay, 0)

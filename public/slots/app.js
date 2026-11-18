@@ -29,9 +29,9 @@ function kindLabel(k) {
   return `${SYMBOLS[sym]} ${COUNT[n]} 개${n >= 3 ? '!' : ''}`
 }
 const main = document.querySelector('.sl')
-const TOP = { classic: 'seven3', diamond: 'diamond3', fruit5: 'seven5', lucky: 'moon5', jackpot: 'seven3' } // 머신의 가장 큰 그림
-const TOP_LABEL = { classic: 'JACKPOT 777', diamond: 'DIAMOND!!', fruit5: '7 7 7 7 7', lucky: 'FULL MOON', jackpot: '7 7 7' }
-const ICON = { classic: 'seven', diamond: 'diamond', fruit5: 'melon', lucky: 'star', jackpot: 'jp' }
+const TOP = { classic: 'seven3', diamond: 'diamond3', fruit5: 'seven5', lucky: 'moon5' } // 머신의 가장 큰 그림
+const TOP_LABEL = { classic: 'JACKPOT 777', diamond: 'DIAMOND!!', fruit5: '7 7 7 7 7', lucky: 'FULL MOON' }
+const ICON = { classic: 'seven', diamond: 'diamond', fruit5: 'melon', lucky: 'star' }
 
 // ---------- 머신 ----------
 let cur = MACHINES[store.get('machine')] || MACHINES.classic
@@ -50,13 +50,11 @@ const split = (m, bet) => m.lineChoices
   : { lines: linesOf(m), lineBet: bet / linesOf(m) }
 function hintOf(m, bet) {
   const { lines } = split(m, bet)
-  const odds = Math.round(JACKPOT.odds / bet)
-  const jp = ` · 잭팟 확률 1/${fmtShort(odds)}`
+  const jp = '' // 잭팟 확률은 배당표에 (여기는 짧게)
   if (m.lineChoices) return { 1: '가운데 줄 1개만', 3: '가로 줄 3개', 5: '줄 5개 모두' }[lines] + jp
   if (m.type === 'gem') return '가운데 줄 하나 + 배수 릴' + jp
-  if (m.type === 'cascade') return '웨이 1,024개 · 연쇄 ×1·×2·×3·×5' + jp
+  if (m.type === 'cascade') return '줄 없음 · 연쇄마다 ×1·×2·×3·×5' + jp
   let h = `줄 ${lines}개 모두`
-  if (m.jackpotLine) h += bet >= JACKPOT.fullBet ? ' · 잭팟 동전 셋 = 전부' : ` · 동전 셋 = 잭팟 ${Math.round(bet / JACKPOT.fullBet * 100)}%`
   return h + jp
 }
 const savedBet = m => { const b = Number(store.get('bet:' + m.id) ?? (m.id === 'classic' ? store.get('bet2') : null)); return betsOf(m).includes(b) ? b : betsOf(m)[m.lineChoices ? 2 : 0] }
@@ -352,12 +350,12 @@ const center = r => [r.left + r.width / 2, r.top + r.height / 2]
 const netText = (total, back) => { const net = back - total; return `${fmt(total)}칩 걸고 ${fmt(back)}칩 받음 · ` + (net > 0 ? `${fmt(net)}칩 이득` : net === 0 ? '본전' : `${fmt(-net)}칩 손해`) }
 
 // 한 판(또는 프리스핀 한 번)의 결과 연출. big 이상은 전체 화면을 닫을 때까지 기다린다
-function showResult({ wins, scatter, back, total, title, sub, final = true, celebrateBig = true, mark = true }) {
+function showResult({ wins, scatter, back, total, title, sub, final = true, celebrateBig = true, mark = true, stars = false }) {
   return new Promise(resolve => {
     const sorted = [...wins].sort((a, b) => b.pay - a.pay)
     const tier = tierOf(back, total, wins)
-    const rects = mark ? markWins(wins, scatter, tier !== 'small') : []
-    if (scatter?.pay) setTimeout(() => floatText($('fxText'), 50, 50, `별 ${scatter.count}개 +${fmt(scatter.pay)}`, '#ffe066'), 150)
+    const rects = mark ? markWins(wins, scatter, tier !== 'small', stars) : []
+    if (scatter?.pay) setTimeout(() => floatText($('fxText'), 50, 50, `${SYMBOLS[cur.scatter.symbol]} ${scatter.count}개 +${fmt(scatter.pay)}`, '#ffe066'), 150)
     if (tier === 'lose') {
       if (final) { main.classList.add('lose'); say(title || '꽝', '', sub ?? `${fmt(total)}칩을 잃었어요 · 다시 해 볼까요?`); sfx.lose() }
       return resolve(tier)
@@ -472,8 +470,6 @@ async function playCascade(m) {
 // ---------- 모두의 잭팟 ----------
 let jpShown = 0, jpRaf = 0
 function paintJackpot() {
-  const tab = document.querySelector('.sl-pick [data-id="jackpot"] small')
-  if (tab) tab.textContent = '모두의 잭팟'
   cancelAnimationFrame(jpRaf)
   const from = jpShown || jackpotPool, to = jackpotPool, t0 = performance.now()
   if (!jpShown || reduced) { jpShown = to; $('gjpPool').textContent = fmt(Math.floor(to)); $('jpPool').textContent = fmt(Math.floor(to)) }
@@ -485,20 +481,20 @@ function paintJackpot() {
   jpRaf = requestAnimationFrame(step)
   const last = jackpotLast ? `최근 ${jackpotLast.name} +${fmtShort(jackpotLast.win)}${jackpotLast.machine ? ' · ' + (MACHINES[jackpotLast.machine]?.short || '') : ''}` : '어느 머신이든 터질 수 있어요'
   $('gjpLast').textContent = last; $('jpLast').textContent = last
-  $('jpBox').hidden = !cur.jackpotLine
+  $('jpBox').hidden = true // 키 작은 휴대폰에서만 CSS로 보임 (모두의 잭팟 줄 대신)
 }
 async function playJackpot(m) {
   const j = m.jackpot
   setAuto(false)
   main.classList.add('jp-hit')
-  say(j.kind === 'mystery' ? '미스터리 잭팟!!' : '잭팟 동전 셋!', '', j.kind === 'mystery' ? '아무 머신에서나 갑자기 터지는 모두의 잭팟' : j.share < 1 ? `베팅 비율만큼 잭팟 ${Math.round(j.share * 100)}%` : '모두의 잭팟 전부!')
+  say('미스터리 잭팟!!', '', '아무 머신에서나 갑자기 터지는 모두의 잭팟')
   if (!reduced) {
     $('gjp').classList.add('hit')
     for (let i = 0; i < 6; i++) { tone(400 + i * 120, i * 0.12, 0.1, 'square', 0.05) }
     await sleep(1400)
   }
   await new Promise(resolve => celebrate({
-    tier: 'jackpot', amount: j.win, fmt, label: j.kind === 'mystery' ? 'MYSTERY JACKPOT' : 'MEGA JACKPOT',
+    tier: 'jackpot', amount: j.win, fmt, label: 'MYSTERY JACKPOT',
     sub: `모두의 잭팟! · ${fmt(m.total)}칩 걸고 ${fmt(m.back)}칩`,
     onTick: () => sfx.coin(), onDone: resolve,
   }))
@@ -520,7 +516,6 @@ function paintPaytables() {
   const amt = x => `<b title="${fmt(x)}칩">${fmtShort(x)}칩</b>`
   const any = '<span class="any">?</span>'
   let rows = ''
-  if (m.jackpotLine) rows += `<li class="top"><span class="icons" role="img" aria-label="잭팟 동전 3개">${ic('jp').repeat(3)}</span><span class="lbl">가운데 줄 잭팟 동전 3개</span><b>모두의 잭팟</b></li>`
   if (m.type === 'gem') {
     const W = m.wildPays
     rows += `<li class="top"><span class="icons">${ic('diamond').repeat(3)}</span><span class="lbl">다이아 셋 (× 배수 릴)</span>${amt(lineBet * W[3])}</li>`
@@ -536,7 +531,7 @@ function paintPaytables() {
       rows += `<li class="row5 ${top ? 'top' : ''}"><span class="icons">${ic(s)}</span><span class="lbl">${SYMBOLS[s]}</span><span class="n5">${[3, 4, 5].map(n => `<em>${n}릴</em> ${fmtShort(lineBet * p[n])}`).join('')}</span></li>`
     }
   } else {
-    if (m.scatter) {
+    if (m.scatter?.freeSpins) {
       const sc = m.scatter
       rows += `<li class="top"><span class="icons" role="img" aria-label="별 3개">${ic('star').repeat(3)}</span><span class="lbl">별 3개 어디든 → 프리스핀 ${sc.freeSpins}번, 별마다 배수 +1</span>${amt(sc.pays[3] * total)}</li>`
       rows += `<li><span class="icons">${ic('star')}<span class="any">4·5</span></span><span class="lbl">별 4개 · 5개</span><b>${fmtShort(sc.pays[4] * total)} · ${fmtShort(sc.pays[5] * total)}칩</b></li>`
@@ -597,7 +592,7 @@ $('creditAdd').onclick = () => game?.openBuyIn()
 function paintPick() {
   $('pick').innerHTML = MACHINE_IDS.map(id => {
     const m = MACHINES[id]
-    const sub = m.type === 'gem' ? '와일드·배수' : m.type === 'cascade' ? '연쇄 폭발' : m.scatter ? '프리스핀' : m.jackpotLine ? '모두의 잭팟' : '3릴 · 5줄'
+    const sub = m.type === 'gem' ? '와일드·배수' : m.type === 'cascade' ? '연쇄 폭발' : m.scatter ? '프리스핀' : '3릴 · 5줄'
     return `<button type="button" data-id="${id}" aria-pressed="${id === cur.id}"><span class="ic">${symSvg(ICON[id])}</span><b>${m.short}</b><small>${sub}</small></button>`
   }).join('')
   $('pick').querySelectorAll('button').forEach(b => b.onclick = () => switchMachine(b.dataset.id))
@@ -625,7 +620,7 @@ function switchMachine(id) {
 }
 // 처음 보이는 그림: 머신의 대표 그림이 가운데 줄에
 const defaultStops = m => {
-  const s = { classic: 'seven', diamond: 'diamond', fruit5: 'seven', lucky: 'moon', jackpot: 'jp' }[m.id]
+  const s = { classic: 'seven', diamond: 'diamond', fruit5: 'seven', lucky: 'moon' }[m.id]
   const st = m.strips.map(x => Math.max(0, x.indexOf(s)))
   if (m.mstrip) st.push(Math.max(0, m.mstrip.indexOf('x10')))
   return st
