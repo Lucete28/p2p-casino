@@ -3,7 +3,7 @@
 // 게임 코드는 server/games/<id>/index.mjs, 화면은 public/<id>/
 export const GAMES = [
   { id: 'holdem', title: '텍사스 홀덤', status: 'live' },
-  { id: 'blackjack', title: '블랙잭', status: 'wip' },
+  { id: 'blackjack', title: '블랙잭', status: 'live' }, // 2026-11-18 오픈 (운영자 결정)
   { id: 'baccarat', title: '바카라', status: 'wip' },
   { id: 'roulette', title: '룰렛', status: 'wip' },
   // welcome: 이 게임에 처음 들어온 사람(계정당 한 번)에게 주는 기념 칩 (운영자 결정 2026-11-17: 슬롯 5,000). core/house.mjs가 지급
