@@ -91,7 +91,7 @@ function tick(now) {
 
 // ---------- 동전이 칩 표시로 날아감 ----------
 export function flyCoins(fromRects, toEl, n = 8, onArrive) {
-  if (!toEl || reduced) { onArrive?.(); return }
+  if (!toEl || reduced || !fromRects.length) { onArrive?.(); return }
   const to = toEl.getBoundingClientRect()
   const tx = to.left + Math.min(to.width * 0.5, 50), ty = to.top + to.height / 2
   let done = 0
@@ -149,9 +149,9 @@ addEventListener('keydown', e => { if (!cele.hidden && (e.code === 'Space' || e.
 export const celebrating = () => !cele.hidden
 
 // tier: 'big' | 'mega' | 'jackpot'
-export function celebrate({ tier, amount, sub, fmt, onTick, onDone }) {
+export function celebrate({ tier, amount, sub, fmt, onTick, onDone, label }) {
   cele.className = 'sl-cele ' + tier
-  cele.querySelector('.sl-cele-kind').textContent = tier === 'jackpot' ? 'JACKPOT 777' : tier === 'mega' ? 'MEGA WIN' : 'BIG WIN'
+  cele.querySelector('.sl-cele-kind').textContent = label || (tier === 'jackpot' ? 'JACKPOT 777' : tier === 'mega' ? 'MEGA WIN' : 'BIG WIN')
   cele.querySelector('.sl-cele-sub').textContent = sub
   const amt = cele.querySelector('.sl-cele-amt')
   cele.hidden = false
