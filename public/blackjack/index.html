@@ -42,13 +42,13 @@
     </section>
 
     <section class="bj-panel">
-      <!-- 돈: 보유 칩 · 베팅 · 득실 (운영자 요청 2026-11-18) -->
+      <!-- 돈: 보유 칩 · 베팅 · 이번 판 (운영자 요청 2026-11-18, 누적 득실은 보여 주지 않음) -->
       <div class="bj-money" id="money" aria-live="polite">
         <div class="bj-money-head"><b id="mTitle">얼마 걸까요?</b></div>
         <div class="bj-stats">
           <div class="bj-stat" id="stChips"><small>보유 칩</small><b id="sChips">0</b><em id="sChipsSub"></em></div>
           <div class="bj-stat" id="stBet"><small>베팅</small><b id="sBet">0</b><em id="sBetSub"></em></div>
-          <div class="bj-stat net" id="stNet"><small>득실</small><b id="sNet">±0</b><em id="sNetSub"></em></div>
+          <div class="bj-stat net" id="stNet"><small id="sNetL">지난 판</small><b id="sNet">—</b><em id="sNetSub"></em></div>
         </div>
         <p class="bj-money-sub" id="mSub"></p>
       </div>

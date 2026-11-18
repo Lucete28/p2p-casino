@@ -1,6 +1,6 @@
 // 블랙잭 화면 (여러 명 테이블). 판은 서버(딜러)가 돌리고, 여기서는 받은 state를 순서대로 연출해 보여 주기만 한다.
 // 딜러의 숨긴 카드는 딜러 차례가 되어야 서버가 보내 준다. 칩 숫자는 서버가 연출 시간(rules.mjs의 *_MS)만큼 늦게 정산한 값.
-// 돈은 '보유 칩 · 베팅 · 득실' 세 칸으로 보여 준다 (운영자 요청 2026-11-18). 처음엔 관전, 빈자리를 누르거나 베팅하면 앉는다
+// 돈은 '보유 칩 · 베팅 · 이번 판' 세 칸으로 보여 준다 (운영자 요청 2026-11-18, 누적 득실은 보여 주지 않음). 처음엔 관전, 빈자리를 누르거나 베팅하면 앉는다
 import { startGame } from '../shared/casino.js'
 import { score, isNatural, SEATS, DEAL_MS, HIT_MS, DEALER_MS, RESULT_MS, TURN_MS } from './rules.mjs'
 
@@ -60,6 +60,11 @@ const sfx = {
   lose() { tone(294, 0, 0.14, 'triangle', 0.06); tone(220, 0.13, 0.24, 'triangle', 0.06) },
   push() { tone(523, 0, 0.12, 'triangle', 0.05); tone(523, 0.12, 0.12, 'triangle', 0.04) },
   turn() { tone(880, 0, 0.08, 'sine', 0.05); tone(1175, 0.08, 0.1, 'sine', 0.05) },
+  blackjack() { // 팡파르 + 반짝이
+    [523, 659, 784, 1047, 784, 1047, 1319, 1568].forEach((f, i) => { tone(f, i * 0.09, 0.22, 'square', 0.035); tone(f / 2, i * 0.09, 0.22, 'triangle', 0.05) })
+    for (let i = 0; i < 10; i++) tone(2093 + (i % 3) * 300, 0.75 + i * 0.05, 0.08, 'sine', 0.025)
+  },
+  sparkle() { [1568, 2093, 2637].forEach((f, i) => tone(f, i * 0.06, 0.1, 'sine', 0.03)) },
 }
 function paintSound() { $('sound').setAttribute('aria-pressed', String(soundOn)); $('sound').textContent = soundOn ? '소리 켬' : '소리 끔' }
 $('sound').onclick = () => { soundOn = !soundOn; store.set('sound', soundOn ? '1' : '0'); paintSound(); if (soundOn) sfx.chip() }
@@ -242,7 +247,7 @@ function paintSpot() {
 
 // ---------- 결과 ----------
 const TAG = { blackjack: '블랙잭!', win: '이김', lose: '짐', bust: '버스트', push: '비김' }
-let revealed = false, sessionTotal = 0, lastRound = null // lastRound = 지난 판 내 결과 (다음 베팅 때도 보여 줌)
+let revealed = false, lastRound = null // lastRound = 지난 판 내 결과 (다음 베팅 때도 보여 줌)
 function showResults(S, quiet) {
   revealed = true
   for (let i = 0; i < SEATS; i++) {
@@ -261,16 +266,81 @@ function showResults(S, quiet) {
     e.float.textContent = sign(net)
     e.float.className = 'bj-float show ' + tone3(net)
     if (s.me) {
-      sessionTotal = S.total
       lastRound = { net, staked: s.staked, back: s.back }
       if (!quiet) {
-        if (net > 0) { flyChips($('dealerCards'), e.handsBox, '#c98a1a', Math.min(6, 2 + Math.round(net / Math.max(1, s.staked) * 2))); sfx.win(s.hands.some(h => h.result === 'blackjack')) }
+        if (s.hands.some(h => h.result === 'blackjack')) { coinRain(e); sfx.win(true); e.float.classList.add('gold') }
+        else if (net > 0) { flyChips($('dealerCards'), e.handsBox, '#c98a1a', Math.min(6, 2 + Math.round(net / Math.max(1, s.staked) * 2))); sfx.win(false) }
         else if (net < 0) { flyChips(e.handsBox, $('dealerCards'), '#c81e2c', 4); sfx.lose() }
         else sfx.push()
       }
     }
   }
   paintMeta(); paintMoney()
+}
+
+
+// ---------- 블랙잭 효과 (운영자 요청 2026-11-18: 블랙잭이 뜨면 더 화려하게) ----------
+// 효과용 무작위는 Math.random (게임 결과와 무관)
+const rnd = (a, b) => a + Math.random() * (b - a)
+function burstAt(host, x, y, n, colors, dist = [60, 160]) {
+  for (let k = 0; k < n; k++) {
+    const i = document.createElement('i')
+    const chip = k % 3 !== 2
+    i.className = chip ? 'bj-spark coin' : 'bj-spark star'
+    i.style.left = x + 'px'; i.style.top = y + 'px'
+    i.style.setProperty('--c', colors[k % colors.length])
+    host.append(i)
+    const a = (k / n) * Math.PI * 2 + rnd(-.2, .2), d = rnd(dist[0], dist[1])
+    i.animate([
+      { transform: 'translate(-50%,-50%) scale(.3)', opacity: 1 },
+      { transform: `translate(calc(-50% + ${Math.cos(a) * d}px), calc(-50% + ${Math.sin(a) * d}px)) scale(1) rotate(${rnd(-180, 180)}deg)`, opacity: 1, offset: 0.55 },
+      { transform: `translate(calc(-50% + ${Math.cos(a) * d * 1.15}px), calc(-50% + ${Math.sin(a) * d + 70}px)) scale(.8) rotate(${rnd(-360, 360)}deg)`, opacity: 0 },
+    ], { duration: rnd(1100, 1600), easing: 'cubic-bezier(.15,.7,.35,1)', fill: 'forwards' }).finished.then(() => i.remove(), () => i.remove())
+  }
+}
+const GOLD = ['#ffe39b', '#e8c26a', '#fff6d6', '#c98a1a', '#ffffff']
+// 내 블랙잭: 테이블 전체 배너 + 빛줄기 + 칩 터짐 + 번쩍
+function blackjackBig(e) {
+  sfx.blackjack()
+  if (reduced) return
+  const table = $('table'), tr = table.getBoundingClientRect()
+  table.classList.remove('flash'); void table.offsetWidth; table.classList.add('flash')
+  const layer = document.createElement('div')
+  layer.className = 'bj-bjfx'
+  layer.innerHTML = '<div class="bj-bjfx-rays"></div><div class="bj-bjfx-text"><b>BLACKJACK!</b><small>블랙잭 · 3 : 2</small></div>'
+  table.append(layer)
+  const hr = (e?.handsBox || table).getBoundingClientRect()
+  burstAt(layer, hr.left + hr.width / 2 - tr.left, hr.top + hr.height / 2 - tr.top, 28, GOLD, [70, 190])
+  setTimeout(() => burstAt(layer, tr.width / 2, tr.height * 0.45, 18, GOLD, [90, 220]), 250)
+  e?.el.classList.add('bjglow')
+  setTimeout(() => { layer.classList.add('out'); e?.el.classList.remove('bjglow') }, 2100)
+  setTimeout(() => layer.remove(), 2600)
+}
+// 다른 사람 블랙잭: 그 자리에 작은 금색 팝 + 반짝이
+function blackjackSmall(e) {
+  if (!e || e.empty) return
+  sfx.sparkle()
+  const pop = document.createElement('b')
+  pop.className = 'bj-bjpop'; pop.textContent = '블랙잭!'
+  e.el.append(pop)
+  e.el.classList.add('bjglow')
+  if (!reduced) { const r = e.handsBox.getBoundingClientRect(), sr = e.el.getBoundingClientRect(); burstAt(e.el, r.left + r.width / 2 - sr.left, r.top + r.height / 2 - sr.top, 10, GOLD, [30, 70]) }
+  setTimeout(() => { pop.remove(); e.el.classList.remove('bjglow') }, 2000)
+}
+// 정산 때 내 블랙잭: 금색 칩이 비처럼 내 자리로
+function coinRain(e, n = 16) {
+  if (reduced || !e) return
+  const tr = $('table').getBoundingClientRect(), to = e.handsBox.getBoundingClientRect()
+  for (let k = 0; k < n; k++) {
+    const c = document.createElement('i')
+    c.className = 'bj-fly'; c.innerHTML = chipHtml(GOLD[k % 4] === '#fff6d6' ? '#c98a1a' : '#d9a13a')
+    const x0 = rnd(tr.left + 20, tr.right - 40), y0 = tr.top - 30
+    c.style.left = x0 + 'px'; c.style.top = y0 + 'px'
+    document.body.append(c)
+    const dx = to.left + to.width / 2 - x0 + rnd(-30, 30) - 15, dy = to.top + to.height / 2 - y0 - 15
+    c.animate([{ transform: 'translate(0,0) rotate(0) scale(.8)', opacity: 0 }, { opacity: 1, offset: .1 }, { transform: `translate(${dx}px, ${dy}px) rotate(${rnd(-540, 540)}deg) scale(1)`, opacity: 1 }],
+      { duration: rnd(700, 1000), delay: k * 55, easing: 'cubic-bezier(.4,.1,.6,1)', fill: 'forwards' }).finished.then(() => c.remove(), () => c.remove())
+  }
 }
 
 // ---------- 서버 state 받기 → 순서대로 연출 ----------
@@ -299,7 +369,6 @@ function renderStatic(S) {
     })
   })
   revealed = false
-  sessionTotal = S.total || 0
   paintMeta(); paintTotals()
   if (S.dealer.length) dealerByPhase(S); else sayDealer(phaseEnd ? '곧 카드를 나눠요' : '베팅을 기다려요')
   if (S.phase === 'dealer' || S.phase === 'result') showResults(S, true)
@@ -313,7 +382,6 @@ async function apply(S, speed) {
   state = S
   times(S)
   paintShoe(S.shoe)
-  if (S.ev !== 'dealer') sessionTotal = S.total || 0 // 딜러 차례의 득실은 결과 연출 때 바꿈 (미리 안 보이게)
   const fresh = !prev || prev.table !== S.table || S.ev === 'sync' || (S.ev === 'join' && S.seat === S.me) || (S.phase === 'bet' && prev.phase !== 'bet')
   if (fresh) { renderStatic(S); return }
   if (S.phase === 'bet') sayDealer(phaseEnd ? '곧 카드를 나눠요' : '베팅을 기다려요')
@@ -335,6 +403,10 @@ async function apply(S, speed) {
     }
     paintMeta()
     dealerByPhase(S)
+    for (const i of ins) {
+      const c = S.seats[i].hands[0].cards
+      if (c.length === 2 && isNatural(c)) (S.seats[i].me ? blackjackBig : blackjackSmall)(seats.get(i))
+    }
     if (mySeat()?.inRound && !mySeat().done) sfx.turn()
     return
   }
@@ -411,7 +483,7 @@ function centerMsg(text, ms) {
   centerT = setTimeout(() => { centerT = null }, ms)
 }
 
-// ---------- 돈판: 보유 칩 · 베팅 · 득실 ----------
+// ---------- 돈판: 보유 칩 · 베팅 · 이번 판 ----------
 // 보유 칩은 바뀔 때 숫자가 굴러가고 늘면 초록·줄면 빨강으로 반짝인다
 let chipsShown = null, chipsAnim = 0
 function countChips(n) {
@@ -442,12 +514,20 @@ function paintMoney() {
   else if (my?.ready) { betV = my.bet; betSub = '✓ 걸었어요' }
   else if (S && S.phase !== 'bet') betSub = '다음 판에 걸 칩'
   $('sBet').textContent = fmt(betV); $('sBetSub').textContent = betSub
-  // 득실 (들어온 뒤 합계 + 이번 판)
+  // 이번 판 결과만 (누적은 보여 주지 않음). 카드를 받는 중엔 ?, 기다리는 동안엔 지난 판
   const net = my?.inRound && revealed ? my.back - my.staked : null
-  $('sNet').textContent = sign(sessionTotal)
-  $('stNet').className = 'bj-stat net ' + tone3(sessionTotal) + (net !== null ? ' pop' : '')
-  $('sNetSub').innerHTML = net !== null ? `이번 판 <b class="${tone3(net)}-t">${sign(net)}</b>`
-    : lastRound ? `지난 판 <b class="${tone3(lastRound.net)}-t">${sign(lastRound.net)}</b>` : '들어온 뒤 합계'
+  if (net !== null) {
+    $('sNetL').textContent = '이번 판'; $('sNet').textContent = sign(net)
+    $('stNet').className = 'bj-stat net pop ' + tone3(net)
+    $('sNetSub').textContent = net > 0 ? '이득' : net < 0 ? '손해' : '본전'
+  } else if (my?.inRound) {
+    $('sNetL').textContent = '이번 판'; $('sNet').textContent = '?'
+    $('stNet').className = 'bj-stat net'; $('sNetSub').textContent = '결과를 기다려요'
+  } else {
+    $('sNetL').textContent = '지난 판'; $('sNet').textContent = lastRound ? sign(lastRound.net) : '—'
+    $('stNet').className = 'bj-stat net' + (lastRound ? ' ' + tone3(lastRound.net) : '')
+    $('sNetSub').textContent = lastRound ? (lastRound.net > 0 ? '이득' : lastRound.net < 0 ? '손해' : '본전') : '아직 없어요'
+  }
   // 한 줄 안내
   let title = '', sub = ''
   $('money').classList.remove('big')
@@ -593,6 +673,10 @@ const firstVisit = !store.get('guide')
 // ---------- 시작 ----------
 paintSound(); paintPanel()
 if (firstVisit) helpDlg.showModal()
+// 로컬에서만: ?demo=blackjack 으로 블랙잭 효과 미리 보기 (실제 사이트에서는 동작하지 않음)
+if (/^(127\.0\.0\.1|localhost)$/.test(location.hostname) && new URLSearchParams(location.search).get('demo') === 'blackjack') {
+  setTimeout(() => { blackjackBig(seats.get(state?.me) || null); setTimeout(() => coinRain(seats.get(state?.me) || { handsBox: $('mine') }), 2600) }, 2500)
+}
 
 game = await startGame({
   autoBuyIn: !firstVisit, // 처음이면 안내를 먼저 보고 '시작하기'에서 칩 바꾸기
