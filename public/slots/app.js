@@ -9,6 +9,8 @@ import { burst, flyCoins, floatText, shake, celebrate, celebrating } from './fx.
 
 const $ = id => document.getElementById(id)
 const fmt = n => Number(n || 0).toLocaleString('ko-KR')
+// 좁은 칸용 짧은 숫자: 155,400 → 15.5만 · 31,080,000 → 3,108만 · 2,450,000,000 → 24.5억 (10만 미만은 그대로)
+const fmtShort = n => n < 1e5 ? fmt(n) : n < 1e6 ? fmt(Math.floor(n / 1e3) / 10) + '만' : n < 1e8 ? fmt(Math.floor(n / 1e4)) + '만' : fmt(Math.floor(n / 1e7) / 10) + '억'
 const mod = n => ((n % REEL_LEN) + REEL_LEN) % REEL_LEN
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
 const store = { // localStorage 키는 casino:slots: 로 시작
@@ -34,7 +36,8 @@ if (!BETS.includes(bet)) bet = 5
 
 function paintBet() {
   const { lines } = split(bet)
-  $('bet').textContent = fmt(bet)
+  $('bet').textContent = bet >= 1e5 ? fmtShort(bet) : fmt(bet) // 200,000 → 20만 (좁은 화면에서 − + 사이에 들어가게)
+  $('bet').title = fmt(bet) + '칩'
   $('betHint').textContent = HINT[lines]
   $('betDown').disabled = bet <= BETS[0]
   $('betUp').disabled = bet >= BETS.at(-1)
@@ -280,7 +283,7 @@ function paintPaytables() {
   const rows = PAY_ROWS.map(([s, n, mult]) => {
     const icons = ic(s).repeat(n) + '<span class="any">?</span>'.repeat(3 - n)
     const label = n === 3 ? `${NAME[s]} 3개` : n === 2 ? '체리 2개 (왼쪽부터)' : '체리 1개 (맨 왼쪽)'
-    return `<li class="${s === 'seven' ? 'top' : ''}"><span class="icons" role="img" aria-label="${label}">${icons}</span><span class="lbl">${label}</span><b>${fmt(lineBet * mult)}칩</b></li>`
+    return `<li class="${s === 'seven' ? 'top' : ''}"><span class="icons" role="img" aria-label="${label}">${icons}</span><span class="lbl">${label}</span><b title="${fmt(lineBet * mult)}칩">${fmtShort(lineBet * mult)}칩</b></li>`
   }).join('')
   const html = `<ul class="sl-paylist">${rows}</ul>
     <p class="sl-lines-title">당첨되는 줄 <small>(지금 베팅: ${HINT[lines]})</small></p>
@@ -299,11 +302,15 @@ function paintCredit(chips) {
   cancelAnimationFrame(creditRaf)
   const from = creditShown ?? chips
   creditShown = chips
-  if (chips <= from || reduced) { el.textContent = fmt(chips); return }
+  // 큰 숫자는 몸체 밖으로 안 나가게: 1,000만 이상은 짧게(1,234만), 그 아래 8자리 넘으면 글자만 조금 작게
+  const show = n => n >= 1e7 ? fmtShort(n) : fmt(n)
+  el.dataset.len = show(chips).length > 8 ? 'l' : ''
+  el.title = fmt(chips) + '칩'
+  if (chips <= from || reduced) { el.textContent = show(chips); return }
   const t0 = performance.now(), dur = Math.min(1200, 300 + Math.log10(chips - from + 1) * 250)
   const step = now => {
     const k = Math.min(1, (now - t0) / dur)
-    el.textContent = fmt(Math.round(from + (chips - from) * (1 - (1 - k) ** 3)))
+    el.textContent = show(Math.round(from + (chips - from) * (1 - (1 - k) ** 3)))
     if (k < 1) creditRaf = requestAnimationFrame(step)
   }
   creditRaf = requestAnimationFrame(step)
@@ -320,7 +327,7 @@ function setBusy(on) {
 function setAuto(on) {
   auto = on
   $('auto').setAttribute('aria-pressed', String(on))
-  $('auto').textContent = on ? '자동 멈춤' : '자동'
+  $('auto').textContent = on ? '멈춤' : '자동'
 }
 // 큰 버튼 글자: 지금 할 일을 알려 줌
 function paintSpin() {
@@ -492,3 +499,20 @@ game = await startGame({
   },
 })
 paintBet()
+
+// ---------- JMTT 홈으로 (윗줄은 공통 부품이라 여기서 링크만 덧붙임) ----------
+// 칩이 있으면 나가기(남은 칩 → 코인, 도는 스핀은 정해진 결과대로 정산)를 보낸 뒤 이동
+{
+  const a = document.createElement('a')
+  a.className = 'casino-back sl-jmtt'
+  a.href = '/'
+  a.textContent = 'JMTT'
+  a.title = 'JMTT 홈으로 (남은 칩은 코인으로 돌려받아요)'
+  document.querySelector('.casino-top [data-back]')?.after(a)
+  a.onclick = e => {
+    if (!game?.me || (!game.chips && !game.inPlay)) return
+    e.preventDefault()
+    game.send({ t: 'leave' })
+    setTimeout(() => { location.href = '/' }, 200)
+  }
+}

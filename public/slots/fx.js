@@ -93,7 +93,7 @@ function tick(now) {
 export function flyCoins(fromRects, toEl, n = 8, onArrive) {
   if (!toEl || reduced) { onArrive?.(); return }
   const to = toEl.getBoundingClientRect()
-  const tx = to.left + to.width * 0.8, ty = to.top + to.height / 2
+  const tx = to.left + Math.min(to.width * 0.5, 50), ty = to.top + to.height / 2
   let done = 0
   for (let i = 0; i < n; i++) {
     const f = fromRects[i % fromRects.length]
