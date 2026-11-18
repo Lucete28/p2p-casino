@@ -106,7 +106,8 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
 .bj-others .bj-hand { padding: 2px 3px 0; }
 .bj-others .bj-total { height: 20px; min-width: 24px; font-size: 12px; padding: 0 6px; }
 .bj-others .bj-seat-info { font-size: 12px; flex-wrap: wrap; justify-content: center; row-gap: 0; }
-.bj-others .bj-seat-name { max-width: 6.5em; } /* 긴 이름은 … 로 (칸이 이름 때문에 넓어지지 않게) */
+.bj-others .bj-seat-name { max-width: 6.5em; }
+.bj-others .bj-bust-w { display: none; } /* 다른 사람은 빨간 점수만 (좁은 칸에서 두 줄로 깨지지 않게) */ /* 긴 이름은 … 로 (칸이 이름 때문에 넓어지지 않게) */
 .bj-others.wrap { flex-wrap: wrap; row-gap: 6px; } /* 카드를 줄여도 넘치면 두 줄로 */
 .bj-others.wrap .bj-seat { flex-basis: 30%; }
 .bj-others .bj-seat-status { flex-basis: 100%; text-align: center; min-height: 16px; }
@@ -234,6 +235,31 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
 /* 윗줄 칩 표시는 돈판의 '보유 칩'과 겹쳐서 숨김 (코인·칩 바꾸기는 그대로) */
 .casino-top [data-chips-pill] { display: none !important; }
 
+/* 확률 창 (홀덤의 확률 창과 같은 모양) */
+.bj-odds { margin-bottom: 12px; border-radius: 12px; background: #0b0a08; border: 1px solid #2d2617; }
+.bj-odds-head { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 8px 12px; border: 0; background: none; cursor: pointer;
+  color: var(--c-ink); font: 700 13px "Pretendard", sans-serif; text-align: left; }
+.bj-odds-head > span:first-child { color: var(--c-gold); }
+.bj-odds-head .eq { margin-left: auto; color: var(--c-muted); font-weight: 600; }
+.bj-odds-head .eq b { color: #3fb950; font-size: 17px; font-variant-numeric: tabular-nums; }
+.bj-odds-head .eq em { font-style: normal; font-size: 12px; }
+.bj-odds-head .caret { color: var(--c-muted); }
+.bj-odds-rows { display: grid; gap: 6px; padding: 0 12px 4px; }
+.bj-odds-row { display: grid; grid-template-columns: minmax(0, 11em) 1fr 3em; align-items: center; gap: 8px; font-size: 12.5px; }
+.bj-odds-row .nm { display: flex; flex-direction: column; min-width: 0; color: var(--c-ink); font-weight: 600; }
+.bj-odds-row .nm small { color: var(--c-muted); font-weight: 500; font-size: 11px; }
+.bj-odds-row .bar { height: 8px; border-radius: 4px; background: #ffffff12; overflow: hidden; }
+.bj-odds-row .bar i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #2f6b47, #3fb950); transition: width .4s; }
+.bj-odds-row.bad .bar i { background: linear-gradient(90deg, #7a2228, #ff6b6b); }
+.bj-odds-row.dealer .bar i { background: linear-gradient(90deg, var(--c-gold-2), var(--c-gold)); }
+.bj-odds-row .pc { text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; }
+.bj-odds-dealer { display: grid; grid-template-columns: auto repeat(6, 1fr); align-items: center; gap: 4px; margin: 8px 12px 0; padding: 6px 8px; border-radius: 10px; background: #ffffff08; font-size: 11px; color: var(--c-muted); font-variant-numeric: tabular-nums; }
+.bj-odds-dealer .lbl { padding-right: 4px; color: var(--c-gold); font-weight: 700; white-space: nowrap; }
+.bj-odds-dealer span:not(.lbl) { display: flex; flex-direction: column; align-items: center; line-height: 1.25; }
+.bj-odds-dealer b { color: var(--c-ink); font-size: 12px; }
+.bj-odds-dealer .bust b { color: #ff9a9a; }
+.bj-odds-note { margin: 6px 12px 10px; font-size: 11px; color: var(--c-muted); }
+
 /* 칩 버튼 */
 .bj-chips { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; justify-items: center; }
 .bj-chip { --chip: #2a63c4; position: relative; width: 100%; max-width: 60px; aspect-ratio: 1; padding: 0; border: 0; border-radius: 50%; cursor: pointer; background: none; transition: transform .12s; }
@@ -321,7 +347,7 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
   .bj-others .bj-hand { position: relative; }
   .bj-others .bj-total { position: absolute; z-index: 2; top: -12px; right: -4px; } /* 카드 위쪽 여백에 (작은 카드를 가리지 않게) */
   .bj-others .bj-seat:not(.empty) { padding-top: 11px; }
-  .bj-others .bj-bust-w { display: none; } /* 다른 사람은 빨간 점수만 (좁아서) */
+
   .bj-others .bj-seat-hands { min-height: calc(var(--cw) * 1.4 + 2px); }
   .bj-others .bj-hand { padding: 1px 2px 0; gap: 0; }
   .bj-others .bj-seat-info { margin-top: 1px; line-height: 1.2; }
@@ -347,6 +373,9 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
   .bj-chips { gap: 6px; }
   .bj-btn { height: 66px; } .bj-btn b { font-size: 17px; } .bj-btn small { font-size: 10.5px; }
   .bj-act-grid { gap: 6px; }
+  .bj-odds { margin-bottom: 8px; } .bj-odds-head { min-height: 38px; padding: 6px 10px; }
+  .bj-odds-row { grid-template-columns: minmax(0, 9.5em) 1fr 2.8em; font-size: 12px; }
+  .bj-odds-dealer { margin: 6px 10px 0; gap: 2px; }
 }
 @media (max-width: 360px) { .bj { --cw: 44px; --cw-mini: 26px; } .bj-btn small { display: none; } }
 @media (prefers-reduced-motion: reduce) { .card-in { transition: none; } .bj-float.show { animation: none; opacity: 1; } }
