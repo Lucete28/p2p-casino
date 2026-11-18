@@ -106,6 +106,9 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
 .bj-others .bj-hand { padding: 2px 3px 0; }
 .bj-others .bj-total { height: 20px; min-width: 24px; font-size: 12px; padding: 0 6px; }
 .bj-others .bj-seat-info { font-size: 12px; flex-wrap: wrap; justify-content: center; row-gap: 0; }
+.bj-others .bj-seat-name { max-width: 6.5em; } /* 긴 이름은 … 로 (칸이 이름 때문에 넓어지지 않게) */
+.bj-others.wrap { flex-wrap: wrap; row-gap: 6px; } /* 카드를 줄여도 넘치면 두 줄로 */
+.bj-others.wrap .bj-seat { flex-basis: 30%; }
 .bj-others .bj-seat-status { flex-basis: 100%; text-align: center; min-height: 16px; }
 .bj-mine .bj-seat-status:not(:empty)::before { content: "· "; color: var(--c-muted); }
 .bj-others .bj-avatar { width: 18px; height: 18px; font-size: 10px; }
@@ -178,6 +181,9 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
 /* 내 자리: 카드 오른쪽에 크게 (결과 도장·총점과 겹치지 않게) */
 .bj-mine .bj-float { left: calc(50% + var(--cw) * 1.25); top: 34%; transform: none; }
 .bj-mine .bj-float.show { animation-name: bj-float-r; }
+/* 내가 스플릿하면 손이 둘이라 오른쪽이 막힘 → 두 손 가운데 위에 */
+.bj-mine .bj-seat.split .bj-float { left: 50%; top: -14px; }
+.bj-mine .bj-seat.split .bj-float.show { animation-name: bj-float; }
 @keyframes bj-float-r { 0% { opacity: 0; transform: translateY(18px) scale(.6); } 12% { opacity: 1; transform: scale(1.15); } 22% { transform: none; } 100% { opacity: 1; transform: translateY(-4px); } }
 .bj-float.show { animation: bj-float 2.6s ease-out forwards; }
 .bj-float.plus { color: var(--plus); } .bj-float.minus { color: var(--minus); } .bj-float.even { color: #e8e1cf; }
@@ -313,7 +319,9 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
   .bj-others .bj-seat.split .bj-hand .card + .card { margin-left: calc(var(--cw) * -0.62); }
   .bj-others .bj-hand-bet { display: none; }
   .bj-others .bj-hand { position: relative; }
-  .bj-others .bj-total { position: absolute; z-index: 2; top: -4px; right: -6px; }
+  .bj-others .bj-total { position: absolute; z-index: 2; top: -12px; right: -4px; } /* 카드 위쪽 여백에 (작은 카드를 가리지 않게) */
+  .bj-others .bj-seat:not(.empty) { padding-top: 11px; }
+  .bj-others .bj-bust-w { display: none; } /* 다른 사람은 빨간 점수만 (좁아서) */
   .bj-others .bj-seat-hands { min-height: calc(var(--cw) * 1.4 + 2px); }
   .bj-others .bj-hand { padding: 1px 2px 0; gap: 0; }
   .bj-others .bj-seat-info { margin-top: 1px; line-height: 1.2; }

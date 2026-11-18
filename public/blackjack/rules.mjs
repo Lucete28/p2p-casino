@@ -10,6 +10,7 @@ export const CUT = Math.round(SHOE_SIZE * 0.75) // 이만큼 나가면 다음 �
 
 // 테이블 (딜러가 판을 돌린다: 베팅 → 딜 → 모두 동시에 행동 → 딜러 → 정산 → 다음 판)
 export const SEATS = 7 // 테이블 하나의 자리 (운영자 결정 2026-11-18: 7자리, 관전자는 자리를 차지하지 않음)
+export const MIN_BET = 10 // 한 판 최소 베팅 (운영자 결정 2026-11-18). 상한은 없음
 export const IDLE_ROUNDS = 3 // 앉아서 이만큼 연속으로 안 걸면 일어나 관전으로
 export const BET_MS = 12000 // 누가 처음 베팅하면 이만큼 뒤 마감
 export const READY_MS = 1200 // 앉은 사람이 모두 베팅하면 이만큼 뒤 바로 마감

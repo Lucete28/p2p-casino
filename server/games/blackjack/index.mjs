@@ -21,7 +21,7 @@
 // 연결이 끊기면 자리는 60초 남고, 그사이 행동 시간이 지나 스탠드 → 판이 끝나 정산된다. 딜러 결과가 나온 뒤 나가면 바로 정산.
 // 서버가 판 도중 꺼지면 코어가 그 판을 무효로 하고 건 칩을 돌려준다 (결과가 나온 판은 결과대로 정산).
 import { dealRound, seatActions, seatAct, dealerPlay, settleSeat } from './engine.mjs'
-import { DECKS, SHOE_SIZE, CUT, SEATS, IDLE_ROUNDS, BET_MS, READY_MS, TURN_MS, SHOW_MS, DEAL_MS, HIT_MS, DEALER_MS, RESULT_MS } from '../../../public/blackjack/rules.mjs'
+import { DECKS, SHOE_SIZE, CUT, SEATS, MIN_BET, IDLE_ROUNDS, BET_MS, READY_MS, TURN_MS, SHOW_MS, DEAL_MS, HIT_MS, DEALER_MS, RESULT_MS } from '../../../public/blackjack/rules.mjs'
 
 const ACTS = new Set(['hit', 'stand', 'double', 'split'])
 const SEAT_ORDER = [3, 2, 4, 1, 5, 0, 6] // 가운데 자리부터 채움
@@ -125,7 +125,7 @@ function placeBet(s, amount) {
   const { t } = s, { ctx } = t, p = s.p
   if (t.phase !== 'bet') return toast(ctx, p, '지금은 베팅할 수 없어요. 이번 판이 끝나면 걸 수 있어요.')
   if (amount === 0) { s.ready = false; return broadcast(t, 'bet', { seat: s.i }) }
-  if (!Number.isSafeInteger(amount) || amount < 1) return toast(ctx, p, '베팅은 1칩 이상 정수로 해 주세요.')
+  if (!Number.isSafeInteger(amount) || amount < MIN_BET) return toast(ctx, p, `베팅은 ${MIN_BET}칩 이상 정수로 해 주세요.`)
   if (amount > p.chips) return toast(ctx, p, p.chips ? '칩이 모자라요.' : '먼저 칩을 바꿔 주세요.')
   s.bet = amount
   s.ready = true
@@ -137,7 +137,7 @@ function placeBet(s, amount) {
 // 앉아 있고(연결됨) 칩이 있는 사람이 모두 걸었으면 곧 마감
 function allReady(t) {
   if (t.phase !== 'bet' || !t.endsAt) return
-  const can = seated(t).filter(s => online(s.p) && (s.p.chips >= 1 || s.ready))
+  const can = seated(t).filter(s => online(s.p) && (s.p.chips >= MIN_BET || s.ready)) // 최소 베팅보다 칩이 적은 사람은 기다리지 않음
   if (can.length && can.every(s => s.ready) && t.endsAt - Date.now() > READY_MS) {
     t.endsAt = Date.now() + READY_MS
     schedule(t, READY_MS, () => closeBetting(t))
@@ -239,7 +239,7 @@ function newBetting(t) {
 export default {
   id: 'blackjack',
   title: '블랙잭',
-  buyIn: { min: 1 },
+  buyIn: { min: MIN_BET }, // 칩 바꾸기도 최소 베팅만큼부터
 
   // 접속할 때마다 (새로고침·다른 탭 포함). 처음이면 관전자로 테이블 하나를 본다
   join(p, ctx) {
@@ -275,7 +275,7 @@ export default {
       const t = watchOf.get(p.id)
       if (!t || amount === 0) return
       if (t.phase !== 'bet') return toast(ctx, p, '지금은 베팅할 수 없어요. 이번 판이 끝나면 걸 수 있어요.')
-      if (!Number.isSafeInteger(amount) || amount < 1 || amount > p.chips) return toast(ctx, p, !p.chips ? '먼저 칩을 바꿔 주세요.' : amount > p.chips ? '칩이 모자라요.' : '베팅은 1칩 이상 정수로 해 주세요.')
+      if (!Number.isSafeInteger(amount) || amount < MIN_BET || amount > p.chips) return toast(ctx, p, !p.chips ? '먼저 칩을 바꿔 주세요.' : amount > p.chips ? '칩이 모자라요.' : `베팅은 ${MIN_BET}칩 이상 정수로 해 주세요.`)
       const i = SEAT_ORDER.find(k => !t.seats[k])
       if (i === undefined) return toast(ctx, p, '빈자리가 없어요. 자리가 나면 앉을 수 있어요.')
       return placeBet(sitAt(p, t, i), amount)
