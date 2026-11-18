@@ -1,6 +1,7 @@
 // 슬롯 시뮬레이션 (CASINO.md 6장): 서버 모듈(index.mjs)에 진짜 난수로 머신마다 1,000만 판을 돌려
 // 실제 환급률이 기준값 ±0.3%p 안인지 본다. 기준값: 줄·다이아몬드는 rules.mjs exactRtp(모든 경우를 셈),
 // 과일 폭탄(연쇄)·럭키 스타(프리스핀 배수)는 rtpRef(따로 돌린 큰 시뮬레이션).
+// 코인 푸셔는 진짜 물리라 한 번에 몇 ms 걸려서 2만 번만: 코인이 사라지지 않는지(떨어진 수 = 넣은 수 - 판 증가)와 환급률 100%를 본다.
 //   node server/games/slots/test-sim.mjs [판 수] [머신]
 // 환급률은 모두의 잭팟을 뺀 머신 몫. 잭팟은 장부(쌓인 2% = 나간 잭팟 + 남은 잭팟·밑돈 - 하우스가 채운 밑돈)를 따로 맞춰 본다.
 import assert from 'node:assert/strict'
@@ -22,7 +23,7 @@ let allStaked = 0, allJpWins = 0, allHits = 0
 
 for (const m of Object.values(MACHINES)) {
   if (only && m.id !== only) continue
-  if (m.type === 'crash') continue // 크래시는 진짜 시간이 흘러야 해서 아래에서 규칙으로 따로
+  if (m.type === 'crash' || m.type === 'pusher') continue // 크래시·코인 푸셔는 아래에서 따로
   const lines = (m.lineChoices || [linesOf(m)]).at(-1)
   const lineBet = 1
   const p = { id: 'u_sim_' + m.id, name: 'sim', chips: 1e15, inPlay: 0, limits: {} }
@@ -69,6 +70,37 @@ if (!only || only === 'crash') {
   }
   console.log(`[크래시] 판 ${SPINS.toLocaleString()} · 환급률 ${(back / bet * 100).toFixed(3)}% (기준 100%, 허용 ±0.3%p) · 터져서 잃은 판 ${(boom / SPINS * 100).toFixed(1)}%`)
   assert.ok(Math.abs(back / bet - 1) <= 0.003, 'crash 환급률이 범위를 벗어남')
+}
+
+// 코인 푸셔: 서버 모듈로 2만 번, 떨어뜨리는 자리는 아무 데나
+if (!only || only === 'pusher') {
+  const PUSHES = Math.min(SPINS, 20_000)
+  const p = { id: 'u_sim_pusher', name: 'sim', chips: 1e15, inPlay: 0, limits: {} }
+  let staked = 0, returned = 0, last = null, board = null, jpWins = 0, jpHits = 0
+  const ctx = {
+    rng, players: () => [p], broadcast() {}, limit: () => true,
+    send(_, msg) { if (msg.t === 'spun') last = msg; else if (msg.t === 'pusherBoard') board = msg.coins.length; else if (msg.t === 'toast') throw new Error('거절됨: ' + msg.msg) },
+    bet(pl, a) { pl.chips -= a; pl.inPlay += a; staked += a; return true },
+    payout(pl, a) { pl.chips += a; pl.inPlay = 0; returned += a; return true },
+  }
+  slots.message(p, { t: 'pusherBoard', bet: 1 }, ctx)
+  const b0 = board, t0 = performance.now()
+  let fell = 0, maxBoard = 0
+  for (let i = 0; i < PUSHES; i++) {
+    slots.message(p, { t: 'spin', machine: 'pusher', lineBet: 1, lines: 1, dropX: 15 + rng.int(2701) / 10 }, ctx)
+    fell += last.coins
+    if (last.jackpot) { jpHits++; jpWins += last.jackpot.win }
+    slots.leave(p, ctx)
+    if (i % 1000 === 999) { slots.message(p, { t: 'pusherBoard', bet: 1 }, ctx); maxBoard = Math.max(maxBoard, board) }
+  }
+  slots.message(p, { t: 'pusherBoard', bet: 1 }, ctx)
+  const got = (returned - jpWins) / staked
+  console.log(`[코인 푸셔] 떨어뜨림 ${PUSHES.toLocaleString()} · ${((performance.now() - t0) / 1000).toFixed(1)}초 · 환급률 ${(got * 100).toFixed(3)}% (기준 100%, 허용 ±0.3%p) · 판 코인 ${b0} → ${board} (가장 많을 때 ${maxBoard})`)
+  assert.equal(fell, PUSHES - (board - b0), '코인이 사라지거나 생김')
+  assert.equal(returned - jpWins, fell)
+  assert.ok(maxBoard < b0 + 30, '판에 코인이 끝없이 쌓임')
+  assert.ok(Math.abs(got - 1) <= 0.003, 'pusher 환급률이 범위를 벗어남')
+  allStaked += staked; allJpWins += jpWins; allHits += jpHits
 }
 
 // 모두의 잭팟 장부: 들어온 2% = 나간 잭팟 + (남은 잭팟 + 밑돈 증가) - 하우스가 채운 밑돈

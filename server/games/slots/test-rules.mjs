@@ -8,7 +8,8 @@ process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'slots-test-'))
 const rng = await import('../../core/rng.mjs')
 const { default: slots, SPIN_MS, FS_MS, jackpotState } = await import('./index.mjs')
 const R = await import('../../../public/slots/rules.mjs')
-const { MACHINES, JACKPOT, windowOf, lineWin, gemWin, waysWins, cascade, freeSpins, checkBet, linesOf, evaluate, exactRtp, teases, TEASE_MS, MAX_LINE_BET, CRASH_U, crashPoint, crashMultAt, crashTimeFor, pusherPick, pusherTotal } = R
+const { MACHINES, JACKPOT, windowOf, lineWin, gemWin, waysWins, cascade, freeSpins, checkBet, linesOf, evaluate, exactRtp, teases, TEASE_MS, MAX_LINE_BET, CRASH_U, crashPoint, crashMultAt, crashTimeFor } = R
+const PU = await import('../../../public/slots/pusher.mjs')
 
 let n = 0
 const ok = (name, fn) => { fn(); n++; console.log('✓', name) }
@@ -45,7 +46,7 @@ ok('다른 머신의 띠: 그림 수가 릴마다 같고, 별은 릴마다 하�
 })
 
 ok('환급률: 머신 기본 99.5% ~ 101% (운영자 결정: 기본 약 100% + 모두의 잭팟 2%)', () => {
-  assert.equal(exactRtp(M.crash).rtp, 1); assert.ok(Math.abs(exactRtp(M.pusher).rtp - 1.01) < 1e-9)
+  assert.equal(exactRtp(M.crash).rtp, 1); assert.equal(exactRtp(M.pusher).rtp, 1)
   const want = { classic: 1.0009, diamond: 1.0078 }
   for (const m of Object.values(M)) {
     const rtp = exactRtp(m).rtp ?? m.rtpRef
@@ -179,12 +180,22 @@ ok('크래시: 터지는 배수 P(≥x) = 1/x (언제 내려도 100%), 시간과
   }
 })
 
-ok('코인 푸셔: 떨어지는 코인 수 확률 합 1,000, 기댓값 1.01', () => {
-  const p = M.pusher
-  assert.equal(pusherTotal(p), 1000)
-  const hits = {}
-  for (let n = 0; n < 1000; n++) { const c = pusherPick(p, n); hits[c] = (hits[c] || 0) + 1 }
-  assert.deepEqual(Object.entries(hits).map(([k, v]) => [Number(k), v]).sort((a, b) => a[0] - b[0]), p.drops)
+ok('코인 푸셔 물리: 같은 판·자리면 같은 결과, 코인은 사라지지 않음 (떨어진 수 = 넣은 수 - 판 증가)', () => {
+  const b0 = PU.seedBoard(3)
+  assert.equal(PU.boardHash(b0), PU.boardHash(PU.seedBoard(3)))
+  assert.ok(b0.length > 60, '처음 판이 차 있음')
+  let b = b0, fell = 0
+  for (let i = 0; i < 40; i++) {
+    const x = PU.dropX(20 + i * 37 % 260)
+    const r1 = PU.drop(b, x), frames = []
+    const r2 = PU.drop(b, x, (c, s, f) => frames.push(f.length))
+    assert.equal(PU.boardHash(r1.board), PU.boardHash(r2.board)); assert.equal(r1.fell, r2.fell)
+    assert.equal(frames.length, PU.PB.STEPS); assert.equal(frames.reduce((a, x) => a + x, 0), r1.fell)
+    for (const c of r1.board) assert.ok(c.x >= PU.PB.R - 1e-9 && c.x <= PU.PB.W - PU.PB.R + 1e-9 && c.y <= PU.PB.FRONT)
+    b = r1.board; fell += r1.fell
+  }
+  assert.equal(fell, 40 - (b.length - b0.length))
+  assert.equal(PU.dropX('abc'), null); assert.equal(PU.dropX(-50), PU.PB.R); assert.equal(PU.dropX(9999), PU.PB.W - PU.PB.R)
 })
 
 ok('두근두근: 마지막 릴만 남았을 때 큰 그림·별', () => {
@@ -257,6 +268,31 @@ ok('모든 머신 1,000판: 칩이 맞게 오가고 back = 첫 화면 + 프리�
       assert.equal(p.chips, before - s.total + s.back)
     }
   }
+})
+
+ok('코인 푸셔 서버: 판은 사람·코인 값마다 따로 이어지고, 화면이 같은 계산으로 같은 판을 얻음', () => {
+  const p = { id: 'u_push', chips: 1e6, inPlay: 0, limits: {} }
+  const ctx = { ...fakeCtx(p), rng: noMystery }
+  slots.message(p, { t: 'pusherBoard', bet: 2 }, ctx)
+  const first = ctx.sent.at(-1)
+  assert.equal(first.t, 'pusherBoard'); assert.equal(first.bet, 2)
+  let board = first.coins.map(([x, y]) => ({ x, y, vx: 0, vy: 0 }))
+  for (const dx of [40, 150, 260, 'x']) {
+    slots.message(p, { t: 'spin', machine: 'pusher', lineBet: 2, lines: 1, dropX: dx }, ctx)
+    const s = ctx.sent.at(-1)
+    assert.equal(s.t, 'spun'); assert.equal(s.dropX, dx === 'x' ? PU.PB.W / 2 : dx)
+    const r = PU.drop(board, s.dropX)
+    assert.equal(PU.boardHash(r.board), s.hash); assert.equal(r.fell, s.coins); assert.equal(s.base, s.coins * 2)
+    board = r.board
+    slots.message(p, { t: 'skip' }, ctx)
+  }
+  slots.message(p, { t: 'pusherBoard', bet: 2 }, ctx)
+  assert.equal(PU.boardHash(ctx.sent.at(-1).coins.map(([x, y]) => ({ x, y }))), PU.boardHash(board), '판이 이어짐')
+  slots.message(p, { t: 'pusherBoard', bet: 3 }, ctx)
+  assert.equal(PU.boardHash(ctx.sent.at(-1).coins.map(([x, y]) => ({ x, y }))), PU.boardHash(PU.seedBoard(3)), '코인 값이 다르면 다른 판')
+  const n = ctx.sent.length
+  slots.message(p, { t: 'pusherBoard', bet: 0.5 }, ctx); slots.message(p, { t: 'pusherBoard', bet: 'a' }, ctx)
+  assert.equal(ctx.sent.length, n)
 })
 
 ok('모두의 잭팟: 어느 머신이든 2% 쌓이고, 미스터리로 터지면 전부, 파일에 저장', () => {
