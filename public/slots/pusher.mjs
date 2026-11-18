@@ -68,7 +68,8 @@ export function step(coins, s, still = false) {
 }
 
 // 멈춘 판: 속도는 0, 자리는 0.01 단위로 (서버·화면이 같은 수에서 시작하게)
-export function rest(coins) { return coins.map(c => ({ x: Math.round(c.x * 100) / 100, y: Math.round(c.y * 100) / 100, vx: 0, vy: 0 })) }
+// v: 화면이 코인마다 붙이는 그림용 값 (물리·해시와 무관, 있으면 그대로 둠)
+export function rest(coins) { return coins.map(c => ({ x: Math.round(c.x * 100) / 100, y: Math.round(c.y * 100) / 100, vx: 0, vy: 0, ...(c.v !== undefined ? { v: c.v } : {}) })) }
 export const boardHash = coins => coins.reduce((h, c) => (Math.imul(h, 31) + Math.round(c.x * 100) * 7 + Math.round(c.y * 100)) | 0, 17)
 
 // 떨어뜨리는 자리 (x) 검사·정리

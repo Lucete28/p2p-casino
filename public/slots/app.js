@@ -579,81 +579,193 @@ async function crashed(m) {
 // 위에서 본 판을 캔버스에 그린다. 떨어뜨리면 pusher.mjs의 같은 물리를 한 칸씩 그려서 서버 결과와 똑같이 움직인다
 const pusher = { boards: {}, dropX: PB.W / 2, raf: 0, frames: null, tray: [], falling: [], pendingX: null, last: 0 }
 const TRAY = 64 // 앞 끝 아래 받침 높이 (판 좌표)
-let puCtx = null, coinImg = null
+let puCtx = null, art = null
+const TAU = Math.PI * 2
+const coinV = () => Math.random() // 코인마다 무늬 각도·색감 (그림에만 씀, 물리와 무관)
 function askBoard() { if (game?.me) game.send({ t: 'pusherBoard', bet }) }
-function coinSprite(scale) { // 코인 한 개 그림 (금화: 테두리·안쪽 원·광택)
-  const R = PB.R * scale, c = document.createElement('canvas'), d = Math.ceil(R * 2 + 6)
-  c.width = c.height = d
-  const g = c.getContext('2d'), o = d / 2
-  const body = g.createRadialGradient(o - R * 0.35, o - R * 0.4, R * 0.1, o, o, R)
-  body.addColorStop(0, '#fff7c9'); body.addColorStop(0.35, '#ffd447'); body.addColorStop(0.8, '#d39b19'); body.addColorStop(1, '#8f6210')
-  g.fillStyle = body; g.beginPath(); g.arc(o, o, R, 0, Math.PI * 2); g.fill()
-  g.lineWidth = Math.max(1, R * 0.09); g.strokeStyle = '#7a5208'; g.stroke()
-  g.lineWidth = Math.max(0.8, R * 0.07); g.strokeStyle = 'rgba(122,82,8,.55)'; g.beginPath(); g.arc(o, o, R * 0.7, 0, Math.PI * 2); g.stroke()
-  g.fillStyle = 'rgba(122,82,8,.5)'; g.font = `900 ${Math.round(R * 0.9)}px Pretendard, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('J', o + R * 0.03, o + R * 0.06)
-  g.strokeStyle = 'rgba(255,255,255,.75)'; g.lineWidth = Math.max(1, R * 0.12); g.lineCap = 'round'; g.beginPath(); g.arc(o, o, R * 0.82, Math.PI * 1.1, Math.PI * 1.45); g.stroke()
-  return c
+// 그림 재료를 한 번 만들어 둔다: 코인(색 2가지 × 별 각도 12가지, 빛은 늘 왼쪽 위), 코인 그림자, 판 바닥, 받침, 유리 반사
+function makeArt(k, d, W, H) {
+  const sc = k * d, R = PB.R * sc, pad = Math.ceil(R * 0.4) + 2, D = Math.ceil(R * 2 + pad * 2), o = D / 2
+  const mk = (w, h, draw) => { const c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h)); draw(c.getContext('2d')); return c }
+  const circle = (g, r, x = o, y = o) => { g.beginPath(); g.arc(x, y, r, 0, TAU) }
+  const star = (g, r, rot, ox, oy) => { g.beginPath(); for (let i = 0; i < 10; i++) { const t = rot - Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.44 : r; g.lineTo(o + ox + Math.cos(t) * rr, o + oy + Math.sin(t) * rr) } g.closePath() }
+  const TONES = [['#fff4b8', '#f2c94c', '#b07d12', '#6e4a05'], ['#f6e3a6', '#d9ad3c', '#94660c', '#5a3b03'], ['#ffe9c2', '#e8b45a', '#a8641c', '#5e3208']] // 새 금화 · 오래된 금화 · 붉은 금화
+  const coins = TONES.map(([hi, mid, lo, edge]) => Array.from({ length: 12 }, (_, i) => mk(D, D, g => {
+    // 테: 빛 받는 왼쪽 위가 밝음
+    let gr = g.createLinearGradient(o - R, o - R, o + R, o + R)
+    gr.addColorStop(0, hi); gr.addColorStop(0.45, mid); gr.addColorStop(1, lo)
+    g.fillStyle = gr; circle(g, R); g.fill()
+    // 톱니 테두리
+    g.strokeStyle = 'rgba(80,50,0,.32)'; g.lineWidth = Math.max(0.5, R * 0.03)
+    for (let j = 0; j < 72; j++) { const t = j / 72 * TAU, c = Math.cos(t), si = Math.sin(t); g.beginPath(); g.moveTo(o + c * R * 0.9, o + si * R * 0.9); g.lineTo(o + c * R * 0.985, o + si * R * 0.985); g.stroke() }
+    // 안쪽 면: 살짝 눌려 있어 빛이 반대 (오른쪽 아래가 밝음)
+    gr = g.createLinearGradient(o - R, o - R, o + R, o + R)
+    gr.addColorStop(0, lo); gr.addColorStop(0.5, mid); gr.addColorStop(1, hi)
+    g.fillStyle = gr; circle(g, R * 0.82); g.fill()
+    const field = g.createRadialGradient(o - R * 0.2, o - R * 0.25, R * 0.1, o, o, R * 0.78)
+    field.addColorStop(0, hi); field.addColorStop(0.6, mid); field.addColorStop(1, lo)
+    g.globalAlpha = 0.8; g.fillStyle = field; circle(g, R * 0.76); g.fill(); g.globalAlpha = 1
+    // 도드라진 별: 밝은 테두리(왼쪽 위) · 어두운 테두리(오른쪽 아래) · 몸통
+    const rot = i / 12 * (TAU / 5), e = Math.max(0.6, R * 0.045), sr = R * 0.5
+    g.fillStyle = 'rgba(255,252,225,.9)'; star(g, sr, rot, -e, -e); g.fill()
+    g.fillStyle = 'rgba(90,56,0,.75)'; star(g, sr, rot, e, e); g.fill()
+    const sg = g.createLinearGradient(o - sr, o - sr, o + sr, o + sr); sg.addColorStop(0, hi); sg.addColorStop(1, mid)
+    g.fillStyle = sg; star(g, sr, rot, 0, 0); g.fill()
+    // 바깥 선
+    g.strokeStyle = edge; g.lineWidth = Math.max(0.6, R * 0.05); circle(g, R - g.lineWidth / 2); g.stroke()
+    // 광택 (늘 왼쪽 위)
+    g.save(); circle(g, R); g.clip()
+    const sp = g.createRadialGradient(o - R * 0.42, o - R * 0.48, 0, o - R * 0.42, o - R * 0.48, R * 0.8)
+    sp.addColorStop(0, 'rgba(255,255,255,.55)'); sp.addColorStop(1, 'rgba(255,255,255,0)')
+    g.fillStyle = sp; g.fillRect(0, 0, D, D); g.restore()
+    g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = Math.max(0.8, R * 0.07); g.lineCap = 'round'
+    g.beginPath(); g.arc(o, o, R * 0.9, Math.PI * 1.08, Math.PI * 1.38); g.stroke()
+  })))
+  const shadow = mk(D, D, g => { g.shadowColor = 'rgba(0,0,0,.75)'; g.shadowBlur = R * 0.35; g.fillStyle = 'rgba(0,0,0,.45)'; circle(g, R * 0.97); g.fill() })
+  // 판 바닥: 닦인 스테인리스 + 인쇄된 무늬 + 양옆 네온이 비침
+  const lip = PB.FRONT * sc, Wd = W * d, Hd = H * d
+  const plate = mk(Wd, lip, g => {
+    let gr = g.createLinearGradient(0, 0, 0, lip)
+    gr.addColorStop(0, '#0e131c'); gr.addColorStop(0.35, '#1d2734'); gr.addColorStop(1, '#2b3848')
+    g.fillStyle = gr; g.fillRect(0, 0, Wd, lip)
+    let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647
+    for (let i = 0; i < Wd; i += 1 + rnd() * 2) { g.fillStyle = `rgba(255,255,255,${(0.01 + rnd() * 0.035).toFixed(3)})`; g.fillRect(i, 0, 1, lip) }
+    // 비스듬한 반사 띠
+    for (const [x0, w, al] of [[0.15, 0.22, 0.06], [0.55, 0.1, 0.04]]) {
+      gr = g.createLinearGradient(Wd * x0, 0, Wd * (x0 + w), lip * 0.3)
+      gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.5, `rgba(220,235,255,${al})`); gr.addColorStop(1, 'rgba(255,255,255,0)')
+      g.fillStyle = gr; g.fillRect(0, 0, Wd, lip)
+    }
+    // 인쇄: 가운데 큰 별 원판 + JMTT
+    const cx = Wd / 2, cy = lip * 0.6, rr = Wd * 0.36
+    g.strokeStyle = 'rgba(243,207,116,.14)'; g.lineWidth = sc * 2.5; circle(g, rr, cx, cy); g.stroke()
+    g.lineWidth = sc; circle(g, rr * 0.86, cx, cy); g.stroke()
+    g.fillStyle = 'rgba(243,207,116,.07)'; g.beginPath()
+    for (let i = 0; i < 10; i++) { const t = -Math.PI / 2 + i * Math.PI / 5, q = i % 2 ? rr * 0.34 : rr * 0.78; g.lineTo(cx + Math.cos(t) * q, cy + Math.sin(t) * q) }
+    g.closePath(); g.fill()
+    g.fillStyle = 'rgba(243,207,116,.13)'; g.font = `900 ${Math.round(sc * 30)}px Pretendard, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'
+    g.fillText('JMTT', cx, cy)
+    // 앞 끝 쪽 화살표 (여기서 떨어져요)
+    g.fillStyle = 'rgba(255,196,80,.22)'
+    for (let x = 18; x < PB.W; x += 30) { const X = x * sc, Y = lip - sc * 22; g.beginPath(); g.moveTo(X - sc * 9, Y); g.lineTo(X, Y + sc * 8); g.lineTo(X + sc * 9, Y); g.lineTo(X + sc * 9, Y + sc * 5); g.lineTo(X, Y + sc * 13); g.lineTo(X - sc * 9, Y + sc * 5); g.fill() }
+    // 양옆 네온 비침
+    for (const [x0, x1] of [[0, sc * 36], [Wd, Wd - sc * 36]]) {
+      gr = g.createLinearGradient(x0, 0, x1, 0); gr.addColorStop(0, 'rgba(255,70,170,.28)'); gr.addColorStop(1, 'rgba(255,70,170,0)')
+      g.fillStyle = gr; g.fillRect(Math.min(x0, x1), 0, Math.abs(x1 - x0), lip)
+    }
+  })
+  // 받침: 어두운 황동 쟁반
+  const trayTop = lip + sc * 20
+  const tray = mk(Wd, Hd - trayTop, g => {
+    const h = Hd - trayTop
+    let gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#120a02'); gr.addColorStop(0.25, '#3a2810'); gr.addColorStop(1, '#5a4018')
+    g.fillStyle = gr; g.fillRect(0, 0, Wd, h)
+    let seed = 3; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647
+    for (let i = 0; i < Wd; i += 1 + rnd() * 2) { g.fillStyle = `rgba(255,220,150,${(0.01 + rnd() * 0.03).toFixed(3)})`; g.fillRect(i, 0, 1, h) }
+    gr = g.createLinearGradient(0, h - sc * 6, 0, h); gr.addColorStop(0, 'rgba(255,230,160,0)'); gr.addColorStop(1, 'rgba(255,230,160,.35)')
+    g.fillStyle = gr; g.fillRect(0, h - sc * 6, Wd, sc * 6)
+  })
+  // 유리: 비스듬한 반사 + 가장자리 어둡게
+  const glass = mk(Wd, Hd, g => {
+    let gr = g.createLinearGradient(0, 0, Wd, Hd)
+    gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.3, 'rgba(255,255,255,0)'); gr.addColorStop(0.36, 'rgba(255,255,255,.07)'); gr.addColorStop(0.41, 'rgba(255,255,255,0)')
+    gr.addColorStop(0.46, 'rgba(255,255,255,.035)'); gr.addColorStop(0.49, 'rgba(255,255,255,0)'); gr.addColorStop(1, 'rgba(255,255,255,0)')
+    g.fillStyle = gr; g.fillRect(0, 0, Wd, Hd)
+    gr = g.createRadialGradient(Wd / 2, Hd * 0.45, Math.min(Wd, Hd) * 0.35, Wd / 2, Hd * 0.45, Math.max(Wd, Hd) * 0.75)
+    gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,.4)')
+    g.fillStyle = gr; g.fillRect(0, 0, Wd, Hd)
+  })
+  return { key: `${k}|${d}|${W}|${H}`, coins, shadow, plate, tray, trayTop, glass, D }
 }
 function puLayout() {
   const c = $('pusherCanvas'), r = c.getBoundingClientRect(), d = Math.min(2, devicePixelRatio || 1)
   if (!r.width) return null
   if (c.width !== Math.round(r.width * d) || c.height !== Math.round(r.height * d)) { c.width = Math.round(r.width * d); c.height = Math.round(r.height * d); puCtx = null }
   const k = r.width / PB.W // 판 좌표 → 화면 px
-  if (!coinImg || coinImg.k !== k * d) { coinImg = coinSprite(k * d); coinImg.k = k * d }
+  if (!art || art.key !== `${k}|${d}|${r.width}|${r.height}`) art = makeArt(k, d, r.width, r.height)
   puCtx ||= c.getContext('2d')
   return { g: puCtx, k, d, W: r.width, H: r.height }
 }
-function drawCoin(L, x, y, s = 1, alpha = 1) {
-  const { g, k, d } = L, w = coinImg.width / d * s
-  g.globalAlpha = alpha * 0.4; g.fillStyle = '#000'; g.beginPath(); g.ellipse(x * k + 1.5 * s, y * k + 3 * s, PB.R * k * s, PB.R * k * s * 0.92, 0, 0, Math.PI * 2); g.fill()
-  g.globalAlpha = alpha; g.drawImage(coinImg, x * k - w / 2, y * k - w / 2, w, w); g.globalAlpha = 1
+// 코인 한 개: 그림자(살짝 오른쪽 아래) → 코인. v = 코인마다 정해진 0~1 (별 각도·색감·크기 조금씩 다르게)
+function drawCoin(L, x, y, s = 1, alpha = 1, v = 0.5) {
+  const { g, k, d } = L
+  const sz = art.D / d * s * (0.975 + 0.05 * ((v * 7.31) % 1))
+  const tv = (v * 13.7) % 1, img = art.coins[tv < 0.3 ? 1 : tv < 0.45 ? 2 : 0][Math.floor(v * 12) % 12]
+  g.globalAlpha = alpha * 0.85; g.drawImage(art.shadow, x * k - sz / 2 + 1.2 * s, y * k - sz / 2 + 2.2 * s, sz, sz)
+  g.globalAlpha = alpha; g.drawImage(img, x * k - sz / 2, y * k - sz / 2, sz, sz); g.globalAlpha = 1
+}
+// 반짝이는 전구 줄 (t: 시간, 물결처럼 번갈아)
+function bulbs(g, pts, r, rgb, t) {
+  pts.forEach(([x, y], i) => {
+    const on = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t / 160 - i * 0.9))
+    const gl = g.createRadialGradient(x, y, 0, x, y, r * 3); gl.addColorStop(0, `rgba(${rgb},${(0.55 * on).toFixed(2)})`); gl.addColorStop(1, `rgba(${rgb},0)`)
+    g.fillStyle = gl; g.fillRect(x - r * 3, y - r * 3, r * 6, r * 6)
+    g.fillStyle = `rgba(255,250,230,${(0.4 + 0.6 * on).toFixed(2)})`; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill()
+  })
 }
 function drawPusher(coins, step = 0, extra) {
   const L = puLayout(); if (!L) return
-  const { g, k, d, W, H } = L
-  g.setTransform(d, 0, 0, d, 0, 0)
+  const { g, k, d, W } = L, t = performance.now()
+  g.setTransform(1, 0, 0, 1, 0, 0)
   coins ||= pusher.boards[bet] || []
-  // 판: 닳은 금속판 (줄무늬 결 + 위쪽이 살짝 어두움)
-  const plate = g.createLinearGradient(0, 0, 0, PB.FRONT * k)
-  plate.addColorStop(0, '#20262e'); plate.addColorStop(0.5, '#323b46'); plate.addColorStop(1, '#3d4753')
-  g.fillStyle = plate; g.fillRect(0, 0, W, PB.FRONT * k)
-  g.globalAlpha = 0.05; g.fillStyle = '#fff'
-  for (let i = 0; i < W; i += 3) g.fillRect(i, 0, 1, PB.FRONT * k)
-  g.globalAlpha = 1
-  const spot = g.createRadialGradient(W * 0.5, PB.FRONT * k * 0.55, 10, W * 0.5, PB.FRONT * k * 0.55, W * 0.8)
-  spot.addColorStop(0, 'rgba(255,240,200,.10)'); spot.addColorStop(1, 'rgba(0,0,0,.25)')
-  g.fillStyle = spot; g.fillRect(0, 0, W, PB.FRONT * k)
-  // 코인
-  for (const c of coins) drawCoin(L, c.x, c.y)
-  // 밀대 (앞면 그림자 → 크롬 몸통)
-  const py = (step ? pusherY(step) : PB.PUSH_MIN) * k
-  const sh = g.createLinearGradient(0, py, 0, py + 14); sh.addColorStop(0, 'rgba(0,0,0,.45)'); sh.addColorStop(1, 'rgba(0,0,0,0)')
-  g.fillStyle = sh; g.fillRect(0, py, W, 14)
-  const chrome = g.createLinearGradient(0, py - 40, 0, py)
-  chrome.addColorStop(0, '#6c7383'); chrome.addColorStop(0.55, '#e9edf5'); chrome.addColorStop(0.8, '#b8bfcc'); chrome.addColorStop(1, '#7d8496')
-  g.fillStyle = chrome; g.fillRect(0, 0, W, py)
-  g.fillStyle = 'rgba(255,255,255,.7)'; g.fillRect(0, py - 3, W, 1.5)
-  g.fillStyle = 'rgba(40,44,56,.35)'; for (let x = 18; x < W; x += 34) g.fillRect(x, py - 28, 2, 18)
-  // 투입구 (밀대 위에서 좌우로)
-  const dx = pusher.dropX * k
-  g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(dx - 22, 10, 44, 20)
-  const chute = g.createLinearGradient(dx - 20, 0, dx + 20, 0); chute.addColorStop(0, '#8a1030'); chute.addColorStop(0.5, '#ff4d6d'); chute.addColorStop(1, '#8a1030')
-  g.fillStyle = chute; g.fillRect(dx - 20, 6, 40, 18)
-  g.fillStyle = '#2a0010'; g.fillRect(dx - PB.R * k, 18, PB.R * k * 2, 4)
-  g.fillStyle = '#fff1b8'; g.fillRect(dx - 1, 26, 2, 6)
-  if (extra?.dropping) drawCoin(L, extra.dropping.x, extra.dropping.y, extra.dropping.s)
-  // 앞 끝: 크롬 턱 + 떨어지는 틈 + 받침
   const lip = PB.FRONT * k
-  const lg = g.createLinearGradient(0, lip, 0, lip + 9); lg.addColorStop(0, '#fff1b8'); lg.addColorStop(0.4, '#e8c26a'); lg.addColorStop(1, '#6b4b10')
-  g.fillStyle = lg; g.fillRect(0, lip, W, 9)
-  const gap = g.createLinearGradient(0, lip + 9, 0, lip + 22); gap.addColorStop(0, '#000'); gap.addColorStop(1, '#140c03')
-  g.fillStyle = gap; g.fillRect(0, lip + 9, W, 13)
-  const tray = g.createLinearGradient(0, lip + 22, 0, H); tray.addColorStop(0, '#2a1b08'); tray.addColorStop(1, '#120b03')
-  g.fillStyle = tray; g.fillRect(0, lip + 22, W, H - lip - 22)
-  for (const t of pusher.tray) drawCoin(L, t.x, t.y, 0.82)
-  for (const f of pusher.falling) drawCoin(L, f.x, f.y, f.s, f.a)
-  // 양옆 금색 레일
-  g.fillStyle = '#c9a24a'; g.fillRect(0, 0, 3, lip); g.fillRect(W - 3, 0, 3, lip)
+  // 바닥판 · 틈 · 받침 (미리 만든 그림)
+  g.drawImage(art.plate, 0, 0)
+  g.fillStyle = '#000'; g.fillRect(0, Math.floor(lip * d), W * d, Math.ceil(art.trayTop - lip * d) + 1)
+  g.drawImage(art.tray, 0, Math.floor(art.trayTop))
+  g.setTransform(d, 0, 0, d, 0, 0)
+  // 조준: 투입구에서 떨어질 자리 (가만히 있을 때만)
+  const dx = pusher.dropX * k
+  if (!pusher.frames && !extra) {
+    g.strokeStyle = 'rgba(255,214,120,.35)'; g.lineWidth = 1; g.setLineDash([3, 4])
+    g.beginPath(); g.moveTo(dx, 22 * k); g.lineTo(dx, PB.DROP_Y * k); g.stroke(); g.setLineDash([])
+    g.strokeStyle = 'rgba(255,214,120,.55)'; g.lineWidth = 1.5; g.beginPath(); g.arc(dx, PB.DROP_Y * k, PB.R * k, 0, TAU); g.stroke()
+  }
+  // 앞 끝: 금빛 턱 + 호박색 전구 줄 (코인 밑에: 끝에 걸친 코인이 턱 위로 삐져나옴)
+  let gr = g.createLinearGradient(0, lip, 0, lip + 9 * k)
+  gr.addColorStop(0, '#fff6d6'); gr.addColorStop(0.3, '#e8c26a'); gr.addColorStop(0.75, '#8a6212'); gr.addColorStop(1, '#3a2805')
+  g.fillStyle = gr; g.fillRect(0, lip, W, 9 * k)
+  const front = []; for (let x = 10 * k; x < W; x += 20 * k) front.push([x, lip + 4.5 * k])
+  bulbs(g, front, 1.4 * k, '255,190,60', t)
+  // 코인
+  for (const c of coins) drawCoin(L, c.x, c.y, 1, 1, c.v)
+  // 밀대: 앞으로 드리운 그림자 → 붉은 몸통 → 금테 판 → 크롬 앞날
+  const py = (step ? pusherY(step) : PB.PUSH_MIN) * k
+  gr = g.createLinearGradient(0, py, 0, py + 16 * k); gr.addColorStop(0, 'rgba(0,0,0,.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)')
+  g.fillStyle = gr; g.fillRect(0, py, W, 16 * k)
+  gr = g.createLinearGradient(0, 0, 0, py); gr.addColorStop(0, '#2a0712'); gr.addColorStop(0.6, '#6d1029'); gr.addColorStop(1, '#a3183a')
+  g.fillStyle = gr; g.fillRect(0, 0, W, py)
+  const px0 = 12 * k, pw = W - 24 * k, ptop = 18 * k, ph = py - ptop - 9 * k
+  if (ph > 6 * k) {
+    g.fillStyle = 'rgba(20,2,8,.75)'; g.beginPath(); g.roundRect(px0, ptop, pw, ph, 4 * k); g.fill()
+    g.strokeStyle = 'rgba(243,207,116,.75)'; g.lineWidth = Math.max(1, 1.2 * k); g.stroke()
+    g.fillStyle = '#f3cf74'; g.font = `900 ${Math.min(ph * 0.62, 15 * k).toFixed(1)}px Pretendard, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'
+    g.shadowColor = 'rgba(255,190,70,.8)'; g.shadowBlur = 6; g.fillText('★ JMTT COIN ★', W / 2, ptop + ph / 2 + 0.5); g.shadowBlur = 0
+  }
+  gr = g.createLinearGradient(0, py - 8 * k, 0, py)
+  gr.addColorStop(0, '#4b505c'); gr.addColorStop(0.35, '#f4f6fb'); gr.addColorStop(0.7, '#9aa1b0'); gr.addColorStop(1, '#3d414b')
+  g.fillStyle = gr; g.fillRect(0, py - 8 * k, W, 8 * k)
+  // 투입구 레일 + 움직이는 투입구
+  gr = g.createLinearGradient(0, 5 * k, 0, 11 * k); gr.addColorStop(0, '#9aa1b0'); gr.addColorStop(0.5, '#eef1f7'); gr.addColorStop(1, '#5d6372')
+  g.fillStyle = gr; g.fillRect(0, 5 * k, W, 6 * k)
+  g.fillStyle = 'rgba(0,0,0,.4)'; g.beginPath(); g.roundRect(dx - 19 * k, 2 * k, 40 * k, 22 * k, 5 * k); g.fill()
+  gr = g.createLinearGradient(dx - 20 * k, 0, dx + 20 * k, 0); gr.addColorStop(0, '#8a6212'); gr.addColorStop(0.45, '#ffe9a3'); gr.addColorStop(1, '#8a6212')
+  g.fillStyle = gr; g.beginPath(); g.roundRect(dx - 20 * k, 0, 40 * k, 21 * k, 5 * k); g.fill()
+  g.fillStyle = '#1a0d00'; g.beginPath(); g.ellipse(dx, 10 * k, PB.R * k * 0.95, 4 * k, 0, 0, TAU); g.fill()
+  g.fillStyle = `rgba(255,60,90,${(0.6 + 0.4 * Math.sin(t / 120)).toFixed(2)})`; g.beginPath(); g.arc(dx, 17.5 * k, 1.8 * k, 0, TAU); g.fill()
+  if (extra?.dropping) drawCoin(L, extra.dropping.x, extra.dropping.y, extra.dropping.s, 1, extra.dropping.v)
+  // 양옆 벽: 투명 아크릴 + 분홍 전구
+  for (const x of [0, W - 4 * k]) {
+    g.fillStyle = 'rgba(255,190,235,.10)'; g.fillRect(x, py, 4 * k, lip - py)
+    g.fillStyle = 'rgba(255,170,225,.45)'; g.fillRect(x === 0 ? 4 * k - 1 : x, py, 1, lip - py)
+  }
+  const side = []; for (let y = py + 14 * k; y < lip - 6 * k; y += 26 * k) side.push([2 * k, y], [W - 2 * k, y])
+  bulbs(g, side, 1.3 * k, '255,90,190', t)
+  // 받침의 코인 · 떨어지는 코인
+  for (const c of pusher.tray) drawCoin(L, c.x, c.y, 0.8, 1, c.v)
+  for (const f of pusher.falling) drawCoin(L, f.x, f.y, f.s, f.al, f.v)
+  // 유리 반사
+  g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(art.glass, 0, 0)
 }
 function setupPusher() {
   pusher.tray = []; pusher.falling = []
@@ -671,13 +783,14 @@ function setupPusher() {
 async function playPusher(m) {
   const before = pusher.boards[bet] || []
   const frames = [], fallAt = []
-  const local = pushDrop(before, m.dropX, (coins, s, f) => { frames.push(coins.map(c => ({ x: c.x, y: c.y }))); fallAt.push(f.map(c => ({ x: c.x, y: c.y }))) })
+  const nv = coinV()
+  const local = pushDrop(before, m.dropX, (coins, s, f) => { for (const c of coins) c.v ??= nv; frames.push(coins.map(c => ({ x: c.x, y: c.y, v: c.v }))); fallAt.push(f.map(c => ({ x: c.x, y: c.y, v: c.v ?? nv }))) })
   if (local.fell !== m.coins || boardHash(local.board) !== m.hash) { console.warn('[slots] 푸셔 판이 서버와 달라서 다시 받음'); delete pusher.boards[bet]; askBoard() }
   else pusher.boards[bet] = local.board
   pusher.frames = frames
   // 1) 코인이 투입구에서 판으로
   const x = m.dropX
-  await tween(reduced ? 1 : 280, k => drawPusher(before, 0, { dropping: { x, y: 24 + (PB.DROP_Y - 24) * k * k, s: 1.5 - 0.5 * k } }))
+  await tween(reduced ? 1 : 280, k => drawPusher(before, 0, { dropping: { x, y: 10 + (PB.DROP_Y - 10) * k * k, s: 1.45 - 0.45 * k, v: nv } }))
   sfx.stop()
   // 2) 물리 재생
   let shown = 0
@@ -685,7 +798,7 @@ async function playPusher(m) {
     let i = 0, t0 = performance.now()
     const tick = now => {
       const want = reduced ? frames.length : Math.min(frames.length, Math.floor((now - t0) / (1000 / 60)) + 1)
-      for (; i < want; i++) for (const f of fallAt[i]) { pusher.falling.push({ x: f.x, y: PB.FRONT, s: 1, a: 1, vy: 1.6, vx: (f.x - PB.W / 2) * 0.004 }); shown++; $('pusherGain').textContent = `+${shown}`; sfx.coin() }
+      for (; i < want; i++) for (const f of fallAt[i]) { pusher.falling.push({ x: f.x, y: PB.FRONT, s: 1, al: 1, v: f.v, vy: 1.6, vx: (f.x - PB.W / 2) * 0.004 }); shown++; $('pusherGain').textContent = `+${shown}`; sfx.coin() }
       stepFalling()
       drawPusher(frames[Math.max(0, i - 1)], i)
       if (i < frames.length) pusher.raf2 = requestAnimationFrame(tick); else res()
@@ -704,8 +817,8 @@ function stepFalling() {
   for (let i = pusher.falling.length - 1; i >= 0; i--) {
     const f = pusher.falling[i]
     f.vy += 0.9; f.y += f.vy; f.x += f.vx; f.s = Math.max(0.82, f.s - 0.012)
-    const floor = PB.FRONT + 34 + (f.x * 7 % 22)
-    if (f.y >= floor) { pusher.falling.splice(i, 1); pusher.tray.push({ x: f.x, y: floor }); if (pusher.tray.length > 36) pusher.tray.shift() }
+    const floor = PB.FRONT + 36 + (f.x * 7 % 20)
+    if (f.y >= floor) { pusher.falling.splice(i, 1); pusher.tray.push({ x: f.x, y: floor, v: f.v }); if (pusher.tray.length > 36) pusher.tray.shift() }
   }
 }
 const easeIO = k => k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2
@@ -1112,7 +1225,7 @@ game = await startGame({
       return
     }
     if (m.t === 'spun') return onSpun(m)
-    if (m.t === 'pusherBoard') { pusher.boards[m.bet] = m.coins.map(([x, y]) => ({ x, y, vx: 0, vy: 0 })); if (cur.type === 'pusher' && m.bet === bet) drawPusher(); paintPaytables(); return }
+    if (m.t === 'pusherBoard') { pusher.boards[m.bet] = m.coins.map(([x, y]) => ({ x, y, vx: 0, vy: 0, v: coinV() })); if (cur.type === 'pusher' && m.bet === bet) drawPusher(); paintPaytables(); return }
     if (m.t === 'crashStart') return crashStart(m)
     if (m.t === 'crashCashed') return crashCashed(m)
     if (m.t === 'crashed') return crashed(m)
