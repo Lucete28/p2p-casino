@@ -14,7 +14,7 @@
 //              { t: 'bet', amount }   베팅 (0 = 취소). 베팅 시간에만. 관전 중이면 빈자리에 앉으면서 건다
 //              { t: 'act', a: 'hit'|'stand'|'double'|'split', seq }   seq = 받은 state의 seq (두 번 누름 막기)
 //   서버 → { t: 'state', ev, seat?, table, phase: 'bet'|'play'|'dealer'|'result', phaseMs, dealer, seats, me, watching,
-//            total, seq, actions, shoe }      me = 내 자리 (관전 중이면 -1), total = 들어온 뒤 내 득실
+//            seq, actions, shoe }      me = 내 자리 (관전 중이면 -1)
 //
 // 칩: 베팅 마감 때 ctx.bet, 더블·스플릿 때 ctx.bet, 딜러 연출이 끝날 때 ctx.payout.
 // 판 도중(행동 시간) 나가기를 누르면 건 칩을 잃는다 (딜러 결과가 아직 없어서. 화면이 먼저 확인을 받음, CASINO.md 4장).
@@ -28,7 +28,6 @@ const SEAT_ORDER = [3, 2, 4, 1, 5, 0, 6] // 가운데 자리부터 채움
 const tables = new Map() // 테이블 번호 → 테이블
 const seatOf = new Map() // 사용자 ID → 자리 (앉은 사람)
 const watchOf = new Map() // 사용자 ID → 테이블 (관전자)
-const totals = new Map() // 사용자 ID → 들어온 뒤 득실 (나가면 지움)
 let nextNo = 1
 
 const online = p => !p.sockets || p.sockets.size > 0 // 코어 플레이어의 연결 (읽기만)
@@ -91,7 +90,7 @@ function drawer(t) {
   }
 }
 
-// ---------- 화면에 보낼 상태 (보는 사람마다 me·seq·actions·total만 다름) ----------
+// ---------- 화면에 보낼 상태 (보는 사람마다 me·seq·actions만 다름) ----------
 function view(t, viewer, ev, extra) {
   const now = Date.now()
   const open = t.phase === 'dealer' || t.phase === 'result' // 딜러 카드·결과 공개
@@ -112,7 +111,6 @@ function view(t, viewer, ev, extra) {
     }),
     me: mine ? mine.i : -1,
     watching: t.watchers.size,
-    total: totals.get(viewer.id) || 0,
     seq: mine ? mine.seq : 0,
     actions: mine && t.phase === 'play' && mine.inRound ? seatActions(mine, viewer.chips) : seatActions(null),
     shoe: { left: t.shoe.length - t.pos, size: SHOE_SIZE, cut: SHOE_SIZE - CUT, shuffled: t.shuffled },
@@ -209,11 +207,7 @@ function dealerTurn(t) {
   const players = playing(t)
   if (!players.length) return newBetting(t) // 건 사람이 모두 나감
   dealerPlay(t.dealer, players, drawer(t))
-  for (const s of players) {
-    settleSeat(s, t.dealer)
-    s.net = s.back - s.staked
-    totals.set(s.p.id, (totals.get(s.p.id) || 0) + s.net)
-  }
+  for (const s of players) settleSeat(s, t.dealer)
   t.phase = 'dealer'
   broadcast(t, 'dealer')
   const anim = (1 + t.dealer.length - 2) * DEALER_MS + RESULT_MS + 150 // 숨긴 카드 뒤집기 + 받은 카드 + 결과 표시
@@ -305,7 +299,6 @@ export default {
 
   // 나가기·끊김 60초: 결과가 나온 판은 바로 정산. 행동 시간에 나가면 코어가 건 칩을 거둔다 (위 설명)
   leave(p) {
-    totals.delete(p.id)
     const s = seatOf.get(p.id)
     if (!s) {
       const t = unwatch(p)

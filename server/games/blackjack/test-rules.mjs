@@ -122,7 +122,7 @@ await ok('베팅: 첫 베팅부터 12초, 모두 걸면 곧 마감. 숨긴 카�
   T.close()
 })
 
-await ok('모두 동시에 행동 → 다 끝나면 딜러 → 연출 뒤 정산, 자리 성적 누적', () => {
+await ok('모두 동시에 행동 → 다 끝나면 딜러 → 연출 뒤 정산', () => {
   const T = setup(['Ts', '5c', '9d', '9h', '6s', '8h', 'Th'], [1000, 1000]) // A: 11 + T = 21, B: 19, 딜러 17
   const [A, B] = T.ps
   dealAll(T, [100, 100])
@@ -138,11 +138,11 @@ await ok('모두 동시에 행동 → 다 끝나면 딜러 → 연출 뒤 정산
   assert.equal(A.inPlay, 100, '연출 전에는 아직 진행 중')
   toResult()
   assert.equal(A.chips, 1100); assert.equal(B.chips, 1100); assert.equal(A.inPlay, 0)
-  assert.equal(T.last(A).phase, 'result'); assert.equal(T.last(A).total, 100)
+  assert.equal(T.last(A).phase, 'result'); assert.equal(T.last(A).total, undefined, '누적 득실은 보내지 않음')
   assert.equal(T.log[0].detail.dealer, '9d 8h')
   tick(SHOW_MS)
   const b = T.last(A)
-  assert.equal(b.phase, 'bet'); assert.deepEqual(b.dealer, []); assert.deepEqual(b.seats[3].hands, []); assert.equal(b.total, 100, '득실은 남음')
+  assert.equal(b.phase, 'bet'); assert.deepEqual(b.dealer, []); assert.deepEqual(b.seats[3].hands, [])
   T.close()
 })
 
