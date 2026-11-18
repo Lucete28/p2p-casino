@@ -6,10 +6,13 @@
 //   lines   — 줄 당첨: 맨 왼쪽 릴부터 같은 그림이 n개 이어지면 pays[그림][n]배 (클래식 · 럭키 스타)
 //             scatter가 있으면 별은 창 어디든 세고, trigger개 이상이면 프리스핀 (럭키 스타)
 //   gem     — 다이아몬드: 가운데 줄 하나 + 오른쪽 배수 릴. 다이아는 와일드(아무 그림), 하나 섞일 때마다 ×2
+//   crash   — 크래시: 배수가 ×1.00부터 올라가다 터진다. 터지기 전에 내리면 베팅 × 그때 배수. 터지는 배수는 시작할 때
+//             서버가 정하고(crashPoint) 브라우저에는 터질 때까지 보내지 않는다. 언제 내려도 기댓값이 정확히 100%
+//   pusher  — 코인 푸셔: 코인을 떨어뜨리면 밀대가 밀어 앞으로 떨어진 코인 수만큼 받는다 (드롭마다 서버가 pusherPick으로 정함)
 //   cascade — 과일 폭탄: 5×4 칸, 줄 없이 옆 릴끼리 이어지면(웨이) 당첨 → 맞은 과일이 터지고 위에서 새 과일이
 //             떨어진다 (새 과일은 서버가 그 릴의 띠에서 무작위로 뽑음: draw). 연쇄마다 배수 chain[i]
 //
-// 머신 네 대 (운영자 결정 2026-11-18: 메가 잭팟 머신은 빼고, 모두의 잭팟은 네 대 모두에서 미스터리로)
+// 머신 여섯 대: 슬롯 네 대 + 크래시 · 코인 푸셔 (운영자 결정 2026-11-18. 모두의 잭팟은 여섯 대 모두에서 미스터리로)
 // 공통: 릴 띠를 돌려 멈춘 자리 s면 창에 보이는 칸은 위에서부터 s-1, s, s+1 (4칸 창은 s+2까지).
 // 환급률(RTP): 운영자 결정(2026-11-18)으로 머신 기본 약 100% + 모든 머신이 같이 쌓는 미스터리 잭팟 2%.
 //   lines·gem은 exactRtp()가 모든 경우를 셈. 연쇄·프리스핀 배수는 시뮬레이션 값(rtpRef)을 적어 둠 (test-sim.mjs로 확인)
@@ -100,6 +103,18 @@ export const MACHINES = {
     rtpRef: 1.0062, // 프리스핀 포함, 시뮬레이션 8,000만 판 (±0.05%p)
     tease: ['moon'],
   },
+  crash: {
+    id: 'crash', type: 'crash', name: '크래시', short: '크래시', desc: '로켓 배수가 오르다 터져요. 터지기 전에 내리면 그 배수만큼',
+    lines: [[1]], reels: 0, strips: [], pays: {}, tease: [],
+    grow: 0.00012, // 배수 = e^(grow × 경과 ms): ×2 약 5.8초, ×10 약 19초, ×100 약 38초
+    max: 1000, // 이 배수까지 가면 그 자리에서 터짐
+  },
+  pusher: {
+    id: 'pusher', type: 'pusher', name: '코인 푸셔', short: '코인푸셔', desc: '코인을 떨어뜨리면 밀대가 밀어 앞으로 떨어진 만큼 받아요',
+    lines: [[1]], reels: 0, strips: [], pays: {}, tease: [],
+    // 한 번 떨어뜨릴 때 앞으로 떨어지는 코인 수 (드롭 베팅의 배수)와 확률 (합 1,000). 기댓값 1.010
+    drops: [[0, 610], [1, 180], [2, 100], [3, 60], [5, 30], [10, 15], [25, 4], [50, 1]],
+  },
 }
 export const MACHINE_IDS = Object.keys(MACHINES)
 export const machineOf = id => MACHINES[id] || MACHINES.classic
@@ -162,7 +177,7 @@ export function checkBet(m, lineBet, lines) {
   return { lineBet, lines, total: lineBet * lines }
 }
 // 한 판 베팅 = 줄당 × linesOf (연쇄는 unit)
-export const linesOf = m => m.type === 'cascade' ? m.unit : m.lines.length
+export const linesOf = m => m.type === 'cascade' ? m.unit : m.lines.length // 크래시·푸셔는 1 (베팅 = 줄당)
 
 // ---------- 한 판 결과 ----------
 // lines·gem → { grid, wins: [{ line, kind, n, mult, pay }], scatter, back, bonus, mreel }
@@ -262,11 +277,31 @@ export function freeSpins(m, lines, lineBet, randStops) {
   return { spins, total, mult }
 }
 
+// ---------- 크래시 ----------
+// 터지는 배수: u = 0 ~ 1 미만 고른 수 → floor(100 / (1 - u)) / 100, 최대 max.
+// P(터지는 배수 ≥ x) = 1/x (x가 0.01 단위일 때 정확히) → x에서 내리면 기댓값 x × 1/x = 1 (100%), 어떤 전략이든 같다.
+// 서버는 u를 ctx.rng.int(CRASH_U) / CRASH_U로 뽑는다
+export const CRASH_U = 1e9
+export function crashPoint(m, n) { // n = 0 ~ CRASH_U-1
+  const c = Math.floor(100 * CRASH_U / (CRASH_U - n)) / 100
+  return Math.min(c, m.max)
+}
+export const crashMultAt = (m, ms) => Math.max(1, Math.floor(100 * Math.exp(m.grow * Math.max(0, ms))) / 100)
+export const crashTimeFor = (m, mult) => Math.ceil(Math.log(mult) / m.grow) // 그 배수가 되는 첫 ms (그 ms에는 이미 그 배수)
+
+// ---------- 코인 푸셔 ----------
+export const pusherTotal = m => m.drops.reduce((s, [, w]) => s + w, 0)
+export function pusherPick(m, n) { // n = 0 ~ pusherTotal-1 → 떨어지는 코인 수
+  let acc = 0
+  for (const [coins, w] of m.drops) { acc += w; if (n < acc) return coins }
+  return 0
+}
+
 // 두근두근: 마지막 릴만 남았는데 큰 당첨이 될 수 있으면 마지막 릴을 TEASE_MS 더 돌린다 (연출만, 결과는 이미 정해짐).
 // 서버도 같은 판단으로 정산을 그만큼 늦춘다
 export const TEASE_MS = 1300
 export function teases(m, stops, lines) {
-  if (m.type === 'cascade') return false
+  if (m.type === 'cascade' || m.type === 'crash' || m.type === 'pusher') return false
   const g = windowOf(m, stops)
   if (m.type === 'gem') { // 세 칸이 당첨이면 배수 릴이 멈출 때까지 두근두근
     return !!gemWin(m, m.lines[0].map((row, r) => g[r][row]))
@@ -293,6 +328,8 @@ function freqOf(strips) {
 // 럭키 스타 프리스핀 몫은 배수가 쌓여 식이 길어서 rtpRef(시뮬레이션) 쪽에 둔다 → free: null
 export function exactRtp(m) {
   if (m.type === 'cascade') return { rtp: null, line: null }
+  if (m.type === 'crash') return { rtp: 1, line: null } // 언제 내려도 100% (위 crashPoint 참고). 최대 배수에서 터지는 몫은 아주 작다
+  if (m.type === 'pusher') { const T = pusherTotal(m); return { rtp: m.drops.reduce((s, [c, w]) => s + c * w / T, 0), hit: m.drops.reduce((s, [c, w]) => s + (c ? w / T : 0), 0) } }
   const f = freqOf(m.strips), R = m.reels
   let line = 0, hit = 0
   if (m.type === 'gem') {

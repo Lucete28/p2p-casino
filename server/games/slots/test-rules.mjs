@@ -8,7 +8,7 @@ process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'slots-test-'))
 const rng = await import('../../core/rng.mjs')
 const { default: slots, SPIN_MS, FS_MS, jackpotState } = await import('./index.mjs')
 const R = await import('../../../public/slots/rules.mjs')
-const { MACHINES, JACKPOT, windowOf, lineWin, gemWin, waysWins, cascade, freeSpins, checkBet, linesOf, evaluate, exactRtp, teases, TEASE_MS, MAX_LINE_BET } = R
+const { MACHINES, JACKPOT, windowOf, lineWin, gemWin, waysWins, cascade, freeSpins, checkBet, linesOf, evaluate, exactRtp, teases, TEASE_MS, MAX_LINE_BET, CRASH_U, crashPoint, crashMultAt, crashTimeFor, pusherPick, pusherTotal } = R
 
 let n = 0
 const ok = (name, fn) => { fn(); n++; console.log('✓', name) }
@@ -17,10 +17,11 @@ const at = (m, r, sym) => m.strips[r].indexOf(sym) // 그 그림이 가운데(s)
 // 창 세 칸에 별이 없는 멈춤 자리 (럭키 스타)
 const noStar = (m, r) => m.strips[r].findIndex((_, i) => [i - 1, i, i + 1].every(k => m.strips[r][(k + m.strips[r].length) % m.strips[r].length] !== 'star'))
 
-ok('머신 네 대, 종류·릴·줄 모양이 맞다', () => {
-  assert.deepEqual(Object.keys(M), ['classic', 'diamond', 'fruit5', 'lucky'])
-  assert.deepEqual(Object.values(M).map(m => m.type), ['lines', 'gem', 'cascade', 'lines'])
-  for (const m of Object.values(M)) {
+const SLOTS = Object.values(M).filter(m => m.reels > 0)
+ok('머신 여섯 대 (슬롯 넷 + 크래시 · 코인 푸셔), 종류·릴·줄 모양이 맞다', () => {
+  assert.deepEqual(Object.keys(M), ['classic', 'diamond', 'fruit5', 'lucky', 'crash', 'pusher'])
+  assert.deepEqual(Object.values(M).map(m => m.type), ['lines', 'gem', 'cascade', 'lines', 'crash', 'pusher'])
+  for (const m of SLOTS) {
     assert.equal(m.strips.length, m.reels, m.id)
     for (const l of m.lines || []) { assert.equal(l.length, m.reels); assert.ok(l.every(r => r >= 0 && r <= 2)) }
     for (const st of m.strips) assert.ok(st.every(s => R.SYMBOLS[s]), m.id + ' 모르는 그림')
@@ -44,10 +45,11 @@ ok('다른 머신의 띠: 그림 수가 릴마다 같고, 별은 릴마다 하�
 })
 
 ok('환급률: 머신 기본 99.5% ~ 101% (운영자 결정: 기본 약 100% + 모두의 잭팟 2%)', () => {
+  assert.equal(exactRtp(M.crash).rtp, 1); assert.ok(Math.abs(exactRtp(M.pusher).rtp - 1.01) < 1e-9)
   const want = { classic: 1.0009, diamond: 1.0078 }
   for (const m of Object.values(M)) {
     const rtp = exactRtp(m).rtp ?? m.rtpRef
-    assert.ok(rtp > 0.995 && rtp < 1.01, `${m.id} ${rtp}`)
+    assert.ok(rtp > 0.995 && rtp <= 1.0101, `${m.id} ${rtp}`)
     if (want[m.id]) assert.ok(Math.abs(rtp - want[m.id]) < 0.0005, `${m.id} ${rtp} (배당을 바꿨으면 want도 고치기)`)
   }
   assert.ok(M.fruit5.rtpRef && M.lucky.rtpRef, '연쇄·프리스핀은 시뮬레이션 값이 있어야 함')
@@ -104,6 +106,10 @@ ok('과일 폭탄: 웨이 = 릴마다 그 과일 칸 수의 곱, 맨 왼쪽부�
   assert.ok(!w.some(x => x.sym === 'grape'), '두 릴만 이어지면 안 됨')
 })
 
+ok('과일 폭탄: 처음 보이는 그림(화면 app.js)에는 당첨이 없다', () => {
+  assert.equal(waysWins(M.fruit5, windowOf(M.fruit5, [3, 10, 17, 24, 31])).length, 0)
+})
+
 ok('과일 폭탄 연쇄: 맞은 칸이 터지고, 새 과일이 위에서, 연쇄마다 ×1·×2·×3·×5', () => {
   const f = M.fruit5
   let k = 0
@@ -157,6 +163,30 @@ ok('베팅 검사: 클래식 줄 1·3·5, 다이아 1, 과일 폭탄 25, 나머�
   for (const [b, l] of [[0, 5], [1.5, 5], [-1, 1], [1, 2], [NaN, 5], ['x', 3], [MAX_LINE_BET + 1, 1]]) assert.ok(checkBet(M.classic, b, l).error, `${b} ${l}`)
 })
 
+ok('크래시: 터지는 배수 P(≥x) = 1/x (언제 내려도 100%), 시간과 배수', () => {
+  const c = M.crash
+  for (const x of [1.01, 1.5, 2, 3.33, 10, 100]) {
+    const n = Math.ceil(CRASH_U - CRASH_U / x) // 이 n부터 위로는 모두 x 이상
+    assert.ok(crashPoint(c, n) >= x, `${x} ${crashPoint(c, n)}`)
+    assert.ok(crashPoint(c, n - 1) < x, `${x} 바로 아래`)
+    assert.ok(Math.abs((CRASH_U - n) / CRASH_U - 1 / x) < 1e-8) // 확률 1/x
+  }
+  assert.equal(crashPoint(c, 0), 1) // 1% 쯤은 바로 터짐
+  assert.equal(crashPoint(c, CRASH_U - 1), c.max)
+  for (const x of [1.01, 2, 7.77, 50]) {
+    const t = crashTimeFor(c, x)
+    assert.ok(crashMultAt(c, t) >= x && crashMultAt(c, t - 1) < x, `${x}`)
+  }
+})
+
+ok('코인 푸셔: 떨어지는 코인 수 확률 합 1,000, 기댓값 1.01', () => {
+  const p = M.pusher
+  assert.equal(pusherTotal(p), 1000)
+  const hits = {}
+  for (let n = 0; n < 1000; n++) { const c = pusherPick(p, n); hits[c] = (hits[c] || 0) + 1 }
+  assert.deepEqual(Object.entries(hits).map(([k, v]) => [Number(k), v]).sort((a, b) => a[0] - b[0]), p.drops)
+})
+
 ok('두근두근: 마지막 릴만 남았을 때 큰 그림·별', () => {
   const c = M.classic
   assert.equal(teases(c, [at(c, 0, 'seven'), at(c, 1, 'seven'), 0], 1), true)
@@ -207,8 +237,8 @@ ok('없는 머신·이상한 베팅·칩 모자람은 칩 그대로', () => {
   assert.equal(p.chips, 24); assert.equal(p.inPlay, 0)
 })
 
-ok('모든 머신 1,000판: 칩이 맞게 오가고 back = 첫 화면 + 프리스핀 + 잭팟', () => {
-  for (const id of Object.keys(M)) {
+ok('모든 머신 1,000판: 칩이 맞게 오가고 back = 첫 화면 + 프리스핀 + 잭팟 (크래시는 아래 따로)', () => {
+  for (const id of Object.keys(M).filter(id => id !== 'crash')) {
     const m = M[id], lines = (m.lineChoices || [linesOf(m)]).at(-1)
     const p = { id: 'u_all_' + id, chips: 1e9, inPlay: 0, limits: {} }
     const ctx = fakeCtx(p)
@@ -221,6 +251,7 @@ ok('모든 머신 1,000판: 칩이 맞게 오가고 back = 첫 화면 + 프리�
       assert.equal(s.back, s.base + fs + jw)
       if (m.type === 'cascade') assert.equal(s.base, (s.steps || []).reduce((a, x) => a + x.pay, 0))
       if (m.type === 'gem') assert.equal(s.stops.length, 4)
+      if (m.type === 'pusher') assert.equal(s.base, s.coins * s.total)
       slots.message(p, { t: 'skip' }, ctx)
       assert.equal(p.inPlay, 0)
       assert.equal(p.chips, before - s.total + s.back)
@@ -267,20 +298,63 @@ ok('다시 들어오면 머신별 마지막 그림, 서버 종료 때 정산하�
   assert.ok(existsSync(join(process.env.DATA_DIR, 'slots-jackpot.json')))
 })
 
+// ---------- 시간이 걸리는 것들 (진짜 타이머) ----------
+const waits = []
+const later = (ms, fn) => waits.push(new Promise((res, rej) => setTimeout(() => { try { fn(); res() } catch (e) { rej(e) } }, ms)))
+
 // 정산 시간: 두근두근이면 TEASE_MS, 프리스핀이면 연출 시간만큼 늦게
-const p = { id: 'u_t4', chips: 100, inPlay: 0, limits: {} }
-const ctx = { ...fakeCtx(p), rng: noMystery }
-const l = M.lucky
-const st = [0, 1, 2, 3, 4].map(r => r < 3 ? at(l, r, 'star') : noStar(l, r))
-let k = 0
-slots.message(p, { t: 'spin', machine: 'lucky', lineBet: 1, lines: 10 }, { ...ctx, rng: { ...noMystery, int: nMax => (nMax === l.strips[0].length && k < 5 ? st[k++] : noMystery.int(nMax)) } })
-const spun = ctx.sent.at(-1)
-assert.ok(spun.bonus && spun.tease)
-const due = SPIN_MS + TEASE_MS + FS_MS.intro + spun.bonus.spins.length * FS_MS.spin + FS_MS.outro
-setTimeout(() => assert.equal(p.inPlay, 10, '너무 일찍 정산'), due - 200)
-setTimeout(() => {
-  assert.equal(p.inPlay, 0)
-  assert.equal(p.chips, 90 + spun.back)
-  console.log(`✓ 프리스핀 판(${spun.bonus.spins.length}번)은 연출(${(due / 1000).toFixed(1)}초)이 끝난 뒤 정산`)
-  console.log(`통과 (${n + 1}개)`)
-}, due + 200)
+{
+  const p = { id: 'u_t4', chips: 100, inPlay: 0, limits: {} }
+  const ctx = { ...fakeCtx(p), rng: noMystery }
+  const l = M.lucky
+  const st = [0, 1, 2, 3, 4].map(r => r < 3 ? at(l, r, 'star') : noStar(l, r))
+  let k = 0
+  slots.message(p, { t: 'spin', machine: 'lucky', lineBet: 1, lines: 10 }, { ...ctx, rng: { ...noMystery, int: nMax => (nMax === l.strips[0].length && k < 5 ? st[k++] : noMystery.int(nMax)) } })
+  const spun = ctx.sent.at(-1)
+  assert.ok(spun.bonus && spun.tease)
+  const due = SPIN_MS + TEASE_MS + FS_MS.intro + spun.bonus.spins.length * FS_MS.spin + FS_MS.outro
+  later(due - 200, () => assert.equal(p.inPlay, 10, '너무 일찍 정산'))
+  later(due + 200, () => { assert.equal(p.inPlay, 0); assert.equal(p.chips, 90 + spun.back); console.log(`✓ 프리스핀 판(${spun.bonus.spins.length}번)은 연출(${(due / 1000).toFixed(1)}초)이 끝난 뒤 정산`) })
+}
+
+// 크래시: 터질 배수를 정해 놓고 (n 고정)
+const crashRng = c => ({ ...noMystery, int: nMax => nMax === CRASH_U ? Math.ceil(CRASH_U - CRASH_U / c) : noMystery.int(nMax) })
+{ // 바로 내리기 → ×1.00, 터질 배수는 안 알려 줌 (내린 뒤에 알려 줌)
+  const p = { id: 'u_c1', chips: 100, inPlay: 0, limits: {} }
+  const ctx = { ...fakeCtx(p), rng: crashRng(5) }
+  slots.message(p, { t: 'spin', machine: 'crash', lineBet: 20, lines: 1 }, ctx)
+  const st = ctx.sent.at(-1)
+  assert.equal(st.t, 'crashStart'); assert.equal(p.chips, 80); assert.equal(p.inPlay, 20)
+  assert.ok(!('at' in st) && !('c' in st) && !JSON.stringify(st).includes('"5"'), '터질 배수가 새면 안 됨')
+  slots.message(p, { t: 'crashOut' }, ctx)
+  const out = ctx.sent.at(-1)
+  assert.equal(out.t, 'crashCashed'); assert.equal(out.mult, 1); assert.equal(p.chips, 100); assert.equal(p.inPlay, 0)
+  slots.message(p, { t: 'crashOut' }, ctx) // 두 번 눌러도 한 번만
+  assert.equal(p.chips, 100)
+  console.log('✓ 크래시: 바로 내리면 ×1.00, 터질 배수는 시작할 때 안 보냄')
+}
+{ // 1.00에서 바로 터짐 → 건 칩 잃음
+  const p = { id: 'u_c2', chips: 100, inPlay: 0, limits: {} }
+  const ctx = { ...fakeCtx(p), rng: { ...noMystery, int: nMax => nMax === CRASH_U ? 0 : noMystery.int(nMax) } }
+  slots.message(p, { t: 'spin', machine: 'crash', lineBet: 10, lines: 1 }, ctx)
+  later(80, () => { assert.equal(p.chips, 90); assert.equal(p.inPlay, 0); assert.equal(ctx.sent.at(-1).t, 'crashed'); assert.equal(ctx.sent.at(-1).at, 1); console.log('✓ 크래시: 터지면 건 칩을 잃고 터진 배수를 알려 줌') })
+}
+{ // 자동 내리기 ×1.05 (약 0.4초) → 터질 배수 3보다 먼저 서버가 내림
+  const p = { id: 'u_c3', chips: 100, inPlay: 0, limits: {} }
+  const ctx = { ...fakeCtx(p), rng: crashRng(3) }
+  slots.message(p, { t: 'spin', machine: 'crash', lineBet: 20, lines: 1, auto: 1.05 }, ctx)
+  later(900, () => { const o = ctx.sent.find(m => m.t === 'crashCashed'); assert.ok(o, '자동으로 내려야 함'); assert.equal(o.mult, 1.05); assert.equal(o.win, 21); assert.equal(p.chips, 101); console.log('✓ 크래시: 자동 내리기는 서버가 그 배수에') })
+}
+{ // 날아가는 중에 나가면 그때 배수로 내림
+  const p = { id: 'u_c4', chips: 100, inPlay: 0, limits: {} }
+  const ctx = { ...fakeCtx(p), rng: crashRng(50) }
+  slots.message(p, { t: 'spin', machine: 'crash', lineBet: 100, lines: 1 }, ctx)
+  later(1200, () => {
+    slots.leave(p, ctx)
+    assert.equal(p.inPlay, 0)
+    const o = ctx.sent.find(m => m.t === 'crashCashed')
+    assert.ok(o.mult >= 1.12 && o.mult < 1.3, String(o.mult)); assert.equal(p.chips, Math.floor(100 * o.mult))
+    console.log(`✓ 크래시: 날아가는 중에 나가면 그때 배수(×${o.mult})로 내림`)
+  })
+}
+Promise.all(waits).then(() => console.log(`통과 (${n + 5}개)`), e => { console.error(e); process.exit(1) })
