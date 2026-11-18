@@ -178,55 +178,9 @@
               <div class="sl-crash-note" id="crashNote">시작을 누르면 로켓이 떠요</div>
               <div class="sl-crash-hist" id="crashHist" aria-label="최근 터진 배수"></div>
             </div>
-            <!-- 코인 푸셔: 앞에서 비스듬히 내려다본 오락실 기계 -->
+            <!-- 코인 푸셔: 위에서 본 판 (진짜 물리, pusher.mjs) -->
             <div class="sl-pusher" id="pusherStage" hidden>
-              <svg id="pusherSvg" viewBox="0 0 300 300" aria-hidden="true">
-                <defs>
-                  <linearGradient id="g-wall" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1a0630"/><stop offset="1" stop-color="#3a0d5c"/></linearGradient>
-                  <linearGradient id="g-floor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0d2a4a"/><stop offset=".6" stop-color="#14466e"/><stop offset="1" stop-color="#1d6a96"/></linearGradient>
-                  <linearGradient id="g-side" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2a0d45"/><stop offset="1" stop-color="#5a1f8a"/></linearGradient>
-                  <linearGradient id="g-sideR" x1="1" y1="0" x2="0" y2="0"><stop offset="0" stop-color="#2a0d45"/><stop offset="1" stop-color="#5a1f8a"/></linearGradient>
-                  <linearGradient id="g-slab" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4f6fb"/><stop offset=".5" stop-color="#c3c8d6"/><stop offset="1" stop-color="#8b92a8"/></linearGradient>
-                  <linearGradient id="g-slabF" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9aa1b8"/><stop offset="1" stop-color="#4c5266"/></linearGradient>
-                  <linearGradient id="g-lip" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff1b8"/><stop offset=".4" stop-color="#e8c26a"/><stop offset="1" stop-color="#7a5a1a"/></linearGradient>
-                  <linearGradient id="g-gap" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000"/><stop offset="1" stop-color="#1a0f05"/></linearGradient>
-                  <linearGradient id="g-tray" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a2a10"/><stop offset="1" stop-color="#1a1205"/></linearGradient>
-                  <radialGradient id="g-coin" cx=".38" cy=".3" r=".85"><stop offset="0" stop-color="#fff6c8"/><stop offset=".35" stop-color="#ffd84a"/><stop offset=".8" stop-color="#d9a21e"/><stop offset="1" stop-color="#a8740f"/></radialGradient>
-                  <linearGradient id="g-glare" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset=".35" stop-color="#fff" stop-opacity="0"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/><stop offset=".7" stop-color="#fff" stop-opacity=".06"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
-                  <symbol id="coin3d" viewBox="-15 -10 30 20" overflow="visible">
-                    <ellipse cy="2.8" rx="13" ry="6.2" fill="#8a5f0c"/>
-                    <rect x="-13" y="0" width="26" height="2.8" fill="#b27d14"/>
-                    <ellipse rx="13" ry="6.2" fill="url(#g-coin)" stroke="#8a5f0c" stroke-width=".8"/>
-                    <ellipse rx="8.6" ry="4" fill="none" stroke="#a8740f" stroke-width="1" opacity=".75"/>
-                    <ellipse cx="-4.5" cy="-2.2" rx="4" ry="1.3" fill="#fff" opacity=".65"/>
-                  </symbol>
-                </defs>
-                <!-- 뒷벽: 네온 간판 -->
-                <rect width="300" height="90" fill="url(#g-wall)"/>
-                <g class="pu-bulbs" id="puBulbs"></g>
-                <text x="150" y="42" text-anchor="middle" class="pu-neon" font-family="Pretendard, sans-serif" font-weight="900" font-size="24" letter-spacing="3">COIN PUSHER</text>
-                <!-- 옆벽 + LED -->
-                <path d="M0 60 62 86 14 232 0 246Z" fill="url(#g-side)"/>
-                <path d="M300 60 238 86 286 232 300 246Z" fill="url(#g-sideR)"/>
-                <g id="puLeds"></g>
-                <!-- 바닥 (원근) -->
-                <path d="M62 86H238L286 232H14Z" fill="url(#g-floor)"/>
-                <g stroke="#7fd4ff" stroke-opacity=".12" stroke-width="1"><path d="M106 86 79 232M150 86V232M194 86 221 232"/><path d="M50 122H250M38 159H262M26 195H274"/></g>
-                <!-- 밀대 (뒤쪽에서 앞뒤로) -->
-                <path id="slabTop" fill="url(#g-slab)"/>
-                <path id="slabFront" fill="url(#g-slabF)"/>
-                <!-- 투입구 -->
-                <g id="dropper"><rect x="-17" y="62" width="34" height="14" rx="5" fill="#ff4d6d" stroke="#fff1b8" stroke-width="1.5"/><rect x="-9" y="74" width="18" height="5" rx="2" fill="#2a0010"/><circle cx="0" cy="69" r="2.4" fill="#fff1b8" class="pu-blink"/></g>
-                <g id="coinLayer"></g>
-                <!-- 앞 턱 · 떨어지는 틈 · 받침 -->
-                <path d="M14 232H286L290 244H10Z" fill="url(#g-lip)"/>
-                <path d="M14 232H286" stroke="#fff6c8" stroke-width="1.5" class="pu-edge"/>
-                <rect x="6" y="244" width="288" height="18" fill="url(#g-gap)"/>
-                <rect x="0" y="262" width="300" height="38" fill="url(#g-tray)"/>
-                <g id="trayLayer"></g>
-                <g id="fallLayer"></g>
-                <rect width="300" height="300" fill="url(#g-glare)" pointer-events="none"/>
-              </svg>
+              <canvas id="pusherCanvas" aria-label="코인 푸셔 판"></canvas>
               <div class="sl-pusher-gain" id="pusherGain"></div>
             </div>
             <div class="sl-fs-banner" id="fsBanner" hidden><b>FREE SPINS</b><span id="fsBannerSub">8번 · 별이 뜰 때마다 배수 +1</span></div>

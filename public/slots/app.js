@@ -5,7 +5,8 @@
 //   클래식: 베팅 1 → 가운데 줄 1개 · 3 → 가로 3줄 · 5 이상(5의 배수) → 5줄 모두
 //   나머지: 베팅 = 단위 × (줄 수 · 과일 폭탄은 25). 다이아몬드는 줄 1개라 아무 금액
 import { startGame } from '../shared/casino.js'
-import { MACHINES, MACHINE_IDS, SYMBOLS, JACKPOT, TEASE_MS, checkBet, linesOf, exactRtp, crashMultAt, pusherTotal } from './rules.mjs'
+import { MACHINES, MACHINE_IDS, SYMBOLS, JACKPOT, TEASE_MS, checkBet, linesOf, exactRtp, crashMultAt } from './rules.mjs'
+import { PB, pusherY, drop as pushDrop, boardHash } from './pusher.mjs'
 import { burst, flyCoins, floatText, shake, celebrate, celebrating } from './fx.js'
 
 const $ = id => document.getElementById(id)
@@ -72,6 +73,7 @@ function paintBet() {
   $('betUp').disabled = bet >= list.at(-1)
   $('bet').classList.toggle('short', !!game?.me && !busy && game.chips > 0 && game.chips < bet)
   store.set('bet:' + cur.id, String(bet))
+  if (cur.type === 'pusher') { if (!pusher.boards[bet]) askBoard(); drawPusher() }
   paintPaytables()
   paintSpin()
 }
@@ -574,101 +576,140 @@ async function crashed(m) {
 }
 
 // ---------- 코인 푸셔 ----------
-// 앞에서 비스듬히 내려다본 판. 판 위 자리는 (u: 왼→오 0~1, v: 뒤→앞 0~1). 코인은 보여 주기만 한다 (몇 개 떨어질지는 서버가 정함)
-const pusher = { coins: [], tray: 0, dropU: 0.5, slab: 0.2, raf: 0, pushing: false }
-const PU = { backY: 86, frontY: 232, backHalf: 88, frontHalf: 136 }
-const puY = v => PU.backY + v * (PU.frontY - PU.backY)
-const puX = (u, v) => 150 + (u - 0.5) * 2 * (PU.backHalf + v * (PU.frontHalf - PU.backHalf))
-const puS = v => 0.62 + 0.55 * v // 앞일수록 크게
-function coinEl(u, v, stack = 1, layer = 'coinLayer') {
-  const g = document.createElementNS(svgNS, 'g')
-  g.innerHTML = Array.from({ length: stack }, (_, i) => `<use href="#coin3d" x="-15" y="${-10 - i * 3.4}" width="30" height="20"/>`).join('')
-  $(layer).append(g)
-  const c = { u, v, stack, el: g }
-  placeCoin(c)
+// 위에서 본 판을 캔버스에 그린다. 떨어뜨리면 pusher.mjs의 같은 물리를 한 칸씩 그려서 서버 결과와 똑같이 움직인다
+const pusher = { boards: {}, dropX: PB.W / 2, raf: 0, frames: null, tray: [], falling: [], pendingX: null, last: 0 }
+const TRAY = 64 // 앞 끝 아래 받침 높이 (판 좌표)
+let puCtx = null, coinImg = null
+function askBoard() { if (game?.me) game.send({ t: 'pusherBoard', bet }) }
+function coinSprite(scale) { // 코인 한 개 그림 (금화: 테두리·안쪽 원·광택)
+  const R = PB.R * scale, c = document.createElement('canvas'), d = Math.ceil(R * 2 + 6)
+  c.width = c.height = d
+  const g = c.getContext('2d'), o = d / 2
+  const body = g.createRadialGradient(o - R * 0.35, o - R * 0.4, R * 0.1, o, o, R)
+  body.addColorStop(0, '#fff7c9'); body.addColorStop(0.35, '#ffd447'); body.addColorStop(0.8, '#d39b19'); body.addColorStop(1, '#8f6210')
+  g.fillStyle = body; g.beginPath(); g.arc(o, o, R, 0, Math.PI * 2); g.fill()
+  g.lineWidth = Math.max(1, R * 0.09); g.strokeStyle = '#7a5208'; g.stroke()
+  g.lineWidth = Math.max(0.8, R * 0.07); g.strokeStyle = 'rgba(122,82,8,.55)'; g.beginPath(); g.arc(o, o, R * 0.7, 0, Math.PI * 2); g.stroke()
+  g.fillStyle = 'rgba(122,82,8,.5)'; g.font = `900 ${Math.round(R * 0.9)}px Pretendard, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('J', o + R * 0.03, o + R * 0.06)
+  g.strokeStyle = 'rgba(255,255,255,.75)'; g.lineWidth = Math.max(1, R * 0.12); g.lineCap = 'round'; g.beginPath(); g.arc(o, o, R * 0.82, Math.PI * 1.1, Math.PI * 1.45); g.stroke()
   return c
 }
-function placeCoin(c, dy = 0) { c.el.setAttribute('transform', `translate(${puX(c.u, c.v).toFixed(1)} ${(puY(c.v) + dy).toFixed(1)}) scale(${puS(c.v).toFixed(3)})`) }
-function sortCoins() { pusher.coins.sort((a, b) => a.v - b.v).forEach(c => $('coinLayer').append(c.el)) }
-function drawSlab() {
-  const v = pusher.slab, y0 = puY(0) - 2, y1 = puY(v), h = 10 * puS(v)
-  const x0 = puX(0.02, 0), x1 = puX(0.98, 0), x2 = puX(0.98, v), x3 = puX(0.02, v)
-  $('slabTop').setAttribute('d', `M${x0} ${y0}H${x1}L${x2} ${y1}H${x3}Z`)
-  $('slabFront').setAttribute('d', `M${x3} ${y1}H${x2}V${y1 + h}H${x3}Z`)
+function puLayout() {
+  const c = $('pusherCanvas'), r = c.getBoundingClientRect(), d = Math.min(2, devicePixelRatio || 1)
+  if (!r.width) return null
+  if (c.width !== Math.round(r.width * d) || c.height !== Math.round(r.height * d)) { c.width = Math.round(r.width * d); c.height = Math.round(r.height * d); puCtx = null }
+  const k = r.width / PB.W // 판 좌표 → 화면 px
+  if (!coinImg || coinImg.k !== k * d) { coinImg = coinSprite(k * d); coinImg.k = k * d }
+  puCtx ||= c.getContext('2d')
+  return { g: puCtx, k, d, W: r.width, H: r.height }
 }
-function randomCoin(v0, v1) {
-  const v = v0 + Math.random() * (v1 - v0)
-  return coinEl(0.06 + Math.random() * 0.88, v, Math.random() < 0.18 ? 2 : 1)
+function drawCoin(L, x, y, s = 1, alpha = 1) {
+  const { g, k, d } = L, w = coinImg.width / d * s
+  g.globalAlpha = alpha * 0.4; g.fillStyle = '#000'; g.beginPath(); g.ellipse(x * k + 1.5 * s, y * k + 3 * s, PB.R * k * s, PB.R * k * s * 0.92, 0, 0, Math.PI * 2); g.fill()
+  g.globalAlpha = alpha; g.drawImage(coinImg, x * k - w / 2, y * k - w / 2, w, w); g.globalAlpha = 1
+}
+function drawPusher(coins, step = 0, extra) {
+  const L = puLayout(); if (!L) return
+  const { g, k, d, W, H } = L
+  g.setTransform(d, 0, 0, d, 0, 0)
+  coins ||= pusher.boards[bet] || []
+  // 판: 닳은 금속판 (줄무늬 결 + 위쪽이 살짝 어두움)
+  const plate = g.createLinearGradient(0, 0, 0, PB.FRONT * k)
+  plate.addColorStop(0, '#20262e'); plate.addColorStop(0.5, '#323b46'); plate.addColorStop(1, '#3d4753')
+  g.fillStyle = plate; g.fillRect(0, 0, W, PB.FRONT * k)
+  g.globalAlpha = 0.05; g.fillStyle = '#fff'
+  for (let i = 0; i < W; i += 3) g.fillRect(i, 0, 1, PB.FRONT * k)
+  g.globalAlpha = 1
+  const spot = g.createRadialGradient(W * 0.5, PB.FRONT * k * 0.55, 10, W * 0.5, PB.FRONT * k * 0.55, W * 0.8)
+  spot.addColorStop(0, 'rgba(255,240,200,.10)'); spot.addColorStop(1, 'rgba(0,0,0,.25)')
+  g.fillStyle = spot; g.fillRect(0, 0, W, PB.FRONT * k)
+  // 코인
+  for (const c of coins) drawCoin(L, c.x, c.y)
+  // 밀대 (앞면 그림자 → 크롬 몸통)
+  const py = (step ? pusherY(step) : PB.PUSH_MIN) * k
+  const sh = g.createLinearGradient(0, py, 0, py + 14); sh.addColorStop(0, 'rgba(0,0,0,.45)'); sh.addColorStop(1, 'rgba(0,0,0,0)')
+  g.fillStyle = sh; g.fillRect(0, py, W, 14)
+  const chrome = g.createLinearGradient(0, py - 40, 0, py)
+  chrome.addColorStop(0, '#6c7383'); chrome.addColorStop(0.55, '#e9edf5'); chrome.addColorStop(0.8, '#b8bfcc'); chrome.addColorStop(1, '#7d8496')
+  g.fillStyle = chrome; g.fillRect(0, 0, W, py)
+  g.fillStyle = 'rgba(255,255,255,.7)'; g.fillRect(0, py - 3, W, 1.5)
+  g.fillStyle = 'rgba(40,44,56,.35)'; for (let x = 18; x < W; x += 34) g.fillRect(x, py - 28, 2, 18)
+  // 투입구 (밀대 위에서 좌우로)
+  const dx = pusher.dropX * k
+  g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(dx - 22, 10, 44, 20)
+  const chute = g.createLinearGradient(dx - 20, 0, dx + 20, 0); chute.addColorStop(0, '#8a1030'); chute.addColorStop(0.5, '#ff4d6d'); chute.addColorStop(1, '#8a1030')
+  g.fillStyle = chute; g.fillRect(dx - 20, 6, 40, 18)
+  g.fillStyle = '#2a0010'; g.fillRect(dx - PB.R * k, 18, PB.R * k * 2, 4)
+  g.fillStyle = '#fff1b8'; g.fillRect(dx - 1, 26, 2, 6)
+  if (extra?.dropping) drawCoin(L, extra.dropping.x, extra.dropping.y, extra.dropping.s)
+  // 앞 끝: 크롬 턱 + 떨어지는 틈 + 받침
+  const lip = PB.FRONT * k
+  const lg = g.createLinearGradient(0, lip, 0, lip + 9); lg.addColorStop(0, '#fff1b8'); lg.addColorStop(0.4, '#e8c26a'); lg.addColorStop(1, '#6b4b10')
+  g.fillStyle = lg; g.fillRect(0, lip, W, 9)
+  const gap = g.createLinearGradient(0, lip + 9, 0, lip + 22); gap.addColorStop(0, '#000'); gap.addColorStop(1, '#140c03')
+  g.fillStyle = gap; g.fillRect(0, lip + 9, W, 13)
+  const tray = g.createLinearGradient(0, lip + 22, 0, H); tray.addColorStop(0, '#2a1b08'); tray.addColorStop(1, '#120b03')
+  g.fillStyle = tray; g.fillRect(0, lip + 22, W, H - lip - 22)
+  for (const t of pusher.tray) drawCoin(L, t.x, t.y, 0.82)
+  for (const f of pusher.falling) drawCoin(L, f.x, f.y, f.s, f.a)
+  // 양옆 금색 레일
+  g.fillStyle = '#c9a24a'; g.fillRect(0, 0, 3, lip); g.fillRect(W - 3, 0, 3, lip)
 }
 function setupPusher() {
-  $('coinLayer').replaceChildren(); $('trayLayer').replaceChildren(); $('fallLayer').replaceChildren()
-  pusher.coins = []; pusher.tray = 0
-  for (let i = 0; i < 46; i++) pusher.coins.push(randomCoin(0.3, 0.97))
-  sortCoins()
-  // 옆벽 LED · 뒷벽 전구
-  $('puLeds').innerHTML = Array.from({ length: 9 }, (_, i) => { const t = i / 8, yl = 70 + t * 160; return `<circle cx="${(3 + t * 6).toFixed(1)}" cy="${yl.toFixed(1)}" r="2.3" class="pu-led" style="animation-delay:${(i * 0.12).toFixed(2)}s"/><circle cx="${(297 - t * 6).toFixed(1)}" cy="${yl.toFixed(1)}" r="2.3" class="pu-led" style="animation-delay:${(i * 0.12).toFixed(2)}s"/>` }).join('')
-  $('puBulbs').innerHTML = Array.from({ length: 15 }, (_, i) => `<circle cx="${12 + i * 19.7}" cy="10" r="2.6" class="pu-bulb${i % 2}"/>`).join('')
+  pusher.tray = []; pusher.falling = []
+  askBoard()
   cancelAnimationFrame(pusher.raf)
   const loop = now => {
-    pusher.dropU = 0.5 + Math.sin(now / 650) * 0.4
-    $('dropper').setAttribute('transform', `translate(${puX(pusher.dropU, 0).toFixed(1)} 0)`)
-    if (!pusher.pushing) { pusher.slab = 0.2 + Math.sin(now / 900) * 0.035; drawSlab() }
+    pusher.dropX = PB.W / 2 + Math.sin(now / 700) * (PB.W / 2 - PB.R - 4) // 투입구가 좌우로
+    if (!pusher.frames) drawPusher()
     pusher.raf = requestAnimationFrame(loop)
   }
   pusher.raf = requestAnimationFrame(loop)
   $('pusherGain').textContent = ''
 }
-const easeIO = k => k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2
-const tween = (ms, fn) => new Promise(res => { if (reduced) { fn(1); return res() } const t0 = performance.now(); const step = now => { const k = Math.min(1, (now - t0) / ms); fn(k); k < 1 ? requestAnimationFrame(step) : res() }; requestAnimationFrame(step) })
+// 한 판: 투입구에서 코인이 떨어진 뒤 물리 STEPS칸을 60fps로 그린다 (서버와 같은 계산)
 async function playPusher(m) {
-  const n = m.coins
-  // 1) 투입구에서 코인이 떨어져 밀대 앞에 안착
-  const u = pusher.dropU, drop = coinEl(u, 0.24)
-  await tween(380, k => { const e = k * k; drop.el.setAttribute('transform', `translate(${puX(u, 0.24).toFixed(1)} ${(70 + (puY(0.24) - 70) * e).toFixed(1)}) scale(${(1.15 - 0.27 * e).toFixed(3)})`) })
-  placeCoin(drop); pusher.coins.push(drop); sortCoins(); sfx.stop()
-  // 2) 맨 앞 n개가 떨어질 코인 (모자라면 앞쪽에 채움 = 와르르)
-  pusher.coins.sort((a, b) => b.v - a.v)
-  while (pusher.coins.filter(c => c.v > 0.85).length < n) pusher.coins.push(randomCoin(0.88, 0.98))
-  pusher.coins.sort((a, b) => b.v - a.v)
-  const fall = pusher.coins.slice(0, n), stay = pusher.coins.slice(n)
-  // 3) 밀대가 밀면 판 위 코인이 앞으로 (머문 코인은 앞 턱 직전까지만)
-  pusher.pushing = true
-  const from = stay.map(c => c.v), to = stay.map(c => Math.min(0.97, c.v + 0.03 + Math.random() * 0.05))
-  const s0 = pusher.slab
-  if (n >= 10) floatText($('fxText'), 50, 38, '와르르!', '#fff1b8', true)
-  await tween(650, k => {
-    const e = easeIO(k)
-    pusher.slab = s0 + Math.sin(e * Math.PI) * 0.14; drawSlab()
-    stay.forEach((c, i) => { c.v = from[i] + (to[i] - from[i]) * e; placeCoin(c) })
-    fall.forEach(c => { c.v = Math.min(1.02, c.v + 0.06 * e); placeCoin(c) })
-  })
-  pusher.pushing = false
-  // 4) 떨어지는 코인: 앞 턱을 넘어 굴러 받침으로
+  const before = pusher.boards[bet] || []
+  const frames = [], fallAt = []
+  const local = pushDrop(before, m.dropX, (coins, s, f) => { frames.push(coins.map(c => ({ x: c.x, y: c.y }))); fallAt.push(f.map(c => ({ x: c.x, y: c.y }))) })
+  if (local.fell !== m.coins || boardHash(local.board) !== m.hash) { console.warn('[slots] 푸셔 판이 서버와 달라서 다시 받음'); delete pusher.boards[bet]; askBoard() }
+  else pusher.boards[bet] = local.board
+  pusher.frames = frames
+  // 1) 코인이 투입구에서 판으로
+  const x = m.dropX
+  await tween(reduced ? 1 : 280, k => drawPusher(before, 0, { dropping: { x, y: 24 + (PB.DROP_Y - 24) * k * k, s: 1.5 - 0.5 * k } }))
+  sfx.stop()
+  // 2) 물리 재생
   let shown = 0
-  const falls = fall.map((c, i) => new Promise(res => setTimeout(async () => {
-    $('fallLayer').append(c.el)
-    const x0 = puX(c.u, 1.02), y0 = puY(1.02), x1 = x0 + (Math.random() - 0.5) * 30, y1 = 272 + Math.random() * 16, rot = (Math.random() - 0.5) * 540
-    await tween(480, k => { const e = k * k; c.el.setAttribute('transform', `translate(${(x0 + (x1 - x0) * k).toFixed(1)} ${(y0 + (y1 - y0) * e).toFixed(1)}) rotate(${(rot * k).toFixed(0)}) scale(${(1.17 - 0.2 * k).toFixed(3)})`) })
-    c.el.remove()
-    addTray(x1, y1)
-    shown++; $('pusherGain').textContent = `+${shown}`; sfx.coin()
-    res()
-  }, 120 + i * (n > 10 ? 28 : 90))))
-  await Promise.all(falls)
-  pusher.coins = stay
-  while (pusher.coins.length < 42) pusher.coins.push(randomCoin(0.28, 0.45)) // 뒤쪽 채우기
-  sortCoins()
+  await new Promise(res => {
+    let i = 0, t0 = performance.now()
+    const tick = now => {
+      const want = reduced ? frames.length : Math.min(frames.length, Math.floor((now - t0) / (1000 / 60)) + 1)
+      for (; i < want; i++) for (const f of fallAt[i]) { pusher.falling.push({ x: f.x, y: PB.FRONT, s: 1, a: 1, vy: 1.6, vx: (f.x - PB.W / 2) * 0.004 }); shown++; $('pusherGain').textContent = `+${shown}`; sfx.coin() }
+      stepFalling()
+      drawPusher(frames[Math.max(0, i - 1)], i)
+      if (i < frames.length) pusher.raf2 = requestAnimationFrame(tick); else res()
+    }
+    pusher.raf2 = requestAnimationFrame(tick)
+  })
+  pusher.frames = null
+  while (pusher.falling.length) { stepFalling(); drawPusher(); await sleep(16) }
+  const n = m.coins
+  if (n >= 6) floatText($('fxText'), 50, 70, '와르르!', '#fff1b8', true)
   return showResult({ wins: [], back: m.base, total: m.total, mark: false,
-    title: n ? `코인 ${n}개 떨어졌어요!` : '안 떨어졌어요', sub: n ? undefined : `${fmt(m.total)}칩 · 다음 코인에 밀려 떨어질지도!` })
+    title: n ? `코인 ${n}개 떨어졌어요!` : '안 떨어졌어요', sub: n ? undefined : `${fmt(m.total)}칩 · 판 위 코인 ${pusher.boards[bet]?.length || 0}개, 다음에 밀려 떨어질지도!` })
 }
-// 받침에 쌓인 코인 (보여 주기만, 많아지면 오래된 것부터 치움)
-function addTray(x, y) {
-  const g = document.createElementNS(svgNS, 'g')
-  g.innerHTML = '<use href="#coin3d" x="-15" y="-10" width="30" height="20"/>'
-  g.setAttribute('transform', `translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${((Math.random() - 0.5) * 30).toFixed(0)}) scale(.95)`)
-  $('trayLayer').append(g)
-  while ($('trayLayer').children.length > 40) $('trayLayer').firstChild.remove()
+// 앞 끝을 넘은 코인: 틈으로 떨어져 받침에 쌓임
+function stepFalling() {
+  for (let i = pusher.falling.length - 1; i >= 0; i--) {
+    const f = pusher.falling[i]
+    f.vy += 0.9; f.y += f.vy; f.x += f.vx; f.s = Math.max(0.82, f.s - 0.012)
+    const floor = PB.FRONT + 34 + (f.x * 7 % 22)
+    if (f.y >= floor) { pusher.falling.splice(i, 1); pusher.tray.push({ x: f.x, y: floor }); if (pusher.tray.length > 36) pusher.tray.shift() }
+  }
 }
+const easeIO = k => k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2
+const tween = (ms, fn) => new Promise(res => { if (reduced) { fn(1); return res() } const t0 = performance.now(); const st = now => { const k = Math.min(1, (now - t0) / ms); fn(k); k < 1 ? requestAnimationFrame(st) : res() }; requestAnimationFrame(st) })
 
 // ---------- 모두의 잭팟 ----------
 let jpShown = 0, jpRaf = 0
@@ -722,8 +763,8 @@ function paintPaytables() {
   if (m.type === 'crash') {
     for (const x of [1.5, 2, 3, 5, 10, 50, 100]) rows += `<li class="row5"><span class="icons">${ic('rocket')}</span><span class="lbl">×${x}까지 갈 확률 ${x === 1.5 ? '67' : Math.round(100 / x * 10) / 10}%</span>${amt(Math.floor(total * x))}</li>`
   } else if (m.type === 'pusher') {
-    const T = pusherTotal(m)
-    for (const [c, w] of [...m.drops].reverse()) rows += `<li class="row5 ${c >= 25 ? 'top' : ''}"><span class="icons">${ic('coins')}</span><span class="lbl">코인 ${c}개 떨어짐 · ${(w / T * 100).toFixed(1)}%</span>${amt(c * total)}</li>`
+    rows += `<li class="top"><span class="icons">${ic('coins')}</span><span class="lbl">앞으로 떨어진 코인 1개</span>${amt(total)}</li>`
+    rows += `<li><span class="icons">${ic('coins')}</span><span class="lbl">판 위 코인 (다음에 이어짐)</span><b>${pusher.boards[bet] ? fmt(pusher.boards[bet].length) + '개' : '—'}</b></li>`
   } else if (m.type === 'gem') {
     const W = m.wildPays
     rows += `<li class="top"><span class="icons">${ic('diamond').repeat(3)}</span><span class="lbl">다이아 셋 (× 배수 릴)</span>${amt(lineBet * W[3])}</li>`
@@ -758,7 +799,7 @@ function paintPaytables() {
     }
   }
   const how = m.type === 'crash' ? '시작하면 배수가 ×1.00부터 올라가요. 로켓이 터지기 전에 내리기를 누르면 베팅 × 그 배수를 받고, 터지면 건 칩을 잃어요. 터지는 배수는 시작할 때 서버가 정하고 미리 보내지 않아요. 언제 내려도 기댓값은 같아요(100%). 자동 내리기를 고르면 그 배수에서 서버가 대신 내려요. '
-    : m.type === 'pusher' ? '떨어뜨리기를 누르면 움직이는 투입구에서 코인이 떨어지고, 밀대가 밀어 앞으로 떨어진 코인 수만큼 받아요 (코인 1개 = 베팅). 몇 개 떨어질지는 서버가 정하고, 떨어뜨리는 위치는 연출이에요. '
+    : m.type === 'pusher' ? '떨어뜨리기를 누르면 좌우로 움직이는 투입구 자리에 코인이 떨어지고, 밀대가 판을 밀어요. 코인끼리 밀고 부딪혀 앞 끝을 넘은 코인이 내 것 (코인 1개 = 베팅). 양옆은 막혀 있어 넣은 코인은 결국 앞으로 나와요. 판은 코인 값(베팅)마다 따로 이어지고, 같은 물리 계산을 서버가 해서 결과를 정해요. '
     : m.type === 'gem' ? '가운데 줄 하나만 봐요. 다이아는 아무 그림이나 대신하고, 섞일 때마다 ×2. 당첨에 오른쪽 배수 릴의 가운데 값을 곱해요. '
     : m.type === 'cascade' ? '줄이 없어요. 맨 왼쪽 릴부터 같은 과일이 있는 릴이 3개 이상 이어지면 당첨, 릴마다 그 과일 칸 수를 곱한 만큼(웨이) 받아요. 맞은 과일은 터지고 위에서 새 과일이 떨어져 또 맞으면 연쇄 — 배수 ×1 → ×2 → ×3 → ×5. 위 칩은 웨이 하나 값이에요. '
     : m.scatter ? '별은 줄과 상관없이 창 어디든 세요. 프리스핀은 공짜이고, 별이 뜰 때마다 배수가 1씩 커져 끝까지 유지돼요. 프리스핀 중 별 셋이면 3번 더. '
@@ -884,7 +925,9 @@ function requestSpin() {
   say('돌아가는 중…', '', `${fmt(ok.total)}칩 걸었어요`)
   sfx.lever()
   const autoOut = cur.type === 'crash' ? Number($('crashAuto').value) || undefined : undefined
-  game.send({ t: 'spin', machine: cur.id, lineBet, lines, auto: autoOut })
+  const dx = cur.type === 'pusher' ? Math.round(pusher.dropX * 10) / 10 : undefined
+  if (cur.type === 'pusher') { if (!pusher.boards[bet]) { setBusy(false); askBoard(); return game.toast('판을 불러오는 중이에요. 잠깐만요.') } pusher.pendingX = dx }
+  game.send({ t: 'spin', machine: cur.id, lineBet, lines, auto: autoOut, dropX: dx })
   clearTimeout(waitT)
   awaiting = true
   waitT = setTimeout(() => refused('다시 눌러 주세요'), 2500) // 답이 없으면 (연결 끊김 등)
@@ -1069,6 +1112,7 @@ game = await startGame({
       return
     }
     if (m.t === 'spun') return onSpun(m)
+    if (m.t === 'pusherBoard') { pusher.boards[m.bet] = m.coins.map(([x, y]) => ({ x, y, vx: 0, vy: 0 })); if (cur.type === 'pusher' && m.bet === bet) drawPusher(); paintPaytables(); return }
     if (m.t === 'crashStart') return crashStart(m)
     if (m.t === 'crashCashed') return crashCashed(m)
     if (m.t === 'crashed') return crashed(m)

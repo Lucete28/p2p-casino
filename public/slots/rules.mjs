@@ -8,7 +8,7 @@
 //   gem     — 다이아몬드: 가운데 줄 하나 + 오른쪽 배수 릴. 다이아는 와일드(아무 그림), 하나 섞일 때마다 ×2
 //   crash   — 크래시: 배수가 ×1.00부터 올라가다 터진다. 터지기 전에 내리면 베팅 × 그때 배수. 터지는 배수는 시작할 때
 //             서버가 정하고(crashPoint) 브라우저에는 터질 때까지 보내지 않는다. 언제 내려도 기댓값이 정확히 100%
-//   pusher  — 코인 푸셔: 코인을 떨어뜨리면 밀대가 밀어 앞으로 떨어진 코인 수만큼 받는다 (드롭마다 서버가 pusherPick으로 정함)
+//   pusher  — 코인 푸셔: 진짜 물리(pusher.mjs). 코인끼리 밀고 부딪혀 앞으로 떨어진 코인 수만큼 받는다. 판은 베팅(코인 값)마다 따로 이어진다
 //   cascade — 과일 폭탄: 5×4 칸, 줄 없이 옆 릴끼리 이어지면(웨이) 당첨 → 맞은 과일이 터지고 위에서 새 과일이
 //             떨어진다 (새 과일은 서버가 그 릴의 띠에서 무작위로 뽑음: draw). 연쇄마다 배수 chain[i]
 //
@@ -112,8 +112,7 @@ export const MACHINES = {
   pusher: {
     id: 'pusher', type: 'pusher', name: '코인 푸셔', short: '코인푸셔', desc: '코인을 떨어뜨리면 밀대가 밀어 앞으로 떨어진 만큼 받아요',
     lines: [[1]], reels: 0, strips: [], pays: {}, tease: [],
-    // 한 번 떨어뜨릴 때 앞으로 떨어지는 코인 수 (드롭 베팅의 배수)와 확률 (합 1,000). 기댓값 1.010
-    drops: [[0, 610], [1, 180], [2, 100], [3, 60], [5, 30], [10, 15], [25, 4], [50, 1]],
+    // 양옆이 막혀 있어 넣은 코인은 결국 앞으로 나온다: 오래 보면 100% (판에 남은 코인은 다음에 이어짐)
   },
 }
 export const MACHINE_IDS = Object.keys(MACHINES)
@@ -289,14 +288,6 @@ export function crashPoint(m, n) { // n = 0 ~ CRASH_U-1
 export const crashMultAt = (m, ms) => Math.max(1, Math.floor(100 * Math.exp(m.grow * Math.max(0, ms))) / 100)
 export const crashTimeFor = (m, mult) => Math.ceil(Math.log(mult) / m.grow) // 그 배수가 되는 첫 ms (그 ms에는 이미 그 배수)
 
-// ---------- 코인 푸셔 ----------
-export const pusherTotal = m => m.drops.reduce((s, [, w]) => s + w, 0)
-export function pusherPick(m, n) { // n = 0 ~ pusherTotal-1 → 떨어지는 코인 수
-  let acc = 0
-  for (const [coins, w] of m.drops) { acc += w; if (n < acc) return coins }
-  return 0
-}
-
 // 두근두근: 마지막 릴만 남았는데 큰 당첨이 될 수 있으면 마지막 릴을 TEASE_MS 더 돌린다 (연출만, 결과는 이미 정해짐).
 // 서버도 같은 판단으로 정산을 그만큼 늦춘다
 export const TEASE_MS = 1300
@@ -329,7 +320,7 @@ function freqOf(strips) {
 export function exactRtp(m) {
   if (m.type === 'cascade') return { rtp: null, line: null }
   if (m.type === 'crash') return { rtp: 1, line: null } // 언제 내려도 100% (위 crashPoint 참고). 최대 배수에서 터지는 몫은 아주 작다
-  if (m.type === 'pusher') { const T = pusherTotal(m); return { rtp: m.drops.reduce((s, [c, w]) => s + c * w / T, 0), hit: m.drops.reduce((s, [c, w]) => s + (c ? w / T : 0), 0) } }
+  if (m.type === 'pusher') return { rtp: 1, line: null } // 넣은 코인은 결국 앞으로 (test-sim.mjs로 오래 돌려 확인)
   const f = freqOf(m.strips), R = m.reels
   let line = 0, hit = 0
   if (m.type === 'gem') {

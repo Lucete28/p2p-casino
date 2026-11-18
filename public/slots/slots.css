@@ -134,7 +134,7 @@ body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, 
 .sl[data-type="crash"] .sl-reels, .sl[data-type="pusher"] .sl-reels, .sl[data-type="crash"] .sl-paylines, .sl[data-type="pusher"] .sl-paylines { display: none; }
 .sl[data-type="crash"] .sl-lever, .sl[data-type="pusher"] .sl-lever { visibility: hidden; }
 .sl[data-type="crash"] .sl-window { aspect-ratio: 4 / 3; }
-.sl[data-type="pusher"] .sl-window { aspect-ratio: 1 / 1; }
+.sl[data-type="pusher"] .sl-window { aspect-ratio: 300 / 394; } /* 판 330 + 받침 64 */
 .sl[data-machine="crash"] .sl-cabinet { border-color: #5ac8ff; }
 .sl[data-machine="crash"] .sl-logo-7 { color: #5ac8ff; -webkit-text-stroke-color: #fff; text-shadow: 0 0 14px rgba(90,200,255,.8); }
 .sl[data-machine="crash"] .sl-marquee { background: linear-gradient(180deg, #050b1c, #12264d); border-color: rgba(90,200,255,.5); }
@@ -162,15 +162,7 @@ body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, 
 
 /* 코인 푸셔 무대 */
 .sl-pusher { position: absolute; inset: 0; border-radius: 8px; overflow: hidden; background: #12081e; box-shadow: inset 0 0 0 2px rgba(255,77,109,.35); }
-.pu-neon { fill: #ffd1f0; stroke: #ff4dc4; stroke-width: .6; filter: drop-shadow(0 0 4px #ff4dc4) drop-shadow(0 0 10px #ff4dc4); animation: pu-flicker 4s steps(1) infinite; }
-@keyframes pu-flicker { 0%, 46%, 50%, 100% { opacity: 1; } 47%, 49% { opacity: .55; } }
-.pu-bulb0, .pu-bulb1 { fill: #ffe69a; animation: sl-bulb 1.2s steps(1) infinite; }
-.pu-bulb1 { animation-delay: .6s; }
-.pu-led { fill: #5ac8ff; filter: drop-shadow(0 0 3px #5ac8ff); animation: pu-led 1.1s ease-in-out infinite alternate; }
-@keyframes pu-led { to { fill: #ff4dc4; filter: drop-shadow(0 0 3px #ff4dc4); } }
-.pu-edge { filter: drop-shadow(0 0 4px #ffd36b); animation: pu-edge 1.4s ease-in-out infinite alternate; }
-@keyframes pu-edge { to { stroke: #fff; } }
-.pu-blink { animation: sl-hit .5s steps(2) infinite; }
+.sl-pusher canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .sl-pusher svg { width: 100%; height: 100%; display: block; }
 .sl-pusher-gain { position: absolute; right: 12px; bottom: 8px; font: 900 22px/1 "Pretendard", sans-serif; color: #ffd36b; text-shadow: 0 0 10px rgba(255,190,70,.7); font-variant-numeric: tabular-nums; }
 .sl[data-machine="pusher"] .sl-cabinet { border-color: #f3cf74; }
@@ -376,7 +368,9 @@ body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, 
   .sl-window { --room: calc(100vw - 112px); width: min(var(--room), max(150px, calc(100svh - 580px))); margin-inline: auto; }
   .sl[data-type="gem"] .sl-window { width: min(var(--room), max(180px, calc((100svh - 580px) * 1.2))); }
   .sl[data-type="crash"] .sl-window { width: min(var(--room), max(220px, calc((100svh - 560px) * 1.33))); }
-  .sl[data-type="pusher"] .sl-window { width: min(var(--room), max(190px, calc(100svh - 575px))); }
+  /* 코인 푸셔는 세로로 긴 판이라: 폰에선 결과판·안내를 빼고 (떨어진 수는 판 위 +N) 판을 키움 */
+  .sl[data-type="pusher"] .sl-result, .sl[data-type="pusher"] .sl-bet-hint { display: none; }
+  .sl[data-type="pusher"] .sl-window { width: min(var(--room), max(180px, calc((100svh - 470px) * 0.76))); }
   .sl[data-type="cascade"] .sl-window { width: min(var(--room), max(220px, calc((100svh - 585px) * 1.25))); }
   .sl[data-reels="5"]:not([data-type="cascade"]) .sl-window { width: min(var(--room), max(240px, calc((100svh - 580px) * 1.66))); }
   /* 위쪽을 얇게: 모두의 잭팟 한 줄, 간판·결과판 작게 */
@@ -404,7 +398,7 @@ body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, 
   .sl[data-type="cascade"] .sl-glass { width: clamp(300px, calc((100vh - 330px) * 1.25), 440px); }
   .sl[data-type="gem"] .sl-glass { width: clamp(300px, calc((100vh - 330px) * 1.2), 460px); }
   .sl[data-type="crash"] .sl-glass { width: clamp(320px, calc((100vh - 345px) * 1.33), 520px); }
-  .sl[data-type="pusher"] .sl-glass { width: clamp(300px, calc(100vh - 350px), 440px); }
+  .sl[data-type="pusher"] .sl-glass { width: clamp(250px, calc((100vh - 345px) * 0.76), 400px); }
   .sl-console { grid-area: console; display: flex; flex-direction: column; min-width: 0; }
   .sl-console .sl-credit { margin-top: 0; }
   .sl-console .sl-result { flex: 1; display: flex; flex-direction: column; justify-content: center; }
@@ -479,7 +473,7 @@ body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, 
   .sl-result { margin: 8px 0; padding: 8px 12px; }
   .sl-actions { margin-top: 10px; }
   .sl[data-type="crash"] .sl-window { width: min(var(--room), max(170px, calc((100svh - 540px) * 1.33))); }
-  .sl[data-type="pusher"] .sl-window { width: min(var(--room), max(150px, calc(100svh - 520px))); }
+  .sl[data-type="pusher"] .sl-window { width: min(var(--room), max(170px, calc((100svh - 410px) * 0.76))); }
 }
 
 @media (prefers-reduced-motion: reduce) {
