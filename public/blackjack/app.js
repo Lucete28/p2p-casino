@@ -2,6 +2,7 @@
 // 딜러의 숨긴 카드는 딜러 차례가 되어야 서버가 보내 준다. 칩 숫자는 서버가 연출 시간(rules.mjs의 *_MS)만큼 늦게 정산한 값.
 // 돈은 '보유 칩 · 베팅 · 이번 판' 세 칸으로 보여 준다 (운영자 요청 2026-11-18, 누적 득실은 보여 주지 않음). 처음엔 관전, 빈자리를 누르거나 베팅하면 앉는다
 import { startGame } from '../shared/casino.js'
+import { handOdds } from './odds.mjs'
 import { score, isNatural, SEATS, MIN_BET, DEAL_MS, HIT_MS, DEALER_MS, RESULT_MS, TURN_MS } from './rules.mjs'
 
 const $ = id => document.getElementById(id)
@@ -494,7 +495,7 @@ function dealerFinal(cards) {
 }
 function dealerByPhase(S) {
   if (S.phase === 'bet') return sayDealer(phaseEnd ? '곧 카드를 나눠요' : '베팅을 기다려요')
-  if (S.phase === 'play') return sayDealer(`보이는 카드 ${totalText([S.dealer[0]]).t} · 한 장은 뒤집혀 있어요`)
+  if (S.phase === 'play') return sayDealer('') // 행동 중엔 비움 (운영자 요청 2026-11-18)
   dealerFinal(S.dealer)
 }
 let centerT = null
@@ -583,6 +584,48 @@ function paintMoney() {
   $('mSub').textContent = sub
 }
 
+// ---------- 확률 창 (홀덤의 예상 승률처럼, 운영자 요청 2026-11-18) ----------
+// 내 차례에 지금 손으로 계산: 멈추면 이길/비길/질 확률, 한 장 더 받으면, 딜러 버스트·최종 점수. 결과를 정해 주지는 않는다
+let oddsOpen = (() => { const v = store.get('odds'); return v ? v === 'open' : innerWidth > 600 })() // 처음엔 넓은 화면만 펼침
+const pctTxt = p => !p ? '0%' : p >= 0.9995 ? '100%' : p < 0.005 ? '<1%' : Math.round(p * 100) + '%'
+function drawOdds() {
+  const box = $('odds'), S = state, my = mySeat()
+  if (busy() && box.innerHTML) return // 카드가 놓이는 중엔 그대로 (새 카드 결과가 미리 보이지 않게)
+  box.hidden = !game?.me || !my
+  if (box.hidden) return
+  const live = S.phase === 'play' && my.inRound && !my.done && S.dealer[0]
+  let o = null
+  if (live) {
+    const visible = [...S.dealer, ...S.seats.flatMap(s => s ? s.hands.flatMap(h => h.cards) : [])]
+    o = handOdds(my.hands[my.active].cards, S.dealer[0], visible)
+  }
+  const head = `<button type="button" class="bj-odds-head" id="oddsToggle" aria-expanded="${oddsOpen}">
+      <span>확률</span>
+      <span class="eq">${o ? `멈추면 이길 확률 <b>${pctTxt(o.stand.win)}</b>` : '<em>내 차례에 계산해요</em>'}</span>
+      <span class="caret" aria-hidden="true">${oddsOpen ? '▾' : '▸'}</span>
+    </button>`
+  let body = ''
+  if (oddsOpen && o) {
+    const row = (name, p, sub = '', cls = '') => `<div class="bj-odds-row ${cls}"><span class="nm">${name}${sub ? `<small>${sub}</small>` : ''}</span>
+      <span class="bar"><i style="width:${(p * 100).toFixed(1)}%"></i></span><span class="pc">${pctTxt(p)}</span></div>`
+    const d = o.dealer
+    body = `<div class="bj-odds-rows">
+        ${row(`멈추면 이김 (${o.total})`, o.stand.win, `비김 ${pctTxt(o.stand.push)} · 짐 ${pctTxt(o.stand.lose)}`)}
+        ${row('한 장 받고 멈추면 이김', o.one.win, `비김 ${pctTxt(o.one.push)}`)}
+        ${row('한 장 받으면 버스트', o.one.bust, '', 'bad')}
+        ${row('딜러 버스트', d.bust, '', 'dealer')}
+      </div>
+      <div class="bj-odds-dealer" aria-label="딜러 최종 점수 확률">
+        <span class="lbl">딜러 최종</span>
+        ${[17, 18, 19, 20, 21].map(t => `<span><b>${t}</b>${pctTxt(d[t])}</span>`).join('')}
+        <span class="bust"><b>버스트</b>${pctTxt(d.bust)}</span>
+      </div>
+      <p class="bj-odds-note">6덱에서 이번 판에 보이는 카드를 뺀 추정치 · 딜러의 뒤집힌 카드는 모른다고 봐요</p>`
+  }
+  box.innerHTML = head + body
+  $('oddsToggle').onclick = () => { oddsOpen = !oddsOpen; store.set('odds', oddsOpen ? 'open' : 'closed'); drawOdds() }
+}
+
 // ---------- 아래 조작판 ----------
 let bet = Math.max(MIN_BET, Number(store.get('bet')) || 100)
 const busy = () => pending > 0 || !!acting
@@ -614,7 +657,7 @@ function paintPanel() {
   if (!lock) { $('clearBet').disabled = !bet; $('halfBet').disabled = bet <= MIN_BET; $('dblBet').disabled = !bet || (!!game?.me && bet * 2 > chips); $('allBet').disabled = !!game?.me && !chips }
   $('standUp').hidden = !my || my.inRound
   store.set('bet', String(bet))
-  paintMoney(); paintSpot()
+  paintMoney(); paintSpot(); drawOdds()
 }
 $('standUp').onclick = () => game?.send({ t: 'stand' })
 // 베팅은 0(비움) 또는 최소 베팅 이상. ½·올인도 최소 아래로 내려가지 않음
