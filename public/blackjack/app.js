@@ -596,7 +596,7 @@ function drawOdds() {
   const live = S.phase === 'play' && my?.inRound && !my.done
   const visible = [...S.dealer, ...S.seats.flatMap(s => s ? s.hands.flatMap(h => h.cards) : [])]
   const n = nextCard(visible, live ? my.hands[my.active].cards : null)
-  const left = S.shoe?.left ?? 0, toCut = Math.max(0, left - (S.shoe?.cut ?? 0))
+  const left = S.shoe?.left ?? 0
   const head = `<button type="button" class="bj-odds-head" id="oddsToggle" aria-expanded="${oddsOpen}">
       <span>남은 카드</span>
       <span class="eq">${live ? `히트하면 버스트 <b class="${n.bust >= 0.5 ? 'hi' : ''}">${pctTxt(n.bust)}</b>` : `슈에 <b class="n">${fmt(left)}장</b>`}</span>
@@ -610,7 +610,7 @@ function drawOdds() {
           <em>${pctTxt(b.p)}</em><i style="height:${Math.max(6, b.p / max * 100)}%"></i><b>${b.label}</b>
         </span>`).join('')}
       </div>
-      <p class="bj-odds-note">${live ? '<span class="k bust"></span>받으면 버스트 <span class="k t21"></span>21이 돼요 · ' : ''}다음 카드 확률 · 다시 섞기까지 ${fmt(toCut)}장<br>이번 판에 보이는 카드만 빼고 계산해요 (지난 판 카드는 세지 않아요)</p>`
+      ${live ? '<p class="bj-odds-note"><span class="k bust"></span>받으면 버스트 <span class="k t21"></span>21이 돼요</p>' : '<div class="bj-odds-pad"></div>'}`
   }
   box.innerHTML = head + body
   $('oddsToggle').onclick = () => { oddsOpen = !oddsOpen; store.set('odds', oddsOpen ? 'open' : 'closed'); drawOdds() }
