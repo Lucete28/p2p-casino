@@ -1,11 +1,11 @@
-// 슬롯머신 (관리 모드, CASINO.md 3·5장): 머신 다섯 대 + 모두의 잭팟. 규칙은 public/slots/rules.mjs (화면과 같이 씀)
+// 슬롯머신 (관리 모드, CASINO.md 3·5장): 머신 네 대 + 모두의 잭팟. 규칙은 public/slots/rules.mjs (화면과 같이 씀)
 //
-//   브라우저 → { t: 'spin', machine, lineBet, lines }    machine = classic·diamond·fruit5·lucky·jackpot
+//   브라우저 → { t: 'spin', machine, lineBet, lines }    machine = classic·diamond·fruit5·lucky
 //              { t: 'skip' }                             긴 연출(프리스핀·연쇄) 건너뛰기 → 정해진 결과로 바로 정산
 //   서버 → { t: 'spun', machine, round, stops, lineBet, lines, total, wins, scatter, mreel, steps, back, base, tease, bonus, jackpot }
 //            back = 이번 판에 돌려받을 칩 전부 (프리스핀·연쇄·잭팟 포함), base = 첫 화면의 당첨
 //            steps = 과일 폭탄 연쇄 (떨어진 새 과일 포함), bonus = 럭키 스타 프리스핀 { spins, total, mult }
-//            jackpot = { win, share, kind: 'mystery'|'line' }
+//            jackpot = { win, kind: 'mystery' }
 //          { t: 'hello', stops: { 머신: 멈춘 자리 }, spinning, jackpot }   접속할 때
 //          { t: 'jackpot', pool, last }                  모두의 잭팟이 바뀔 때 (모두에게, 1초에 한 번까지 · 누가 맞히면 바로)
 //
@@ -28,7 +28,6 @@ const lastStops = new Map() // 사용자 ID → { 머신: 멈춘 자리 } (다�
 
 // ---------- 모두의 잭팟 ----------
 // 어느 머신이든 베팅의 1.5%는 잭팟에, 0.5%는 다음 밑돈에. 판마다 베팅 ÷ odds 확률로 잭팟 전부 (미스터리).
-// 메가 잭팟 머신은 가운데 줄 잭팟 동전 셋으로도 (베팅 fullBet 이상이면 전부, 적으면 베팅 비율만큼).
 // 다 가져가면 밑돈이 새 잭팟 (floor보다 적으면 하우스가 floor까지 채움).
 // 금액은 DATA_DIR/slots-jackpot.json에 저장 (서버가 다시 켜져도 이어짐). 코어 저장소에 일반 저장 칸이 없어서 따로 둠
 const DATA = process.env.DATA_DIR || join(import.meta.dirname, '..', '..', '..', 'data')
@@ -121,18 +120,17 @@ export default {
       result.fs = { total: bonus.total, spins: bonus.spins.length, mult: bonus.mult }
     }
 
-    // 모두의 잭팟: 쌓고, 미스터리(베팅 비례 확률) 또는 메가 잭팟 줄이면 가져감
+    // 모두의 잭팟: 쌓고, 미스터리(베팅 비례 확률)로 터지면 전부
     jp.pool += bet.total * JACKPOT.contribute
     jp.reserve += bet.total * JACKPOT.reserve
     let jackpot = null
     const mystery = ctx.rng.int(JP_ODDS) < bet.total
-    if (mystery || r.jackpotLine) {
-      const share = mystery ? 1 : Math.min(1, bet.total / JACKPOT.fullBet)
-      const win = Math.floor(jp.pool * share)
-      jp.pool -= win
-      if (share >= 1) { jp.pool = Math.max(jp.pool + jp.reserve, JACKPOT.floor); jp.reserve = 0 }
+    if (mystery) {
+      const win = Math.floor(jp.pool)
+      jp.pool = Math.max(jp.pool - win + jp.reserve, JACKPOT.floor)
+      jp.reserve = 0
       jp.hits++
-      jackpot = { win, share, kind: mystery ? 'mystery' : 'line' }
+      jackpot = { win, kind: 'mystery' }
       back += win
       result.jp = [jackpot.kind, win]
       delay += 2500

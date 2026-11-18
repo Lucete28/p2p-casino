@@ -3,12 +3,13 @@
 // (프리스핀은 서버가 판마다 멈출 자리를 새로 뽑고, 연쇄 폭발의 새 과일도 서버가 뽑아 결과에 담아 보낸다)
 //
 // 머신 종류 (type)
-//   lines   — 줄 당첨: 맨 왼쪽 릴부터 같은 그림이 n개 이어지면 pays[그림][n]배 (클래식 · 럭키 스타 · 메가 잭팟)
+//   lines   — 줄 당첨: 맨 왼쪽 릴부터 같은 그림이 n개 이어지면 pays[그림][n]배 (클래식 · 럭키 스타)
 //             scatter가 있으면 별은 창 어디든 세고, trigger개 이상이면 프리스핀 (럭키 스타)
 //   gem     — 다이아몬드: 가운데 줄 하나 + 오른쪽 배수 릴. 다이아는 와일드(아무 그림), 하나 섞일 때마다 ×2
 //   cascade — 과일 폭탄: 5×4 칸, 줄 없이 옆 릴끼리 이어지면(웨이) 당첨 → 맞은 과일이 터지고 위에서 새 과일이
 //             떨어진다 (새 과일은 서버가 그 릴의 띠에서 무작위로 뽑음: draw). 연쇄마다 배수 chain[i]
 //
+// 머신 네 대 (운영자 결정 2026-11-18: 메가 잭팟 머신은 빼고, 모두의 잭팟은 네 대 모두에서 미스터리로)
 // 공통: 릴 띠를 돌려 멈춘 자리 s면 창에 보이는 칸은 위에서부터 s-1, s, s+1 (4칸 창은 s+2까지).
 // 환급률(RTP): 운영자 결정(2026-11-18)으로 머신 기본 약 100% + 모든 머신이 같이 쌓는 미스터리 잭팟 2%.
 //   lines·gem은 exactRtp()가 모든 경우를 셈. 연쇄·프리스핀 배수는 시뮬레이션 값(rtpRef)을 적어 둠 (test-sim.mjs로 확인)
@@ -16,7 +17,7 @@
 export const SYMBOLS = {
   seven: '7', bar: 'BAR', bell: '종', melon: '수박', lemon: '레몬', cherry: '체리',
   diamond: '다이아', ruby: '루비', sapphire: '사파이어', emerald: '에메랄드', blank: '빈칸',
-  grape: '포도', orange: '오렌지', plum: '자두', star: '별', jp: '잭팟',
+  grape: '포도', orange: '오렌지', plum: '자두', star: '별',
   moon: '달', planet: '행성', comet: '혜성', clover: '네잎클로버', horseshoe: '말굽',
   x1: '×1', x2: '×2', x3: '×3', x5: '×5', x10: '×10',
 }
@@ -99,22 +100,14 @@ export const MACHINES = {
     rtpRef: 1.0062, // 프리스핀 포함, 시뮬레이션 8,000만 판 (±0.05%p)
     tease: ['moon'],
   },
-  jackpot: {
-    id: 'jackpot', type: 'lines', name: '메가 잭팟', short: '잭팟', desc: '가운데 줄 잭팟 동전 셋이면 모두의 잭팟',
-    reels: 3, rows: 3, lines: LINES3,
-    strips: reels([['jp', 1], ['seven', 1], ['bar', 2], ['bell', 4], ['melon', 5], ['lemon', 8], ['cherry', 9]], 3, [0, 10, 20]),
-    pays: { seven: { 3: 400 }, bar: { 3: 75 }, bell: { 3: 25 }, melon: { 3: 12 }, lemon: { 3: 9 }, cherry: { 1: 1, 2: 4, 3: 8 } },
-    tease: ['jp', 'seven', 'bar'],
-    jackpotLine: { symbol: 'jp', line: 0 }, // 가운데 줄 잭팟 셋 → 모두의 잭팟 (베팅 비율만큼)
-  },
 }
 export const MACHINE_IDS = Object.keys(MACHINES)
 export const machineOf = id => MACHINES[id] || MACHINES.classic
 
 // 모두의 잭팟 (미스터리): 어느 머신이든 한 판 베팅의 contribute는 잭팟에, reserve는 다음 밑돈에.
-// 판마다 (베팅 ÷ odds) 확률로 잭팟 전부. 메가 잭팟 머신은 가운데 줄 잭팟 셋으로도 (베팅 fullBet 이상이면 전부, 적으면 비율만큼).
+// 판마다 (베팅 ÷ odds) 확률로 잭팟 전부.
 // 다 가져가면 밑돈이 새 잭팟 (floor보다 적으면 하우스가 floor까지 채움). 오래 보면 contribute + reserve 만큼이 플레이어에게 돌아감
-export const JACKPOT = { contribute: 0.015, reserve: 0.005, odds: 500000, fullBet: 100, start: 10000, floor: 1000 }
+export const JACKPOT = { contribute: 0.015, reserve: 0.005, odds: 500000, start: 10000, floor: 1000 }
 
 // 한 판 베팅 상한은 없다 (CASINO.md 5장). 다만 돌려줄 칩이 안전한 정수를 넘지 않게 상한만 둔다
 export const MAX_LINE_BET = Math.floor(Number.MAX_SAFE_INTEGER / (20 * 100000))
@@ -172,7 +165,7 @@ export function checkBet(m, lineBet, lines) {
 export const linesOf = m => m.type === 'cascade' ? m.unit : m.lines.length
 
 // ---------- 한 판 결과 ----------
-// lines·gem → { grid, wins: [{ line, kind, n, mult, pay }], scatter, back, bonus, jackpotLine, mreel }
+// lines·gem → { grid, wins: [{ line, kind, n, mult, pay }], scatter, back, bonus, mreel }
 //   mult: 프리스핀 배수 (줄 당첨에만). gem은 mreel(배수 릴 가운데 값)을 곱함
 // cascade → { grid, steps: [{ grid, wins: [{ sym, kind, n, ways, mult, pay, cells }], chain, pay, removed }], back }
 export function evaluate(m, stops, lines, lineBet, mult = 1, draw) {
@@ -202,12 +195,7 @@ export function evaluate(m, stops, lines, lineBet, mult = 1, draw) {
     back += pay
     bonus = cells.length >= m.scatter.trigger
   }
-  let jackpotLine = false
-  if (m.jackpotLine) {
-    const rows = m.lines[m.jackpotLine.line]
-    jackpotLine = rows.every((row, r) => grid[r][row] === m.jackpotLine.symbol)
-  }
-  return { grid, wins, scatter, back, bonus, jackpotLine, mreel }
+  return { grid, wins, scatter, back, bonus, mreel }
 }
 
 // 과일 폭탄: 웨이 당첨 → 터짐 → 남은 과일이 아래로, 위에서 새 과일이 떨어짐 → 다시 확인 (최대 40번)
@@ -289,10 +277,6 @@ export function teases(m, stops, lines) {
     if (!m.tease.includes(s)) continue
     if (rows.slice(0, last).every((row, r) => g[r][row] === s)) return true
   }
-  if (m.jackpotLine) {
-    const rows = m.lines[m.jackpotLine.line]
-    if (rows.slice(0, last).every((row, r) => g[r][row] === m.jackpotLine.symbol)) return true
-  }
   if (m.scatter) {
     let n = 0
     for (let r = 0; r < last; r++) n += g[r].filter(s => s === m.scatter.symbol).length
@@ -343,7 +327,6 @@ export function exactRtp(m) {
     }
     dist.forEach((p, k) => { scatter += p * (m.scatter.pays[k] || 0); if (k >= m.scatter.trigger) trigger += p })
   }
-  let jpLine = 0
-  if (m.jackpotLine) { jpLine = 1; for (let r = 0; r < R; r++) jpLine *= f[r][m.jackpotLine.symbol] || 0 }
-  return { rtp: m.scatter ? null : line + scatter, line, scatter, trigger, hit, jpLine }
+  // 럭키 스타 프리스핀 몫은 배수가 쌓여 식이 길어서 시뮬레이션(rtpRef)
+  return { rtp: m.scatter ? null : line + scatter, line, scatter, trigger, hit }
 }
