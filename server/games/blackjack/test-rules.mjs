@@ -297,35 +297,20 @@ await ok(`슈: 312장 중 ${CUT}장 넘게 쓰면 다음 딜 전에 다시 섞�
   T.close()
 })
 
-await ok('확률 창: 딜러 분포 합 1, 알려진 값 근처, 실제 규칙으로 돌린 딜러와 ±1%p', async () => {
-  const { dealerDist, remaining, handOdds } = await import('../../../public/blackjack/odds.mjs')
-  const { dealerPlay } = await import('./engine.mjs')
-  const rng = await import('../../core/rng.mjs')
-  const p = remaining([])
-  for (const [up, bust] of [['6s', 0.42], ['Ts', 0.23], ['As', 0.17], ['2s', 0.354]]) {
-    const d = dealerDist(up, p)
-    assert.ok(Math.abs(Object.values(d).reduce((a, b) => a + b, 0) - 1) < 1e-9)
-    assert.ok(Math.abs(d.bust - bust) < 0.015, `${up} 버스트 ${d.bust}`)
-  }
-  // 실제 슈(6덱)에서 딜러를 돌려 비교: 업카드 T, 숨긴 카드가 A면(딜러 블랙잭) 빼기 — 피크와 같음
-  let bust = 0, n = 0
-  while (n < 100000) {
-    const shoe = rng.deck(6), i = shoe.indexOf('Th')
-    shoe.splice(i, 1)
-    let k = 0
-    const dealer = ['Th', shoe[k++]]
-    if (dealer[1][0] === 'A') continue
-    dealerPlay(dealer, [{ hands: [{ cards: ['Ts', '7d'] }] }], () => shoe[k++])
-    if (score(dealer).total > 21) bust++
-    n++
-  }
-  const est = dealerDist('Th', remaining(['Th'])).bust
-  assert.ok(Math.abs(bust / n - est) < 0.01, `시뮬 ${bust / n} vs 계산 ${est}`)
-  const h = handOdds(['Ts', '6d'], 'Th', ['Ts', '6d', 'Th'])
-  assert.ok(Math.abs(h.one.bust - 8 / 13) < 0.01, '16에서 한 장 더 받으면 버스트 약 61.5%')
-  assert.ok(Math.abs(h.stand.win - h.dealer.bust) < 1e-9, '16에서 멈추면 딜러가 버스트해야만 이김')
-  const s = handOdds(['Ts', '9d'], '6h', ['Ts', '9d', '6h']).stand
-  assert.ok(Math.abs(s.win + s.push + s.lose - 1) < 1e-9)
+await ok('남은 카드 창: 다음 카드 비율 합 1, 이번 판에 보이는 카드만 뺌, 버스트·21 칸', async () => {
+  const { nextCard, remaining } = await import('../../../public/blackjack/odds.mjs')
+  const full = remaining([])
+  assert.ok(Math.abs(full.reduce((a, b) => a + b, 0) - 1) < 1e-9)
+  assert.ok(Math.abs(full[10] - 4 / 13) < 1e-9 && Math.abs(full[1] - 1 / 13) < 1e-9)
+  const seen = remaining(['Ts', 'Kd', 'Qh', 'Jc'])
+  assert.ok(seen[10] < full[10], '보이는 10점 카드는 빠짐')
+  const n = nextCard(['Ts', '6d', 'Th'], ['Ts', '6d'])
+  assert.deepEqual(n.buckets.filter(b => b.bust).map(b => b.label), ['6', '7', '8', '9', '10'])
+  assert.deepEqual(n.buckets.filter(b => b.is21).map(b => b.label), ['5'])
+  assert.ok(Math.abs(n.bust - 8 / 13) < 0.01, '16에서 버스트 약 61.5%')
+  const soft = nextCard([], ['As', '6d'])
+  assert.equal(soft.bust, 0, '소프트 17은 한 장으로 버스트하지 않음')
+  assert.equal(nextCard([]).bust, 0, '내 차례가 아니면 비율만')
 })
 
 mock.timers.reset()

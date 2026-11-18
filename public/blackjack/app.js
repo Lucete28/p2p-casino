@@ -2,7 +2,7 @@
 // 딜러의 숨긴 카드는 딜러 차례가 되어야 서버가 보내 준다. 칩 숫자는 서버가 연출 시간(rules.mjs의 *_MS)만큼 늦게 정산한 값.
 // 돈은 '보유 칩 · 베팅 · 이번 판' 세 칸으로 보여 준다 (운영자 요청 2026-11-18, 누적 득실은 보여 주지 않음). 처음엔 관전, 빈자리를 누르거나 베팅하면 앉는다
 import { startGame } from '../shared/casino.js'
-import { handOdds } from './odds.mjs'
+import { nextCard } from './odds.mjs'
 import { score, isNatural, SEATS, MIN_BET, DEAL_MS, HIT_MS, DEALER_MS, RESULT_MS, TURN_MS } from './rules.mjs'
 
 const $ = id => document.getElementById(id)
@@ -584,43 +584,33 @@ function paintMoney() {
   $('mSub').textContent = sub
 }
 
-// ---------- 확률 창 (홀덤의 예상 승률처럼, 운영자 요청 2026-11-18) ----------
-// 내 차례에 지금 손으로 계산: 멈추면 이길/비길/질 확률, 한 장 더 받으면, 딜러 버스트·최종 점수. 결과를 정해 주지는 않는다
+// ---------- 남은 카드 창 (운영자 요청 2026-11-18: 자세한 승률 대신 덱에 남은 카드 위주로) ----------
+// 다음 카드가 무엇일지 칸 10개로. 내 차례면 받으면 버스트하는 칸은 빨강, 21이 되는 칸은 금색. 결과를 정해 주지는 않는다
 let oddsOpen = (() => { const v = store.get('odds'); return v ? v === 'open' : innerWidth > 600 })() // 처음엔 넓은 화면만 펼침
 const pctTxt = p => !p ? '0%' : p >= 0.9995 ? '100%' : p < 0.005 ? '<1%' : Math.round(p * 100) + '%'
 function drawOdds() {
   const box = $('odds'), S = state, my = mySeat()
   if (busy() && box.innerHTML) return // 카드가 놓이는 중엔 그대로 (새 카드 결과가 미리 보이지 않게)
-  box.hidden = !game?.me || !my
+  box.hidden = !game?.me || !S
   if (box.hidden) return
-  const live = S.phase === 'play' && my.inRound && !my.done && S.dealer[0]
-  let o = null
-  if (live) {
-    const visible = [...S.dealer, ...S.seats.flatMap(s => s ? s.hands.flatMap(h => h.cards) : [])]
-    o = handOdds(my.hands[my.active].cards, S.dealer[0], visible)
-  }
+  const live = S.phase === 'play' && my?.inRound && !my.done
+  const visible = [...S.dealer, ...S.seats.flatMap(s => s ? s.hands.flatMap(h => h.cards) : [])]
+  const n = nextCard(visible, live ? my.hands[my.active].cards : null)
+  const left = S.shoe?.left ?? 0, toCut = Math.max(0, left - (S.shoe?.cut ?? 0))
   const head = `<button type="button" class="bj-odds-head" id="oddsToggle" aria-expanded="${oddsOpen}">
-      <span>확률</span>
-      <span class="eq">${o ? `멈추면 이길 확률 <b>${pctTxt(o.stand.win)}</b>` : '<em>내 차례에 계산해요</em>'}</span>
+      <span>남은 카드</span>
+      <span class="eq">${live ? `히트하면 버스트 <b class="${n.bust >= 0.5 ? 'hi' : ''}">${pctTxt(n.bust)}</b>` : `슈에 <b class="n">${fmt(left)}장</b>`}</span>
       <span class="caret" aria-hidden="true">${oddsOpen ? '▾' : '▸'}</span>
     </button>`
   let body = ''
-  if (oddsOpen && o) {
-    const row = (name, p, sub = '', cls = '') => `<div class="bj-odds-row ${cls}"><span class="nm">${name}${sub ? `<small>${sub}</small>` : ''}</span>
-      <span class="bar"><i style="width:${(p * 100).toFixed(1)}%"></i></span><span class="pc">${pctTxt(p)}</span></div>`
-    const d = o.dealer
-    body = `<div class="bj-odds-rows">
-        ${row(`멈추면 이김 (${o.total})`, o.stand.win, `비김 ${pctTxt(o.stand.push)} · 짐 ${pctTxt(o.stand.lose)}`)}
-        ${row('한 장 받고 멈추면 이김', o.one.win, `비김 ${pctTxt(o.one.push)}`)}
-        ${row('한 장 받으면 버스트', o.one.bust, '', 'bad')}
-        ${row('딜러 버스트', d.bust, '', 'dealer')}
+  if (oddsOpen) {
+    const max = Math.max(...n.buckets.map(b => b.p))
+    body = `<div class="bj-deck" role="img" aria-label="다음 카드 확률">${n.buckets.map(b => `
+        <span class="bj-deck-col${b.bust ? ' bust' : b.is21 ? ' t21' : ''}">
+          <em>${pctTxt(b.p)}</em><i style="height:${Math.max(6, b.p / max * 100)}%"></i><b>${b.label}</b>
+        </span>`).join('')}
       </div>
-      <div class="bj-odds-dealer" aria-label="딜러 최종 점수 확률">
-        <span class="lbl">딜러 최종</span>
-        ${[17, 18, 19, 20, 21].map(t => `<span><b>${t}</b>${pctTxt(d[t])}</span>`).join('')}
-        <span class="bust"><b>버스트</b>${pctTxt(d.bust)}</span>
-      </div>
-      <p class="bj-odds-note">6덱에서 이번 판에 보이는 카드를 뺀 추정치 · 딜러의 뒤집힌 카드는 모른다고 봐요</p>`
+      <p class="bj-odds-note">${live ? '<span class="k bust"></span>받으면 버스트 <span class="k t21"></span>21이 돼요 · ' : ''}다음 카드 확률 · 다시 섞기까지 ${fmt(toCut)}장<br>이번 판에 보이는 카드만 빼고 계산해요 (지난 판 카드는 세지 않아요)</p>`
   }
   box.innerHTML = head + body
   $('oddsToggle').onclick = () => { oddsOpen = !oddsOpen; store.set('odds', oddsOpen ? 'open' : 'closed'); drawOdds() }
