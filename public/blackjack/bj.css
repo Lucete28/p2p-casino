@@ -1,35 +1,36 @@
 /* 블랙잭 화면. 색은 shared/casino.css 변수 (블랙 & 골드 + 초록 펠트) */
 body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, var(--c-bg) 100%) fixed; }
-.bj { --cw: 70px; max-width: 760px; margin: 0 auto; padding: 16px 16px 48px; }
+.bj { --cw: 66px; --cw-mini: 36px; max-width: 780px; margin: 0 auto; padding: 16px 16px 48px; }
+:root { --back: repeating-linear-gradient(45deg, #9d1520 0 4px, #b81c28 4px 8px); --plus: #6ee7a0; --minus: #ff8a8a; }
 
 /* ---------- 테이블 ---------- */
 .bj-table {
   position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px;
-  min-height: calc(var(--cw) * 5.4); padding: 18px 16px 22px; overflow: hidden;
-  border-radius: 22px 22px 50% 50% / 22px 22px 26% 26%;
+  padding: 16px 12px 20px; overflow: hidden;
+  border-radius: 22px 22px 50% 50% / 22px 22px 22% 22%;
   background:
     radial-gradient(120% 90% at 50% 30%, rgba(255,255,255,.08), transparent 60%),
     radial-gradient(circle at 50% 40%, #16744d 0%, var(--c-felt) 55%, #093824 100%);
   border: 10px solid #3a2410;
   box-shadow: inset 0 0 0 2px var(--c-gold-2), inset 0 0 40px rgba(0,0,0,.55), 0 0 0 2px #1a0f06, 0 24px 50px -18px rgba(0,0,0,.9), 0 0 70px -30px rgba(232,194,106,.35);
 }
-.bj-table::before { /* 펠트 위 금색 안쪽 줄 */
-  content: ""; position: absolute; inset: 10px; pointer-events: none;
-  border-radius: 14px 14px 50% 50% / 14px 14px 26% 26%; border: 1.5px solid var(--c-felt-line); opacity: .55;
-}
+.bj-table::before { content: ""; position: absolute; inset: 10px; pointer-events: none;
+  border-radius: 14px 14px 50% 50% / 14px 14px 22% 22%; border: 1.5px solid var(--c-felt-line); opacity: .55; }
+.bj-tableno { position: absolute; z-index: 2; left: 18px; top: 16px; font-size: 12px; font-weight: 700; color: rgba(232,200,120,.6); letter-spacing: .06em; }
 .bj-zone { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; width: 100%; }
 .bj-label { display: flex; align-items: center; gap: 8px; height: 26px; font-size: 13px; font-weight: 700; color: rgba(245,239,224,.72); letter-spacing: .08em; }
-.bj-total { min-width: 32px; height: 26px; padding: 0 9px; border-radius: 13px; display: inline-grid; place-items: center;
-  background: rgba(0,0,0,.55); border: 1px solid var(--c-line); color: var(--c-ink); font-size: 15px; font-weight: 800; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.bj-total { min-width: 30px; height: 24px; padding: 0 8px; border-radius: 12px; display: inline-grid; place-items: center; white-space: nowrap;
+  background: rgba(0,0,0,.6); border: 1px solid var(--c-line); color: var(--c-ink); font-size: 14px; font-weight: 800; letter-spacing: 0; font-variant-numeric: tabular-nums; }
 .bj-total.bust { background: #6d0c12; border-color: #ff6b6b; }
 .bj-total.bj21 { background: linear-gradient(180deg, #ffe39b, #c99a3c); color: #2a1a03; border-color: #fff1c8; }
 
-.bj-felt-text { width: min(440px, 92%); height: auto; margin: -2px 0 -24px; overflow: visible; pointer-events: none; }
+.bj-felt-text { width: min(420px, 90%); height: auto; margin: -2px 0 -24px; overflow: visible; pointer-events: none; }
 .bj-felt-text text { fill: rgba(232,200,120,.62); font: 800 19px "Pretendard", sans-serif; letter-spacing: .28em; }
 .bj-felt-rule { margin: 0; font-size: 12px; color: rgba(232,200,120,.55); letter-spacing: .04em; text-align: center; }
-.bj-center { position: relative; z-index: 2; min-height: 30px; display: grid; place-items: center; }
-.bj-center span { padding: 5px 14px; border-radius: 16px; background: rgba(0,0,0,.5); color: var(--c-gold); font-size: 13px; font-weight: 700; animation: bj-fade 1.8s ease-out forwards; }
-@keyframes bj-fade { 0% { opacity: 0; transform: translateY(6px); } 15%, 75% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+/* 가운데 안내: 베팅 마감 카운트다운 등 */
+.bj-center { position: relative; z-index: 2; min-height: 34px; display: grid; place-items: center; }
+.bj-center span { padding: 5px 14px; border-radius: 16px; background: rgba(0,0,0,.55); color: var(--c-gold); font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.bj-center span.hurry { color: #ffb4a8; }
 
 /* 슈 */
 .bj-shoe { position: absolute; z-index: 2; right: 18px; top: 16px; width: 56px; }
@@ -42,11 +43,10 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
 .bj-shoe-bar span.low { background: #ff8a5a; }
 
 /* ---------- 카드 ---------- */
-:root { --back: repeating-linear-gradient(45deg, #9d1520 0 4px, #b81c28 4px 8px); }
 .bj-cards { display: flex; justify-content: center; min-height: calc(var(--cw) * 1.4); padding: 0 4px; }
 .card { position: relative; flex: none; width: var(--cw); height: calc(var(--cw) * 1.4); perspective: 600px; }
 .bj-dealer .card + .card { margin-left: calc(var(--cw) * -0.32); }
-.bj-hand .card + .card { margin-left: calc(var(--cw) * -0.6); }
+.bj-hand .card + .card { margin-left: calc(var(--cw) * -0.55); }
 .card-in { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform .45s cubic-bezier(.3,.7,.3,1); }
 .card.down .card-in { transform: rotateY(180deg); }
 .card-face, .card-back { position: absolute; inset: 0; border-radius: calc(var(--cw) * .09); backface-visibility: hidden; -webkit-backface-visibility: hidden;
@@ -65,54 +65,104 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
 .card.dbl { margin-top: calc(var(--cw) * .2); transform: rotate(90deg) translateY(calc(var(--cw) * .1)); }
 .bj-hand .card.dbl { margin-left: calc(var(--cw) * -0.12); }
 .card.win .card-face { box-shadow: 0 0 0 2px #ffe39b, 0 0 14px rgba(255,214,120,.7); }
+.card.lost { filter: brightness(.6) saturate(.6); transition: filter .4s; }
 
-/* ---------- 내 손 ---------- */
-.bj-player { margin-top: auto; }
-.bj-hands { display: flex; justify-content: center; align-items: flex-end; gap: calc(var(--cw) * .35); min-height: calc(var(--cw) * 1.4 + 52px); }
-.bj-hand { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px 8px 4px; border-radius: 14px; transition: background .2s, box-shadow .2s, opacity .2s; }
+/* ---------- 자리 (나 + 다른 사람) ---------- */
+.bj-seat { position: relative; display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.bj-seat-hands { display: flex; justify-content: center; align-items: flex-end; gap: calc(var(--cw) * .3); min-height: calc(var(--cw) * 1.4 + 30px); }
+.bj-hand { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 6px 2px; border-radius: 12px; transition: background .2s, box-shadow .2s, opacity .2s; }
 .bj-hand.active { background: rgba(255,226,150,.1); box-shadow: 0 0 0 2px rgba(232,194,106,.8), 0 0 20px rgba(232,194,106,.3); }
-.bj-hand.waiting { opacity: .6; }
+.bj-hand.waiting { opacity: .55; }
 .bj-hand .bj-cards { min-height: calc(var(--cw) * 1.4); }
-.bj-hand-bet { display: flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 700; color: var(--c-ink); font-variant-numeric: tabular-nums; }
-.bj-tag { position: absolute; z-index: 3; left: 50%; top: 64%; transform: translate(-50%, -50%) rotate(-6deg); padding: 5px 12px; border-radius: 10px; white-space: nowrap;
-  font-size: 16px; font-weight: 900; letter-spacing: .02em; background: #1a1512; border: 2px solid var(--c-gold); color: var(--c-gold);
+.bj-hand-bet { display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; color: var(--c-ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bj-hand-bet small { color: var(--c-gold); }
+.bj-seat-info { display: flex; align-items: center; gap: 6px; max-width: 100%; margin-top: 4px; font-size: 13px; }
+.bj-avatar { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 800; color: #1a1205; background: var(--c-gold); }
+.bj-seat-name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bj-seat-status { font-size: 12px; font-weight: 600; color: rgba(245,239,224,.75); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bj-seat-status.ready { color: #8ff0b6; }
+.bj-seat-status.think { color: #ffe39b; }
+.bj-seat.away { opacity: .5; }
+
+/* 다른 사람: 작은 카드, 한 줄 */
+.bj-others { position: relative; z-index: 1; display: flex; justify-content: center; gap: 6px; width: 100%; margin: 4px 0 2px; }
+.bj-others .bj-seat { --cw: var(--cw-mini); flex: 1 1 0; max-width: 150px; padding: 6px 4px 4px; border-radius: 14px; background: rgba(0,0,0,.14); }
+.bj-others .bj-seat-hands { min-height: calc(var(--cw) * 1.4 + 26px); }
+.bj-others .bj-hand { padding: 2px 3px 0; }
+.bj-others .bj-total { height: 20px; min-width: 24px; font-size: 12px; padding: 0 6px; }
+.bj-others .bj-seat-info { font-size: 12px; flex-wrap: wrap; justify-content: center; row-gap: 0; }
+.bj-others .bj-seat-status { flex-basis: 100%; text-align: center; min-height: 16px; }
+.bj-mine .bj-seat-status:not(:empty)::before { content: "· "; color: var(--c-muted); }
+.bj-others .bj-avatar { width: 18px; height: 18px; font-size: 10px; }
+.bj-seat.empty { justify-content: center; border: 1.5px dashed rgba(232,200,120,.28); background: transparent; color: rgba(232,200,120,.45); font-size: 12px; min-height: 80px; }
+
+/* 내 자리 */
+.bj-mine { margin-top: 6px; }
+.bj-mine .bj-seat { width: 100%; }
+.bj-mine .bj-seat-info { font-size: 14px; }
+
+/* 결과 도장 (손마다) */
+.bj-tag { position: absolute; z-index: 3; left: 50%; top: 58%; transform: translate(-50%, -50%) rotate(-6deg); padding: 4px 10px; border-radius: 10px; white-space: nowrap;
+  font-size: 15px; font-weight: 900; background: #1a1512; border: 2px solid var(--c-gold); color: var(--c-gold);
   box-shadow: 0 6px 16px rgba(0,0,0,.5); animation: bj-pop .35s cubic-bezier(.2,1.6,.4,1); }
+.bj-others .bj-tag { font-size: 11px; padding: 2px 6px; border-width: 1.5px; }
 .bj-tag.win { background: #0c4a2c; border-color: #4ade80; color: #d7ffe6; }
-.bj-tag.blackjack { background: linear-gradient(180deg, #ffe39b, #c99a3c); color: #2a1a03; border-color: #fff1c8; font-size: 18px; }
+.bj-tag.blackjack { background: linear-gradient(180deg, #ffe39b, #c99a3c); color: #2a1a03; border-color: #fff1c8; }
 .bj-tag.lose, .bj-tag.bust { background: #3a0a0e; border-color: #ff6b6b; color: #ffd0d0; }
 .bj-tag.push { background: #23201a; border-color: #bdb39c; color: #efe7d4; }
 @keyframes bj-pop { from { transform: translate(-50%, -50%) scale(.3); opacity: 0; } }
 
+/* 번 칩·잃은 칩이 떠오름 */
+.bj-float { position: absolute; z-index: 4; left: 50%; top: 18%; transform: translate(-50%, 0); pointer-events: none; white-space: nowrap;
+  font-size: 30px; font-weight: 900; font-variant-numeric: tabular-nums; text-shadow: 0 2px 10px rgba(0,0,0,.8); opacity: 0; }
+.bj-others .bj-float { font-size: 17px; top: 8%; }
+.bj-float.show { animation: bj-float 2.6s ease-out forwards; }
+.bj-float.plus { color: var(--plus); } .bj-float.minus { color: var(--minus); } .bj-float.even { color: #e8e1cf; }
+@keyframes bj-float { 0% { opacity: 0; transform: translate(-50%, 18px) scale(.6); } 12% { opacity: 1; transform: translate(-50%, 0) scale(1.15); } 22% { transform: translate(-50%, 0) scale(1); } 80% { opacity: 1; } 100% { opacity: .9; transform: translate(-50%, -6px); } }
+
 /* 베팅 자리: 동그라미 + 칩 더미 */
-.bj-spot { position: relative; display: grid; place-items: center; width: 84px; height: 84px; margin-top: 4px; border-radius: 50%;
-  border: 2px dashed rgba(232,200,120,.55); background: rgba(0,0,0,.12); }
-.bj-spot.hide { display: none; }
-.bj-spot-amt { position: absolute; bottom: -10px; padding: 1px 9px; border-radius: 10px; background: rgba(0,0,0,.7); font-size: 13px; color: var(--c-gold); font-variant-numeric: tabular-nums; }
+.bj-spot { position: relative; display: grid; place-items: center; width: 84px; height: 84px; margin: 4px 0 6px; border-radius: 50%;
+  border: 2px dashed rgba(232,200,120,.55); background: rgba(0,0,0,.12); transition: border-color .2s, box-shadow .2s; }
+.bj-spot.ready { border-style: solid; border-color: #8ff0b6; box-shadow: 0 0 0 3px rgba(74,222,128,.25), 0 0 18px rgba(74,222,128,.35); }
+.bj-spot-amt { position: absolute; bottom: -10px; padding: 1px 9px; border-radius: 10px; background: rgba(0,0,0,.75); font-size: 13px; font-weight: 700; color: var(--c-gold); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bj-spot-amt:empty { display: none; }
 .bj-stack { position: relative; width: 44px; height: 44px; }
 .bj-stack i { position: absolute; left: 0; bottom: 0; width: 44px; height: 44px; }
 .chip { display: block; width: 100%; height: 100%; border-radius: 50%; background: var(--chip, #2a63c4);
   box-shadow: inset 0 0 0 4px var(--chip), inset 0 0 0 7px rgba(255,255,255,.95), inset 0 0 0 9px var(--chip), 0 2px 0 rgba(0,0,0,.45);
-  background-image: repeating-conic-gradient(rgba(255,255,255,.9) 0 12deg, transparent 12deg 45deg);
-  position: relative; }
+  background-image: repeating-conic-gradient(rgba(255,255,255,.9) 0 12deg, transparent 12deg 45deg); position: relative; }
 .chip::after { content: ""; position: absolute; inset: 22%; border-radius: 50%; background: var(--chip); box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.6); }
-.bj-hand-bet .chip { width: 18px; height: 18px; box-shadow: inset 0 0 0 2px var(--chip), inset 0 0 0 3.5px #fff; background-image: none; }
+.bj-hand-bet .chip, .bj-mini-chip { width: 16px; height: 16px; box-shadow: inset 0 0 0 2px var(--chip), inset 0 0 0 3.5px #fff; background-image: none; }
 .bj-hand-bet .chip::after { display: none; }
+.bj-fly { position: fixed; z-index: 70; width: 30px; height: 30px; pointer-events: none; }
 
 /* ---------- 아래 조작판 ---------- */
 .bj-panel { margin-top: 14px; padding: 14px; border-radius: 18px; background: linear-gradient(180deg, #17140f, #0e0c09); border: 1px solid var(--c-line); }
-.bj-result { margin-bottom: 12px; padding: 10px 14px; border-radius: 12px; background: #060504; border: 1px solid #2d2617; box-shadow: inset 0 0 18px rgba(0,0,0,.9); }
-.bj-result-main { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-height: 30px; }
-.bj-result-title { font-size: 18px; font-weight: 800; }
-.bj-result-amt { font-size: 22px; font-weight: 900; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.bj-result-amt.plus { color: #6ee7a0; } .bj-result-amt.minus { color: #ff8a8a; } .bj-result-amt.even { color: var(--c-muted); }
-.bj-result-sub { margin: 2px 0 0; font-size: 13px; color: var(--c-muted); min-height: 18px; }
-.bj-result.big .bj-result-title { color: #ffe39b; text-shadow: 0 0 14px rgba(255,200,90,.6); }
+
+/* 돈판: 건 칩 → 받은 칩 = 이득/손해 */
+.bj-money { margin-bottom: 12px; padding: 10px 12px 10px; border-radius: 14px; background: #060504; border: 1px solid #2d2617; box-shadow: inset 0 0 18px rgba(0,0,0,.9); }
+.bj-money-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.bj-money-head b { font-size: 17px; font-weight: 800; }
+.bj-session { font-size: 12.5px; color: var(--c-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bj-session b { font-size: 13px; }
+.bj-money-row { display: grid; grid-template-columns: 1fr auto 1fr auto 1.15fr; align-items: stretch; gap: 6px; }
+.bj-cell { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; padding: 6px 8px; border-radius: 10px; background: var(--c-panel-2); border: 1px solid rgba(255,255,255,.06); text-align: center; }
+.bj-cell small { font-size: 11.5px; color: var(--c-muted); white-space: nowrap; }
+.bj-cell b { font-size: 19px; font-weight: 900; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bj-cell.net { border-width: 1.5px; }
+.bj-cell.net.plus { background: rgba(74,222,128,.12); border-color: rgba(110,231,160,.6); } .bj-cell.net.plus b { color: var(--plus); }
+.bj-cell.net.minus { background: rgba(255,107,107,.1); border-color: rgba(255,138,138,.55); } .bj-cell.net.minus b { color: var(--minus); }
+.bj-cell.net.even b { color: var(--c-ink); }
+.bj-cell.dim b { color: var(--c-muted); }
+.bj-op { display: grid; place-items: center; font-style: normal; font-weight: 800; color: var(--c-muted); }
+.bj-money-sub { margin: 7px 0 0; font-size: 12.5px; color: var(--c-muted); min-height: 17px; }
+.bj-money.big { border-color: var(--c-gold-2); box-shadow: inset 0 0 18px rgba(0,0,0,.9), 0 0 20px rgba(232,194,106,.25); }
+.bj-money.big .bj-money-head b { color: #ffe39b; }
+.plus-t { color: var(--plus); } .minus-t { color: var(--minus); }
 
 /* 칩 버튼 */
 .bj-chips { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; justify-items: center; }
-.bj-chip { --chip: #2a63c4; position: relative; width: 100%; max-width: 64px; aspect-ratio: 1; padding: 0; border: 0; border-radius: 50%; cursor: pointer; background: none;
-  transition: transform .12s; }
+.bj-chip { --chip: #2a63c4; position: relative; width: 100%; max-width: 60px; aspect-ratio: 1; padding: 0; border: 0; border-radius: 50%; cursor: pointer; background: none; transition: transform .12s; }
 .bj-chip .chip { box-shadow: inset 0 0 0 4px var(--chip), inset 0 0 0 7px rgba(255,255,255,.95), inset 0 0 0 9px var(--chip), 0 3px 0 rgba(0,0,0,.6), 0 6px 12px rgba(0,0,0,.4); }
 .bj-chip b { position: absolute; inset: 0; z-index: 1; display: grid; place-items: center; font-size: clamp(11px, 3.2vw, 14px); font-weight: 900; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.7); }
 .bj-chip:hover:not([disabled]) { transform: translateY(-3px); }
@@ -124,11 +174,12 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
 .bj-small:hover:not([disabled]) { border-color: var(--c-gold); }
 .bj-small[disabled] { opacity: .4; cursor: default; }
 .bj-deal { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; height: 58px; border: 0; border-radius: 16px; cursor: pointer;
-  font: 900 22px "Pretendard", sans-serif; color: #1a1205; letter-spacing: .06em;
+  font: 900 21px "Pretendard", sans-serif; color: #1a1205; letter-spacing: .02em;
   background: linear-gradient(180deg, #ffe39b, var(--c-gold) 45%, #b8913f); box-shadow: 0 4px 0 #6d5320, 0 10px 24px -8px rgba(232,194,106,.6); }
-.bj-deal small { font-size: 15px; font-weight: 700; letter-spacing: 0; opacity: .8; font-variant-numeric: tabular-nums; }
+.bj-deal small { font-size: 15px; font-weight: 700; opacity: .8; font-variant-numeric: tabular-nums; }
 .bj-deal:active:not([disabled]) { transform: translateY(3px); box-shadow: 0 1px 0 #6d5320; }
-.bj-deal[disabled] { filter: grayscale(.6); opacity: .5; cursor: default; }
+.bj-deal[disabled] { filter: grayscale(.7); opacity: .5; cursor: default; }
+.bj-deal.cancel { background: transparent; color: var(--c-ink); border: 1.5px solid rgba(245,239,224,.3); box-shadow: none; font-size: 18px; }
 .bj-deal.short { background: linear-gradient(180deg, #5a4a33, #3a2f20); color: var(--c-ink); box-shadow: 0 4px 0 #1d170f; }
 
 /* 행동 버튼 */
@@ -148,17 +199,10 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
 .bj-btn.split { background: linear-gradient(180deg, #4b7fd6, #284f96); }
 .bj-btn:active:not([disabled]) { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,.55); }
 .bj-btn[disabled] { filter: grayscale(1) brightness(.55); cursor: default; box-shadow: none; }
-.bj-btn.advice::after { content: "추천"; position: absolute; top: -9px; right: -4px; padding: 2px 7px; border-radius: 9px; font-size: 11px; font-weight: 900;
-  color: #2a1a03; background: linear-gradient(180deg, #fff1c8, #e8c26a); box-shadow: 0 2px 6px rgba(0,0,0,.5); animation: bj-bob 1s ease-in-out infinite alternate; }
-.bj-btn.advice { box-shadow: 0 4px 0 rgba(0,0,0,.55), 0 0 0 2px #ffe39b, 0 0 16px rgba(255,214,120,.55); }
-@keyframes bj-bob { to { transform: translateY(-3px); } }
-.bj-act.wait .bj-btn { pointer-events: none; }
 
 .bj-tools { display: flex; justify-content: center; gap: 8px; margin-top: 12px; }
 .bj-tool { height: 44px; padding: 0 14px; border-radius: 22px; border: 1px solid var(--c-line); background: transparent; color: var(--c-muted); font: 600 13px "Pretendard", sans-serif; cursor: pointer; }
 .bj-tool[aria-pressed="true"] { color: var(--c-gold); border-color: rgba(232,194,106,.55); background: rgba(232,194,106,.07); }
-.bj-tool[aria-pressed="false"] { text-decoration: line-through; text-decoration-thickness: 1px; }
-#help { text-decoration: none; }
 
 /* 하는 법 */
 .bj-help { width: min(440px, calc(100vw - 48px)); }
@@ -172,9 +216,9 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
 .bj-help-grid p { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--c-ink); }
 .bj-help-note { font-size: 12.5px !important; }
 
-/* ---------- 넓은 화면: 조작판을 테이블 옆에 (스크롤 없이 한 화면) ---------- */
+/* ---------- 넓은 화면: 조작판을 테이블 옆에 ---------- */
 @media (min-width: 1080px) {
-  .bj { max-width: 1200px; display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; align-items: start; }
+  .bj { --cw: 72px; --cw-mini: 40px; max-width: 1240px; display: grid; grid-template-columns: minmax(0, 1fr) 370px; gap: 18px; align-items: start; }
   .bj-panel { position: sticky; top: 72px; margin-top: 0; }
   .bj-chips { grid-template-columns: repeat(3, 1fr); }
   .bj-act-grid { grid-template-columns: 1fr 1fr; }
@@ -182,19 +226,36 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
 
 /* ---------- 휴대폰 ---------- */
 @media (max-width: 600px) {
-  .bj { --cw: 52px; padding: 10px 10px 32px; }
-  .bj-table { padding: 14px 8px 18px; border-width: 7px; border-radius: 18px 18px 50% 50% / 18px 18px 18% 18%; }
-  .bj-table::before { border-radius: 12px 12px 50% 50% / 12px 12px 18% 18%; }
+  .bj { --cw: 50px; --cw-mini: 30px; padding: 10px 10px 32px; }
+  .bj-table { padding: 12px 6px 16px; border-width: 7px; border-radius: 18px 18px 50% 50% / 18px 18px 14% 14%; }
+  .bj-table::before { border-radius: 12px 12px 50% 50% / 12px 12px 14% 14%; }
+  .bj-tableno { left: 12px; top: 10px; }
   .bj-shoe { right: 10px; top: 10px; width: 42px; }
   .bj-shoe-box { height: 36px; } .bj-shoe-box i { height: 18px; left: 6px; right: 6px; }
-  .bj-felt-text text { font-size: 22px; }
-  .bj-felt-rule { font-size: 11px; }
+  .bj-felt-text { display: none; } /* 좁으면 장식 글자는 빼고 규칙 한 줄만 (카드·버튼이 한 화면에 들어오게) */
+  .bj-felt-rule { font-size: 11px; margin-top: 2px; }
+  .bj-center { min-height: 28px; }
+  .bj-panel:has(#actBox:not([hidden])) .bj-tools { display: none; } /* 내 차례에는 아래 도구를 숨겨 행동 버튼이 화면 안에 */
+  .bj-others { gap: 4px; }
+  .bj-others .bj-seat { padding: 4px 2px 3px; }
+  .bj-others .bj-seat-info { font-size: 11px; gap: 3px; }
+  .bj-others .bj-avatar { display: none; }
+  .bj-others .bj-seat-status, .bj-others .bj-hand-bet { font-size: 10.5px; }
+  .bj-others .bj-total { font-size: 11px; height: 18px; padding: 0 4px; min-width: 20px; }
+  .bj-seat.empty { min-height: 54px; font-size: 11px; }
+  .bj-others .bj-seat-hands { min-height: calc(var(--cw) * 1.4 + 22px); }
   .bj-spot { width: 70px; height: 70px; } .bj-stack, .bj-stack i { width: 38px; height: 38px; }
-  .bj-tag { font-size: 14px; padding: 4px 9px; } .bj-tag.blackjack { font-size: 15px; }
-  .bj-panel { padding: 12px; }
+  .bj-tag { font-size: 13px; padding: 3px 8px; }
+  .bj-float { font-size: 26px; }
+  .bj-others .bj-float { font-size: 13px; }
+  .bj-panel { padding: 10px; margin-top: 10px; }
+  .bj-money { margin-bottom: 8px; padding: 8px 10px; } .bj-money-head { margin-bottom: 6px; } .bj-money-head b { font-size: 16px; }
+  .bj-timer { margin-bottom: 8px; }
+  .bj-cell { padding: 5px 4px; } .bj-cell b { font-size: 16px; } .bj-cell small { font-size: 10.5px; }
+  .bj-money-row { gap: 4px; }
   .bj-chips { gap: 6px; }
   .bj-btn { height: 66px; } .bj-btn b { font-size: 17px; } .bj-btn small { font-size: 10.5px; }
   .bj-act-grid { gap: 6px; }
 }
-@media (max-width: 360px) { .bj { --cw: 46px; } .bj-btn small { display: none; } }
-@media (prefers-reduced-motion: reduce) { .card-in { transition: none; } .bj-btn.advice::after { animation: none; } }
+@media (max-width: 360px) { .bj { --cw: 44px; --cw-mini: 26px; } .bj-btn small { display: none; } }
+@media (prefers-reduced-motion: reduce) { .card-in { transition: none; } .bj-float.show { animation: none; opacity: 1; } }
