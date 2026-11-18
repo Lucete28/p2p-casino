@@ -257,6 +257,7 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
 .bj-deck-col.t21 b { background: #ffe39b; }
 .bj-odds-note .k { display: inline-block; width: 9px; height: 9px; margin: 0 3px 0 0; border-radius: 2px; vertical-align: -1px; }
 .bj-odds-note .k.bust { background: #ff6b6b; } .bj-odds-note .k.t21 { background: var(--c-gold); margin-left: 6px; }
+.bj-odds-pad { height: 10px; }
 .bj-odds-note { margin: 6px 12px 10px; font-size: 11px; color: var(--c-muted); }
 
 /* 칩 버튼 */
