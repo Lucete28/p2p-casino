@@ -1,10 +1,13 @@
-// 블랙잭 화면. 카드·결과는 서버가 정하고(state 메시지), 여기서는 받은 카드를 순서대로 놓아 보여 주기만 한다.
-// 딜러의 숨긴 카드는 판이 끝나야 서버가 보내 준다. 칩 숫자는 서버가 연출 시간(rules.mjs의 *_MS)만큼 늦게 정산한 값.
+// 블랙잭 화면 (여러 명 테이블). 판은 서버(딜러)가 돌리고, 여기서는 받은 state를 순서대로 연출해 보여 주기만 한다.
+// 딜러의 숨긴 카드는 딜러 차례가 되어야 서버가 보내 준다. 칩 숫자는 서버가 연출 시간(rules.mjs의 *_MS)만큼 늦게 정산한 값.
+// 돈은 '건 칩 → 받은 칩 = 이득/손해' 세 칸으로 보여 준다 (운영자 요청 2026-11-18)
 import { startGame } from '../shared/casino.js'
-import { score, isNatural, advise, DEAL_MS, HIT_MS, DEALER_MS, RESULT_MS } from './rules.mjs'
+import { score, isNatural, SEATS, DEAL_MS, HIT_MS, DEALER_MS, RESULT_MS, TURN_MS } from './rules.mjs'
 
 const $ = id => document.getElementById(id)
 const fmt = n => Number(n || 0).toLocaleString('ko-KR')
+const sign = n => n > 0 ? `+${fmt(n)}` : n < 0 ? `−${fmt(-n)}` : '±0'
+const tone3 = n => n > 0 ? 'plus' : n < 0 ? 'minus' : 'even'
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
 const store = { // localStorage 키는 casino:blackjack: 로 시작
@@ -56,6 +59,7 @@ const sfx = {
   win(big) { (big ? [659, 784, 988, 1319, 1568] : [659, 880, 1175]).forEach((f, i) => tone(f, i * 0.08, 0.18, 'triangle', 0.07)) },
   lose() { tone(294, 0, 0.14, 'triangle', 0.06); tone(220, 0.13, 0.24, 'triangle', 0.06) },
   push() { tone(523, 0, 0.12, 'triangle', 0.05); tone(523, 0.12, 0.12, 'triangle', 0.04) },
+  turn() { tone(880, 0, 0.08, 'sine', 0.05); tone(1175, 0.08, 0.1, 'sine', 0.05) },
 }
 function paintSound() { $('sound').setAttribute('aria-pressed', String(soundOn)); $('sound').textContent = soundOn ? '소리 켬' : '소리 끔' }
 $('sound').onclick = () => { soundOn = !soundOn; store.set('sound', soundOn ? '1' : '0'); paintSound(); if (soundOn) sfx.chip() }
@@ -80,50 +84,97 @@ function faceUp(e, c, now) {
   e.setAttribute('aria-label', `${SUIT_NAME[s]} ${RANK(r)}`)
   if (now) e.classList.remove('down')
 }
-// 슈에서 날아오는 연출 (Web Animations). 앞면 카드는 날아오는 도중에 뒤집힌다
-function flyIn(e) {
-  if (reduced) return
+// 슈에서 날아오는 연출. 앞면 카드는 날아오는 도중에 뒤집힌다
+function flyIn(e, ms) {
+  if (reduced || ms < 80) return
   const from = $('shoe').getBoundingClientRect(), to = e.getBoundingClientRect()
   const dx = from.left + from.width / 2 - (to.left + to.width / 2), dy = from.top + from.height / 2 - (to.top + to.height / 2)
   const end = getComputedStyle(e).transform
   e.animate([{ transform: `translate(${dx}px, ${dy}px) rotate(-30deg) scale(.55)`, opacity: 0.4 }, { transform: end === 'none' ? 'none' : end, opacity: 1 }],
-    { duration: Math.min(320, DEAL_MS - 30), easing: 'cubic-bezier(.2,.7,.3,1)' })
+    { duration: Math.min(320, ms - 20), easing: 'cubic-bezier(.2,.7,.3,1)' })
 }
 async function place(box, c, ms, dbl) {
   const e = cardEl(null, dbl)
   box.append(e)
-  flyIn(e); sfx.card()
-  if (c) { faceUp(e, c); setTimeout(() => e.classList.remove('down'), reduced ? 0 : 110) }
+  flyIn(e, ms); if (ms >= 80) sfx.card()
+  if (c) { faceUp(e, c); setTimeout(() => e.classList.remove('down'), reduced || ms < 200 ? 0 : 110) }
   await sleep(reduced ? Math.min(ms, 120) : ms)
   return e
 }
-
-// ---------- 테이블 그리기 ----------
-// shown = 지금 화면에 놓인 카드 (서버 state와 비교해 새 카드만 연출)
-let shown = { dealer: [], hands: [] }
-const handBoxes = [] // [{ el, cards, total, bet }]
-function clearTable() {
-  $('dealerCards').innerHTML = ''; $('hands').innerHTML = ''; handBoxes.length = 0
-  shown = { dealer: [], hands: [] }
-  paintTotals()
+// 칩이 날아감 (이기면 딜러 → 나, 지면 나 → 딜러)
+function flyChips(fromEl, toEl, color, n = 4) {
+  if (reduced || !fromEl || !toEl) return
+  const a = fromEl.getBoundingClientRect(), b = toEl.getBoundingClientRect()
+  for (let k = 0; k < n; k++) {
+    const c = document.createElement('i')
+    c.className = 'bj-fly'; c.innerHTML = chipHtml(color)
+    c.style.left = (a.left + a.width / 2 - 15) + 'px'; c.style.top = (a.top + a.height / 2 - 15) + 'px'
+    document.body.append(c)
+    const dx = b.left + b.width / 2 - (a.left + a.width / 2) + (k - n / 2) * 8, dy = b.top + b.height / 2 - (a.top + a.height / 2)
+    c.animate([{ transform: 'translate(0,0) scale(.7)', opacity: 0 }, { opacity: 1, offset: 0.15 }, { transform: `translate(${dx}px, ${dy}px) scale(1)`, opacity: 1 }],
+      { duration: 650, delay: k * 70, easing: 'cubic-bezier(.3,.6,.3,1)', fill: 'forwards' }).finished.then(() => c.remove(), () => c.remove())
+  }
 }
-function addHand() {
+
+// ---------- 자리 ----------
+// seats: 자리 번호 → 화면 요소. 내 자리는 #mine(크게), 다른 사람은 #others(작게), 빈자리는 점선
+const seats = new Map()
+let shown = { dealer: [], seats: {} } // 지금 화면에 놓인 카드 (서버 state와 비교해 새 카드만 연출)
+function makeSeat(i, mine) {
+  const el = document.createElement('div')
+  el.className = 'bj-seat'
+  el.style.order = i
+  el.innerHTML = `<b class="bj-float"></b><div class="bj-seat-hands"></div>${mine ? '<div class="bj-spot"><div class="bj-stack"></div><b class="bj-spot-amt"></b></div>' : ''}
+    <div class="bj-seat-info"><span class="bj-avatar"></span><b class="bj-seat-name"></b><span class="bj-seat-status"></span></div>`
+  ;(mine ? $('mine') : $('others')).append(el)
+  const q = s => el.querySelector(s)
+  const e = { i, el, mine, empty: false, hands: [], handsBox: q('.bj-seat-hands'), name: q('.bj-seat-name'), avatar: q('.bj-avatar'), status: q('.bj-seat-status'),
+    float: q('.bj-float'), spot: q('.bj-spot'), spotStack: q('.bj-stack'), spotAmt: q('.bj-spot-amt') }
+  seats.set(i, e)
+  return e
+}
+function makeEmpty(i) {
+  const el = document.createElement('div')
+  el.className = 'bj-seat empty'; el.style.order = i; el.textContent = '빈자리'
+  $('others').append(el)
+  seats.set(i, { i, el, empty: true })
+}
+function dropSeat(i) { seats.get(i)?.el.remove(); seats.delete(i); delete shown.seats[i] }
+function syncSeats(S) {
+  for (let i = 0; i < SEATS; i++) {
+    const s = S.seats[i], e = seats.get(i)
+    if (!s) {
+      if (i === S.me) continue
+      if (!e || !e.empty) { dropSeat(i); makeEmpty(i) }
+      continue
+    }
+    if (!e || e.empty || e.mine !== s.me) { dropSeat(i); makeSeat(i, s.me) }
+  }
+}
+function addHand(e) {
   const el = document.createElement('div')
   el.className = 'bj-hand'
   el.innerHTML = '<b class="bj-total" hidden></b><div class="bj-cards"></div><div class="bj-hand-bet"></div>'
-  $('hands').append(el)
+  e.handsBox.append(el)
   const h = { el, cards: el.querySelector('.bj-cards'), total: el.querySelector('.bj-total'), bet: el.querySelector('.bj-hand-bet') }
-  handBoxes.push(h)
+  e.hands.push(h)
   return h
 }
+function clearCards() {
+  $('dealerCards').innerHTML = ''
+  for (const e of seats.values()) if (!e.empty) { e.handsBox.innerHTML = ''; e.hands = []; e.float.className = 'bj-float'; e.float.textContent = '' }
+  shown = { dealer: [], seats: {} }
+  paintTotals()
+}
+
 function totalText(cards, natural) {
   const s = score(cards)
   if (natural) return { t: '블랙잭', cls: 'bj21' }
   if (s.total > 21) return { t: `${s.total} 버스트`, cls: 'bust' }
-  return { t: s.soft && s.total < 21 ? `${s.total - 10} / ${s.total}` : String(s.total), cls: '' }
+  return { t: s.soft && s.total < 21 ? `${s.total - 10}/${s.total}` : String(s.total), cls: '' }
 }
 function paintTotal(el, cards, natural) {
-  const known = cards.filter(Boolean)
+  const known = (cards || []).filter(Boolean)
   el.hidden = !known.length
   if (!known.length) return
   const x = totalText(known, natural)
@@ -131,230 +182,334 @@ function paintTotal(el, cards, natural) {
 }
 function paintTotals() {
   paintTotal($('dealerTotal'), shown.dealer, shown.dealer.length === 2 && shown.dealer.every(Boolean) && isNatural(shown.dealer))
-  shown.hands.forEach((cards, i) => handBoxes[i] && paintTotal(handBoxes[i].total, cards, shown.hands.length === 1 && isNatural(cards)))
+  for (const [i, hands] of Object.entries(shown.seats)) {
+    const e = seats.get(Number(i)); if (!e || e.empty) continue
+    hands.forEach((cards, k) => e.hands[k] && paintTotal(e.hands[k].total, cards, hands.length === 1 && isNatural(cards)))
+  }
 }
-function paintHandMeta(s) {
-  s.hands.forEach((h, i) => {
-    const b = handBoxes[i]; if (!b) return
-    b.bet.innerHTML = `${chipHtml(stackOf(h.bet, 1)[0])}${fmt(h.bet)}${h.doubled ? ' <small>더블</small>' : ''}`
-    b.el.classList.toggle('active', s.phase === 'play' && s.hands.length > 1 && i === s.active)
-    b.el.classList.toggle('waiting', s.phase === 'play' && s.hands.length > 1 && i !== s.active)
-  })
+
+// 자리마다 이름·베팅·상태 글자
+const turnEnd = {} // 자리 → 행동 마감 (performance.now 기준)
+function paintMeta() {
+  const S = state; if (!S) return
+  const now = performance.now()
+  for (let i = 0; i < SEATS; i++) {
+    const s = S.seats[i], e = seats.get(i)
+    if (!s || !e || e.empty) continue
+    e.avatar.textContent = (s.name || '?').trim().slice(0, 1)
+    e.name.textContent = s.me ? '나' : s.name
+    e.el.classList.toggle('away', !s.online)
+    s.hands.forEach((h, k) => {
+      const hb = e.hands[k]; if (!hb) return
+      hb.bet.innerHTML = `${chipHtml(stackOf(h.bet, 1)[0])}${fmt(h.bet)}${h.doubled ? ' <small>더블</small>' : ''}`
+      hb.el.classList.toggle('active', S.phase === 'play' && s.hands.length > 1 && !s.done && k === s.active)
+      hb.el.classList.toggle('waiting', S.phase === 'play' && s.hands.length > 1 && !s.done && k !== s.active)
+    })
+    let text = '', cls = ''
+    if (S.phase === 'bet') {
+      if (s.ready) { text = `✓ ${fmt(s.bet)} 베팅`; cls = 'ready' } else text = s.me ? '칩을 골라 베팅해요' : '고르는 중'
+    } else if (!s.inRound) text = '구경 중'
+    else if (S.phase === 'play') {
+      if (s.done) text = s.me ? '딜러 차례를 기다려요' : '다 골랐어요'
+      else { const left = Math.max(0, Math.ceil(((turnEnd[i] ?? now) - now) / 1000)); text = s.me ? '' : `고르는 중 ${left}`; cls = 'think' }
+    } else if (revealed) text = `${sign(s.back - s.staked)}`
+    e.status.textContent = text; e.status.className = 'bj-seat-status' + (cls ? ' ' + cls : '')
+  }
+  paintSpot()
 }
-// 판 없이 그대로 그리기 (처음 접속·새로고침·두 번 누름 동기화)
-function renderStatic(s) {
-  clearTable()
-  s.dealer.forEach(c => $('dealerCards').append(cardEl(c)))
-  shown.dealer = [...s.dealer]
-  s.hands.forEach((h, i) => {
-    const b = addHand()
-    h.cards.forEach((c, j) => b.cards.append(cardEl(c, h.doubled && j === 2)))
-    shown.hands[i] = [...h.cards]
-  })
-  paintHandMeta(s); paintTotals()
-  if (s.phase === 'done') showResults(s, true)
-}
-function centerMsg(text) {
-  $('center').innerHTML = ''
-  const sp = document.createElement('span'); sp.textContent = text
-  $('center').append(sp)
+// 내 베팅 자리 (카드가 없을 때): 걸 칩 더미
+function paintSpot() {
+  const S = state, my = mySeat(), e = S && seats.get(S.me)
+  if (!e || e.empty || !e.spot) return
+  const show = !my?.hands.length
+  e.spot.hidden = !show
+  if (!show) return
+  const amount = my?.ready ? my.bet : bet
+  e.spot.classList.toggle('ready', !!my?.ready)
+  e.spotStack.innerHTML = stackOf(amount).map((c, k) => `<i style="bottom:${k * 4}px">${chipHtml(c)}</i>`).join('')
+  e.spotAmt.textContent = amount ? (my?.ready ? `✓ ${fmt(amount)}` : fmt(amount)) : ''
 }
 
 // ---------- 결과 ----------
 const TAG = { blackjack: '블랙잭!', win: '이김', lose: '짐', bust: '버스트', push: '비김' }
-function say(title, amt = '', sub = '', cls = '') {
-  $('resTitle').textContent = title
-  $('resAmt').textContent = amt
-  $('resAmt').className = 'bj-result-amt' + (cls ? ' ' + cls : '')
-  $('resSub').textContent = sub
-}
-function showResults(s, quiet) {
-  const dl = score(s.dealer).total, dealerBJ = isNatural(s.dealer)
-  s.hands.forEach((h, i) => {
-    const b = handBoxes[i]; if (!b || !h.result) return
-    b.el.querySelector('.bj-tag')?.remove()
-    const tag = document.createElement('b')
-    tag.className = 'bj-tag ' + h.result; tag.textContent = TAG[h.result]
-    b.el.append(tag)
-    if (h.result === 'win' || h.result === 'blackjack') b.cards.querySelectorAll('.card').forEach(c => c.classList.add('win'))
-  })
-  const bet = s.hands.reduce((a, h) => a + h.bet, 0), net = s.back - bet
-  const amt = net > 0 ? `+${fmt(net)}` : net < 0 ? `−${fmt(-net)}` : '±0'
-  const cls = net > 0 ? 'plus' : net < 0 ? 'minus' : 'even'
-  const me = s.hands.map(h => score(h.cards).total)
-  let title, sub
-  if (s.hands.length > 1) {
-    title = net > 0 ? '이겼어요!' : net < 0 ? '졌어요' : '본전이에요'
-    sub = s.hands.map((h, i) => `손${i + 1} ${me[i]} ${TAG[h.result]}`).join(' · ') + ` · 딜러 ${dl > 21 ? dl + ' 버스트' : dl}`
-  } else {
-    const h = s.hands[0]
-    title = { blackjack: '블랙잭!', win: '이겼어요!', lose: '졌어요', bust: '버스트 — 21을 넘었어요', push: '비겼어요' }[h.result]
-    sub = h.result === 'blackjack' ? '첫 두 장이 21! 건 칩의 1.5배를 더 받아요'
-      : h.result === 'push' ? (dealerBJ ? '둘 다 블랙잭 — 건 칩을 돌려받아요' : `나 ${me[0]} · 딜러 ${dl} — 건 칩을 돌려받아요`)
-      : h.result === 'bust' ? `내 카드 합 ${me[0]}`
-      : dealerBJ ? '딜러 블랙잭 (A + 10)'
-      : h.dealerBust ? `딜러가 ${dl}로 버스트!`
-      : `나 ${me[0]} · 딜러 ${dl}`
+let revealed = false, sessionTotal = 0, lastRound = null // lastRound = 지난 판 내 결과 (다음 베팅 때도 보여 줌)
+function showResults(S, quiet) {
+  revealed = true
+  for (let i = 0; i < SEATS; i++) {
+    const s = S.seats[i], e = seats.get(i)
+    if (!s?.inRound || !e || e.empty) continue
+    s.hands.forEach((h, k) => {
+      const hb = e.hands[k]; if (!hb || !h.result) return
+      hb.el.querySelector('.bj-tag')?.remove()
+      const tag = document.createElement('b')
+      tag.className = 'bj-tag ' + h.result; tag.textContent = TAG[h.result]
+      hb.el.append(tag)
+      const good = h.result === 'win' || h.result === 'blackjack', bad = h.result === 'lose' || h.result === 'bust'
+      hb.cards.querySelectorAll('.card').forEach(c => { c.classList.toggle('win', good); c.classList.toggle('lost', bad) })
+    })
+    const net = s.back - s.staked
+    e.float.textContent = sign(net)
+    e.float.className = 'bj-float show ' + tone3(net)
+    if (s.me) {
+      sessionTotal = s.total
+      lastRound = { net, staked: s.staked, back: s.back }
+      if (!quiet) {
+        if (net > 0) { flyChips($('dealerCards'), e.handsBox, '#c98a1a', Math.min(6, 2 + Math.round(net / Math.max(1, s.staked) * 2))); sfx.win(s.hands.some(h => h.result === 'blackjack')) }
+        else if (net < 0) { flyChips(e.handsBox, $('dealerCards'), '#c81e2c', 4); sfx.lose() }
+        else sfx.push()
+      }
+    }
   }
-  say(title, amt, sub, cls)
-  $('result').classList.toggle('big', s.hands.some(h => h.result === 'blackjack'))
-  if (quiet) return
-  if (net > 0) sfx.win(s.hands.some(h => h.result === 'blackjack')); else if (net < 0) sfx.lose(); else sfx.push()
+  paintMeta(); paintMoney()
 }
 
 // ---------- 서버 state 받기 → 순서대로 연출 ----------
 let game = null // startGame이 돌려주는 연결 (아래 '시작'에서)
-let state = null, pending = 0, running = Promise.resolve(), turnEnd = 0, waitingAct = null
-function enqueue(s) {
-  s.at = performance.now()
+let state = null, pending = 0, running = Promise.resolve(), acting = null, phaseEnd = 0
+const mySeat = () => state && state.me >= 0 ? state.seats[state.me] : null
+function enqueue(S) {
+  S.at = performance.now()
   pending++
-  paintPanel()
-  running = running.then(() => apply(s)).catch(err => { console.error(err); renderStatic(s) }).finally(() => { pending--; paintPanel() })
+  running = running.then(() => apply(S, pending > 1 ? 0.3 : 1)) // 밀려 있으면 빨리 감기
+    .catch(err => { console.error(err); state = S; renderStatic(S) })
+    .finally(() => { pending--; paintPanel() })
 }
-async function apply(s) {
+function renderStatic(S) {
+  syncSeats(S)
+  clearCards()
+  S.dealer.forEach(c => $('dealerCards').append(cardEl(c)))
+  shown.dealer = [...S.dealer]
+  S.seats.forEach((s, i) => {
+    const e = seats.get(i)
+    if (!s?.hands.length || !e || e.empty) return
+    shown.seats[i] = s.hands.map(h => {
+      const hb = addHand(e)
+      h.cards.forEach((c, j) => hb.cards.append(cardEl(c, h.doubled && j === 2)))
+      return [...h.cards]
+    })
+  })
+  revealed = false
+  sessionTotal = mySeat()?.total ?? 0
+  paintMeta(); paintTotals()
+  if (S.phase === 'dealer' || S.phase === 'result') showResults(S, true)
+}
+function times(S) {
+  phaseEnd = S.phaseMs ? S.at + S.phaseMs : 0
+  S.seats.forEach((s, i) => { if (s?.turnMs) turnEnd[i] = S.at + s.turnMs; else delete turnEnd[i] })
+}
+async function apply(S, speed) {
   const prev = state
-  state = s
-  if (s.ev === 'join' || s.ev === 'sync' || !prev) {
-    renderStatic(s)
-    if (s.phase === 'play') askTurn(s)
-    return paintPanel()
+  state = S
+  times(S)
+  paintShoe(S.shoe)
+  $('tableNo').textContent = `테이블 ${S.table}`
+  const fresh = !prev || prev.table !== S.table || S.ev === 'sync' || (S.ev === 'join' && S.seat === S.me) || (S.phase === 'bet' && prev.phase !== 'bet')
+  if (fresh) { renderStatic(S); return }
+  if (S.ev === 'deal') {
+    syncSeats(S); clearCards(); revealed = false
+    if (S.shoe.shuffled) centerMsg('새 슈 — 카드를 다시 섞었어요', 1600)
+    const ins = S.seats.map((s, i) => s?.inRound ? i : -1).filter(i => i >= 0 && seats.get(i) && !seats.get(i).empty)
+    for (const i of ins) { addHand(seats.get(i)); shown.seats[i] = [[]] }
+    paintMeta()
+    for (let k = 0; k < 2; k++) {
+      for (const i of ins) {
+        const c = S.seats[i].hands[0].cards[k]
+        await place(seats.get(i).hands[0].cards, c, DEAL_MS * speed)
+        shown.seats[i][0].push(c); paintTotals()
+      }
+      await place($('dealerCards'), k === 0 ? S.dealer[0] : null, DEAL_MS * speed)
+      shown.dealer.push(k === 0 ? S.dealer[0] : null); paintTotals()
+    }
+    paintMeta()
+    if (mySeat()?.inRound && !mySeat().done) sfx.turn()
+    return
   }
-  $('spot').classList.add('hide')
-  $('result').classList.remove('big')
-  if (s.ev === 'deal') {
-    clearTable()
-    if (s.shoe.shuffled && prev.phase !== 'idle') centerMsg('새 슈 — 카드를 다시 섞었어요')
-    say('카드를 받는 중…', '', `베팅 ${fmt(s.hands[0].bet)}`)
-    const h = addHand()
-    paintHandMeta({ ...s, phase: 'deal' })
-    const order = [[h.cards, s.hands[0].cards[0], 'p'], [$('dealerCards'), s.dealer[0], 'd'], [h.cards, s.hands[0].cards[1], 'p'], [$('dealerCards'), null, 'd']]
-    shown.hands = [[]]
-    for (const [box, c, who] of order) {
-      await place(box, c, DEAL_MS)
-      if (who === 'p') shown.hands[0].push(c); else shown.dealer.push(c)
-      paintTotals()
+  syncSeats(S)
+  await diffSeats(S, speed)
+  paintMeta()
+  if (S.ev === 'dealer') {
+    const hole = $('dealerCards').children[1]
+    if (hole && S.dealer[1] && !shown.dealer[1]) {
+      faceUp(hole, S.dealer[1], true); sfx.flip()
+      shown.dealer[1] = S.dealer[1]; paintTotals()
+      await sleep((reduced ? 150 : DEALER_MS) * speed)
     }
-  } else {
-    // 스플릿: 두 번째 카드를 새 손으로 옮긴다
-    if (s.hands.length > shown.hands.length && shown.hands.length === 1) {
-      const moved = handBoxes[0].cards.lastElementChild
-      const b = addHand()
-      b.cards.append(moved)
-      shown.hands = [[shown.hands[0][0]], [shown.hands[0][1]]]
-      paintHandMeta(s); paintTotals()
+    for (let k = shown.dealer.length; k < S.dealer.length; k++) {
+      await place($('dealerCards'), S.dealer[k], DEALER_MS * speed)
+      shown.dealer.push(S.dealer[k]); paintTotals()
     }
-    for (let i = 0; i < s.hands.length; i++) {
-      const h = s.hands[i]
-      for (let j = shown.hands[i].length; j < h.cards.length; j++) {
-        await place(handBoxes[i].cards, h.cards[j], HIT_MS, h.doubled && j === 2)
-        shown.hands[i].push(h.cards[j]); paintTotals()
+    showResults(S)
+    await sleep(RESULT_MS)
+  }
+}
+// 자리마다 새로 받은 카드만 놓기 (스플릿이면 두 번째 카드를 새 손으로 옮김)
+async function diffSeats(S, speed) {
+  for (let i = 0; i < SEATS; i++) {
+    const s = S.seats[i], e = seats.get(i)
+    if (!s?.inRound || !e || e.empty) continue
+    let sh = shown.seats[i] ||= []
+    if (s.hands.length === 2 && sh.length === 1 && e.hands.length === 1 && sh[0].length === 2) {
+      const moved = e.hands[0].cards.lastElementChild
+      addHand(e).cards.append(moved)
+      shown.seats[i] = sh = [[sh[0][0]], [sh[0][1]]]
+      paintMeta(); paintTotals()
+    }
+    while (e.hands.length < s.hands.length) addHand(e)
+    for (let k = 0; k < s.hands.length; k++) {
+      sh[k] ||= []
+      for (let j = sh[k].length; j < s.hands[k].cards.length; j++) {
+        const c = s.hands[k].cards[j]
+        await place(e.hands[k].cards, c, HIT_MS * speed, s.hands[k].doubled && j === 2)
+        sh[k].push(c); paintTotals()
       }
     }
   }
-  paintHandMeta(s)
-  if (s.phase === 'done') {
-    // 딜러 차례: 숨긴 카드 뒤집기 → 17이 될 때까지 받기
-    const hole = $('dealerCards').children[1]
-    if (hole && s.dealer[1]) { faceUp(hole, s.dealer[1], true); sfx.flip(); shown.dealer[1] = s.dealer[1]; paintTotals() }
-    await sleep(reduced ? 150 : DEALER_MS)
-    for (let k = 2; k < s.dealer.length; k++) {
-      await place($('dealerCards'), s.dealer[k], DEALER_MS)
-      shown.dealer.push(s.dealer[k]); paintTotals()
-    }
-    showResults(s)
-    await sleep(RESULT_MS)
-  } else if (s.phase === 'play') askTurn(s)
 }
-function askTurn(s) {
-  const h = s.hands[s.active]
-  say(s.hands.length > 1 ? `손${s.active + 1}: 어떻게 할까요?` : '어떻게 할까요?', '', `내 카드 ${totalText(h.cards).t} · 딜러 보이는 카드 ${totalText([s.dealer[0]]).t}`)
+let centerT = null
+function centerMsg(text, ms) {
+  $('center').innerHTML = `<span>${text}</span>`
+  clearTimeout(centerT)
+  centerT = setTimeout(() => { centerT = null }, ms)
+}
+
+// ---------- 돈판: 건 칩 → 받은 칩 = 이득/손해 ----------
+function cells(betV, backL, backV, netL, netV, netCls, dim) {
+  $('mBetL').textContent = betV[0]; $('mBet').textContent = betV[1]
+  $('mBackL').textContent = backL; $('mBack').textContent = backV
+  $('mNetL').textContent = netL; $('mNet').textContent = netV
+  $('mNetCell').className = 'bj-cell net' + (netCls ? ' ' + netCls : '')
+  $('mBack').parentElement.classList.toggle('dim', !!dim)
+  $('mNetCell').classList.toggle('dim', !!dim)
+}
+function paintMoney() {
+  const S = state, my = mySeat()
+  $('mSession').innerHTML = my && sessionTotal ? `이 자리 성적 <b class="${tone3(sessionTotal)}-t">${sign(sessionTotal)}</b>` : ''
+  $('money').classList.remove('big')
+  const planned = n => cells(['걸 칩', fmt(n)], '이기면 받는 칩', fmt(n * 2), '이기면', `+${fmt(n)}`, '', true)
+  if (!game?.me) { $('mTitle').textContent = '로그인하면 할 수 있어요'; planned(bet); $('mSub').textContent = '로그인하고 코인을 칩으로 바꿔 시작해요'; return }
+  if (my?.inRound && revealed) {
+    const net = my.back - my.staked, dl = score(S.dealer).total
+    const me = my.hands.map(h => score(h.cards).total)
+    let title, sub
+    if (my.hands.length > 1) {
+      title = net > 0 ? '이겼어요!' : net < 0 ? '졌어요' : '본전이에요'
+      sub = my.hands.map((h, k) => `손${k + 1} ${me[k]} ${TAG[h.result]}`).join(' · ') + ` · 딜러 ${dl > 21 ? dl + ' 버스트' : dl}`
+    } else {
+      const h = my.hands[0]
+      title = { blackjack: '블랙잭!', win: '이겼어요!', lose: '졌어요', bust: '버스트 — 21을 넘었어요', push: '비겼어요' }[h.result]
+      sub = h.result === 'blackjack' ? '첫 두 장이 21! 건 칩의 1.5배를 더 받아요'
+        : h.result === 'push' ? (isNatural(S.dealer) ? '둘 다 블랙잭 — 건 칩을 돌려받아요' : `나 ${me[0]} · 딜러 ${dl} — 건 칩을 그대로 돌려받아요`)
+        : h.result === 'bust' ? `내 카드 합 ${me[0]} — 건 칩을 잃어요`
+        : isNatural(S.dealer) ? '딜러 블랙잭 (A + 10)'
+        : h.dealerBust ? `딜러가 ${dl}로 버스트!`
+        : `나 ${me[0]} · 딜러 ${dl}`
+    }
+    $('mTitle').textContent = title
+    cells(['건 칩', fmt(my.staked)], '받은 칩', fmt(my.back), net > 0 ? '이득' : net < 0 ? '손해' : '본전', sign(net), tone3(net))
+    $('mSub').textContent = sub
+    $('money').classList.toggle('big', my.hands.some(h => h.result === 'blackjack'))
+    return
+  }
+  if (my?.inRound) {
+    const h = my.hands[my.active] || my.hands[0]
+    $('mTitle').textContent = my.done ? '딜러 차례를 기다려요' : my.hands.length > 1 ? `손${my.active + 1}: 어떻게 할까요?` : '어떻게 할까요?'
+    cells(['건 칩', fmt(my.staked)], '받은 칩', '?', '이득·손해', '?', '', true)
+    $('mSub').textContent = h ? `내 카드 ${totalText(h.cards).t} · 딜러 보이는 카드 ${S.dealer[0] ? totalText([S.dealer[0]]).t : '-'}${my.hands.some(x => x.doubled) ? ' · 더블로 건 칩이 2배' : ''}` : ''
+    return
+  }
+  if (S?.phase === 'bet' && my?.ready) {
+    $('mTitle').textContent = '✓ 베팅 완료'
+    cells(['건 칩', fmt(my.bet)], '이기면 받는 칩', fmt(my.bet * 2), '이기면', `+${fmt(my.bet)}`, '', true)
+    $('mSub').textContent = `블랙잭이면 +${fmt(Math.floor(my.bet * 3 / 2))} · 지면 −${fmt(my.bet)}. 마감되면 칩에서 빠져요`
+    return
+  }
+  $('mTitle').textContent = !S || S.phase === 'bet' ? '얼마 걸까요?' : '이번 판은 구경 중'
+  planned(bet)
+  const last = lastRound ? `지난 판 <b class="${tone3(lastRound.net)}-t">${sign(lastRound.net)}</b> (건 칩 ${fmt(lastRound.staked)} → 받은 칩 ${fmt(lastRound.back)}) · ` : ''
+  $('mSub').innerHTML = last + (!S || S.phase === 'bet' ? `블랙잭이면 +${fmt(Math.floor(bet * 3 / 2))} · 지면 −${fmt(bet)}` : '이 판이 끝나면 베팅할 수 있어요')
 }
 
 // ---------- 아래 조작판 ----------
 let bet = Number(store.get('bet')) || 100
-let hintOn = store.get('hint') !== '0'
-const busy = () => pending > 0
-function paintBet() {
-  const chips = game?.chips ?? 0
-  const loggedIn = !!game?.me
-  const playing = state?.phase === 'play'
-  $('dealAmt').textContent = bet ? fmt(bet) : ''
-  const short = loggedIn && bet > chips
-  $('deal').classList.toggle('short', short)
-  $('deal').querySelector('span').textContent = !loggedIn ? '로그인하고 시작' : !chips && !game?.inPlay ? '칩 바꾸기' : short ? '칩이 모자라요' : '딜'
-  $('deal').disabled = busy() || playing
-  $('clearBet').disabled = !bet; $('halfBet').disabled = bet < 2; $('dblBet').disabled = !bet || (loggedIn && bet * 2 > chips); $('allBet').disabled = loggedIn && !chips
-  // 베팅 자리 (판이 없을 때만)
-  const idle = !state || state.phase === 'idle' || !$('hands').children.length
-  $('spot').classList.toggle('hide', !idle)
-  $('spotStack').innerHTML = stackOf(bet).map((c, i) => `<i style="bottom:${i * 4}px">${chipHtml(c)}</i>`).join('')
-  $('spotAmt').textContent = bet ? fmt(bet) : ''
-  store.set('bet', String(bet))
-}
+const busy = () => pending > 0 || !!acting
 function paintPanel() {
-  const s = state
-  const playing = s?.phase === 'play'
-  $('betBox').hidden = playing
-  $('actBox').hidden = !playing
-  $('actBox').classList.toggle('wait', busy())
-  if (playing) {
-    const h = s.hands[s.active]
-    const tip = hintOn && !busy() ? advise(h.cards, s.dealer[0], { canDouble: s.actions.double, canSplit: s.actions.split }) : null
-    document.querySelectorAll('.bj-btn').forEach(b => {
-      b.disabled = busy() || !s.actions[b.dataset.a]
-      b.classList.toggle('advice', b.dataset.a === tip)
-    })
-    turnEnd = s.at + s.turnMs
-  }
-  paintBet()
+  const S = state, my = mySeat()
+  const myTurn = S?.phase === 'play' && my?.inRound && !my.done
+  $('actBox').hidden = !myTurn
+  $('betBox').hidden = !!myTurn
+  if (myTurn) document.querySelectorAll('.bj-btn').forEach(b => { b.disabled = busy() || !S.actions[b.dataset.a] })
+  // 베팅 버튼
+  const go = $('betGo'), chips = game?.chips ?? 0
+  let text = '베팅하기', amt = bet ? fmt(bet) : '', dis = false, kind = ''
+  if (!game?.me) { text = '로그인하고 시작'; amt = '' }
+  else if (!chips && !game.inPlay && !my?.ready && !my?.inRound) { text = '칩 바꾸기'; amt = '' }
+  else if (S?.phase === 'bet') {
+    if (my?.ready) { text = '베팅 취소'; amt = ''; kind = 'cancel' }
+    else if (bet > chips) { text = '칩이 모자라요'; kind = 'short' }
+  } else { text = my?.inRound ? '이번 판 진행 중' : '다음 판에 베팅'; dis = true }
+  $('betGoText').textContent = text; $('betGoAmt').textContent = amt
+  go.disabled = dis; go.className = 'bj-deal' + (kind ? ' ' + kind : '')
+  const lock = !!my?.ready
+  document.querySelectorAll('#chipBtns button, .bj-bet-row button').forEach(b => { b.disabled = lock })
+  if (!lock) { $('clearBet').disabled = !bet; $('halfBet').disabled = bet < 2; $('dblBet').disabled = !bet || (!!game?.me && bet * 2 > chips); $('allBet').disabled = !!game?.me && !chips }
+  store.set('bet', String(bet))
+  paintMoney(); paintSpot()
 }
-function setBet(v) {
-  // 결과가 남아 있으면 테이블을 비우고 새 베팅을 보여 준다
-  if (state?.phase === 'done' && $('hands').children.length) { clearTable(); say('베팅하고 딜을 눌러요', '', '21에 더 가까우면 이겨요. 21을 넘으면 져요.'); $('result').classList.remove('big') }
-  bet = Math.max(0, Math.floor(v))
-  paintBet()
-}
+function setBet(v) { bet = Math.max(0, Math.floor(v)); paintPanel() }
 $('chipBtns').innerHTML = CHIPS.map(c => `<button type="button" class="bj-chip" data-v="${c.v}" aria-label="${fmt(c.v)}칩 더하기" style="--chip:${c.c}">${chipHtml(c.c)}<b>${c.l}</b></button>`).join('')
 $('chipBtns').querySelectorAll('button').forEach(b => b.onclick = () => { sfx.chip(); setBet(bet + Number(b.dataset.v)) })
 $('clearBet').onclick = () => setBet(0)
 $('halfBet').onclick = () => setBet(bet / 2)
 $('dblBet').onclick = () => { sfx.chip(); setBet(bet * 2) }
 $('allBet').onclick = () => { sfx.chip(); setBet(game?.me ? game.chips : bet) }
-$('deal').onclick = () => {
+$('betGo').onclick = () => {
   if (!game?.me) return game?.openBuyIn() // 로그인 화면으로
-  if (busy() || state?.phase === 'play') return
-  if (!game.chips && !game.inPlay) return game.openBuyIn()
+  const my = mySeat()
+  if (my?.ready) return game.send({ t: 'bet', amount: 0 })
+  if (!game.chips && !game.inPlay && !my?.inRound) return game.openBuyIn()
+  if (state?.phase !== 'bet') return
   if (!bet) return game.toast('칩을 눌러 걸 만큼 쌓아 주세요.')
-  if (bet > game.chips) { game.toast(`칩이 ${fmt(game.chips)}개 있어요. 베팅을 줄이거나 칩을 더 바꿔 주세요.`); return }
+  if (bet > game.chips) return game.toast(`칩이 ${fmt(game.chips)}개 있어요. 베팅을 줄이거나 칩을 더 바꿔 주세요.`)
   sfx.chip()
-  game.send({ t: 'deal', bet })
+  game.send({ t: 'bet', amount: bet })
 }
 document.querySelectorAll('.bj-btn').forEach(b => b.onclick = () => {
-  if (busy() || !state || state.phase !== 'play' || b.disabled) return
-  pending++; paintPanel() // 서버 답이 올 때까지 다시 못 누르게 (답이 오면 enqueue가 이어받음)
-  waitingAct = setTimeout(() => { pending--; waitingAct = null; paintPanel() }, 3000)
+  if (busy() || state?.phase !== 'play' || b.disabled) return
+  acting = setTimeout(() => { acting = null; paintPanel() }, 3000) // 서버 답이 올 때까지 다시 못 누르게
+  paintPanel()
   game.send({ t: 'act', a: b.dataset.a, seq: state.seq })
 })
-function releaseAct() { if (waitingAct) { clearTimeout(waitingAct); waitingAct = null; pending-- } }
+function releaseAct() { if (acting) { clearTimeout(acting); acting = null } }
 
-$('hint').onclick = () => { hintOn = !hintOn; store.set('hint', hintOn ? '1' : '0'); paintHint(); paintPanel() }
-function paintHint() { $('hint').setAttribute('aria-pressed', String(hintOn)); $('hint').textContent = hintOn ? '추천 보기' : '추천 끔' }
-
-// 30초 타이머
+// 카운트다운 (베팅 마감 · 내 차례 · 다음 판)
 setInterval(() => {
-  if (state?.phase !== 'play' || busy()) { $('timer').classList.remove('hurry'); $('timerFill').style.width = '100%'; $('timerText').textContent = ''; return }
-  const left = Math.max(0, turnEnd - performance.now())
-  $('timerFill').style.width = (left / 30000 * 100) + '%'
-  $('timer').classList.toggle('hurry', left < 10000)
-  $('timerText').textContent = left < 10000 ? `${Math.ceil(left / 1000)}초 뒤 자동으로 스탠드` : '천천히 골라도 돼요'
+  const S = state; if (!S) return
+  const now = performance.now(), left = Math.max(0, phaseEnd - now), sec = Math.ceil(left / 1000)
+  if (!centerT) {
+    let t = ''
+    if (S.phase === 'bet') t = phaseEnd ? `베팅 마감 ${sec}초` : S.seats.some(s => s?.ready) ? '' : '누가 베팅하면 판이 시작돼요'
+    else if (S.phase === 'play') t = mySeat()?.inRound && !mySeat().done ? '' : '다른 사람이 고르는 중'
+    else if (S.phase === 'dealer') t = '딜러 차례'
+    else if (S.phase === 'result') t = `다음 판 ${sec}초`
+    const hurry = S.phase === 'bet' && phaseEnd && left < 4000
+    $('center').innerHTML = t ? `<span class="${hurry ? 'hurry' : ''}">${t}</span>` : ''
+  }
+  if (S.phase === 'play') paintMeta()
+  const my = mySeat()
+  if (S.phase === 'play' && my?.inRound && !my.done && !busy()) {
+    const l = Math.max(0, (turnEnd[S.me] ?? now) - now)
+    $('timerFill').style.width = Math.min(100, l / TURN_MS * 100) + '%'
+    $('timer').classList.toggle('hurry', l < 7000)
+    $('timerText').textContent = l < 7000 ? `${Math.ceil(l / 1000)}초 뒤 자동으로 스탠드` : `${Math.ceil(l / 1000)}초 안에 골라요`
+  } else { $('timerFill').style.width = '100%'; $('timer').classList.remove('hurry'); $('timerText').textContent = '' }
 }, 200)
 
-// 키보드: H 히트 · S 스탠드 · D 더블 · P 스플릿 · Enter/Space 딜
+// 키보드: H 히트 · S 스탠드 · D 더블 · P 스플릿 · Enter 베팅
 document.addEventListener('keydown', e => {
   if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || document.querySelector('dialog[open]') || /INPUT|TEXTAREA/.test(e.target.tagName)) return
   const map = { KeyH: 'hit', KeyS: 'stand', KeyD: 'double', KeyP: 'split' }
-  if (map[e.code] && state?.phase === 'play') { document.querySelector(`.bj-btn[data-a="${map[e.code]}"]`)?.click(); return }
-  if ((e.code === 'Enter' || e.code === 'Space') && e.target === document.body && !$('betBox').hidden) { e.preventDefault(); $('deal').click() }
+  if (map[e.code] && !$('actBox').hidden) { document.querySelector(`.bj-btn[data-a="${map[e.code]}"]`)?.click(); return }
+  if (e.code === 'Enter' && e.target === document.body && !$('betBox').hidden) { e.preventDefault(); $('betGo').click() }
 })
 
 // 슈 남은 양
@@ -377,22 +532,20 @@ $('helpOk').onclick = () => {
 const firstVisit = !store.get('guide')
 
 // ---------- 시작 ----------
-paintSound(); paintHint(); paintBet()
+paintSound(); paintPanel()
 if (firstVisit) helpDlg.showModal()
 
 game = await startGame({
   autoBuyIn: !firstVisit, // 처음이면 안내를 먼저 보고 '시작하기'에서 칩 바꾸기
   bustDelay: 900, // 정산이 이미 카드 연출 뒤라 짧게
   onToast() { releaseAct(); paintPanel() }, // 거절되면 버튼을 다시 풀기 (알림은 기본대로)
-  onLoggedOut() { say('로그인하면 할 수 있어요', '', '로그인하고 코인을 칩으로 바꿔 시작해요'); paintBet() },
-  onReady() { paintBet() },
-  onChips() { paintBet() },
+  onLoggedOut() { paintPanel() },
+  onReady() { paintPanel() },
+  onChips() { paintPanel() },
   onMessage(m) {
     if (m.t !== 'state') return
-    releaseAct()
-    paintShoe(m.shoe)
-    if (m.ev === 'join' && m.lastBet && !store.get('bet')) bet = m.lastBet
+    if (m.ev !== 'act' || m.seat === m.me) releaseAct()
     enqueue(m)
   },
 })
-paintBet()
+paintPanel()

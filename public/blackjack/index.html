@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>블랙잭 · JMTT 카지노</title>
-  <meta name="description" content="JMTT 코인으로 즐기는 블랙잭. 딜러와 1:1, 21에 가깝게 — 블랙잭은 3:2, 더블·스플릿, 초보도 쉬운 추천 표시.">
+  <meta name="description" content="JMTT 코인으로 여러 명이 함께 즐기는 블랙잭. 딜러와 21에 가깝게 — 블랙잭은 3:2, 더블·스플릿.">
   <link rel="canonical" href="https://justmadethisthat.com/casino/blackjack/">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="JMTT 카지노">
   <meta property="og:title" content="블랙잭 · JMTT 카지노">
-  <meta property="og:description" content="JMTT 코인으로 즐기는 블랙잭. 딜러와 1:1, 21에 가깝게 — 블랙잭은 3:2, 더블·스플릿, 초보도 쉬운 추천 표시.">
+  <meta property="og:description" content="JMTT 코인으로 여러 명이 함께 즐기는 블랙잭. 딜러와 21에 가깝게 — 블랙잭은 3:2, 더블·스플릿.">
   <meta property="og:url" content="https://justmadethisthat.com/casino/blackjack/">
   <meta property="og:image" content="https://justmadethisthat.com/casino/og-image.png">
   <meta property="og:locale" content="ko_KR">
@@ -19,6 +19,7 @@
 <body>
   <main class="bj">
     <section class="bj-table" id="table" aria-label="블랙잭 테이블">
+      <span class="bj-tableno" id="tableNo"></span>
       <div class="bj-shoe" id="shoe" title="카드 슈 (6덱)">
         <div class="bj-shoe-box"><i></i><i></i><i></i></div>
         <div class="bj-shoe-bar"><span id="shoeFill"></span></div>
@@ -36,25 +37,25 @@
       <p class="bj-felt-rule" aria-hidden="true">딜러는 16 이하면 받고 17부터 멈춰요</p>
       <div class="bj-center" id="center" aria-live="polite"></div>
 
-      <div class="bj-zone bj-player">
-        <div class="bj-hands" id="hands"></div>
-        <div class="bj-spot" id="spot">
-          <div class="bj-stack" id="spotStack"></div>
-          <b class="bj-spot-amt" id="spotAmt"></b>
-        </div>
-      </div>
+      <div class="bj-others" id="others" aria-label="다른 자리"></div>
+      <div class="bj-zone bj-mine" id="mine" aria-label="내 자리"></div>
     </section>
 
     <section class="bj-panel">
-      <div class="bj-result" id="result" aria-live="polite">
-        <div class="bj-result-main">
-          <b class="bj-result-title" id="resTitle">베팅하고 딜을 눌러요</b>
-          <b class="bj-result-amt" id="resAmt"></b>
+      <!-- 돈: 건 칩 → 받은 칩 = 이득/손해 -->
+      <div class="bj-money" id="money" aria-live="polite">
+        <div class="bj-money-head"><b id="mTitle">얼마 걸까요?</b><span class="bj-session" id="mSession"></span></div>
+        <div class="bj-money-row">
+          <div class="bj-cell"><small id="mBetL">걸 칩</small><b id="mBet">0</b></div>
+          <i class="bj-op" aria-hidden="true">→</i>
+          <div class="bj-cell"><small id="mBackL">이기면 받는 칩</small><b id="mBack">0</b></div>
+          <i class="bj-op" aria-hidden="true">=</i>
+          <div class="bj-cell net" id="mNetCell"><small id="mNetL">이득</small><b id="mNet">0</b></div>
         </div>
-        <p class="bj-result-sub" id="resSub">21에 더 가까우면 이겨요. 21을 넘으면 져요.</p>
+        <p class="bj-money-sub" id="mSub"></p>
       </div>
 
-      <!-- 베팅 (판이 없을 때) -->
+      <!-- 베팅 -->
       <div class="bj-bet" id="betBox">
         <div class="bj-chips" id="chipBtns"></div>
         <div class="bj-bet-row">
@@ -63,10 +64,10 @@
           <button type="button" class="bj-small" id="dblBet">×2</button>
           <button type="button" class="bj-small" id="allBet">올인</button>
         </div>
-        <button type="button" class="bj-deal" id="deal"><span>딜</span><small id="dealAmt"></small></button>
+        <button type="button" class="bj-deal" id="betGo"><span id="betGoText">베팅하기</span><small id="betGoAmt"></small></button>
       </div>
 
-      <!-- 행동 (판 중) -->
+      <!-- 내 차례 -->
       <div class="bj-act" id="actBox" hidden>
         <div class="bj-timer" id="timer"><span id="timerFill"></span><small id="timerText"></small></div>
         <div class="bj-act-grid">
@@ -79,7 +80,6 @@
 
       <div class="bj-tools">
         <button type="button" class="bj-tool" id="help">하는 법</button>
-        <button type="button" class="bj-tool" id="hint" aria-pressed="true">추천 보기</button>
         <button type="button" class="bj-tool" id="sound" aria-pressed="true">소리</button>
       </div>
     </section>
@@ -89,16 +89,16 @@
   <dialog class="casino-dialog bj-help" id="helpDlg" aria-labelledby="helpTitle">
     <h2 id="helpTitle">블랙잭 하는 법</h2>
     <ol class="bj-howto">
-      <li><b>베팅하고 딜</b><span>칩을 눌러 걸 만큼 쌓고 <em>딜</em>을 눌러요. 나와 딜러가 두 장씩 받아요 (딜러 한 장은 뒤집혀 있어요).</span></li>
-      <li><b>21에 가깝게</b><span>카드 합이 21에 가까울수록 좋아요. 21을 넘으면 <em>버스트</em>로 바로 져요.</span></li>
-      <li><b>고르기</b><span><em>히트</em> 한 장 더 · <em>스탠드</em> 그만 받기 · <em>더블</em> 베팅 2배 걸고 딱 한 장 · <em>스플릿</em> 같은 점수 두 장을 두 손으로</span></li>
-      <li><b>딜러 차례</b><span>딜러는 16 이하면 꼭 받고, 17 이상이면 멈춰요. 딜러보다 높거나 딜러가 버스트하면 이겨요.</span></li>
+      <li><b>베팅</b><span>칩을 눌러 걸 만큼 쌓고 <em>베팅하기</em>. 테이블의 누군가 처음 걸면 12초 뒤 딜러가 카드를 나눠요 (모두 걸면 바로).</span></li>
+      <li><b>21에 가깝게</b><span>나와 딜러가 두 장씩 받아요 (딜러 한 장은 뒤집혀 있어요). 21을 넘으면 <em>버스트</em>로 져요.</span></li>
+      <li><b>고르기</b><span><em>히트</em> 한 장 더 · <em>스탠드</em> 그만 받기 · <em>더블</em> 베팅 2배 걸고 딱 한 장 · <em>스플릿</em> 같은 점수 두 장을 두 손으로. 모두 동시에 골라요 (20초).</span></li>
+      <li><b>딜러 차례</b><span>모두 고르면 딜러가 16 이하면 받고 17부터 멈춰요. 딜러보다 높거나 딜러가 버스트하면 이겨요.</span></li>
     </ol>
     <div class="bj-help-grid">
       <div><h3>카드 점수</h3><p>2~10은 숫자 그대로<br>J · Q · K는 10<br>A는 1 또는 11 (좋은 쪽으로)</p></div>
       <div><h3>받는 칩</h3><p>이기면 건 칩의 <b>2배</b><br>블랙잭(첫 두 장 A+10)은 <b>2.5배</b><br>비기면 건 칩을 돌려받아요</p></div>
     </div>
-    <p class="bj-help-note"><b>추천</b> 표시는 수학적으로 가장 유리한 선택(기본 전략)이에요. 30초 안에 고르지 않으면 스탠드해요.</p>
+    <p class="bj-help-note">다른 사람과 승부하는 게 아니라 <b>모두 딜러와</b> 승부해요. 카드를 받는 중에 나가면 건 칩을 잃어요.</p>
     <div class="row"><button class="casino-btn" type="button" id="helpOk">시작하기</button></div>
   </dialog>
 

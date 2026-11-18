@@ -7,10 +7,16 @@
 export const DECKS = 6
 export const SHOE_SIZE = DECKS * 52
 export const CUT = Math.round(SHOE_SIZE * 0.75) // 이만큼 나가면 다음 판 전에 다시 섞음
-export const TURN_MS = 30000 // 사람 행동 기다림. 넘으면 스탠드
 
-// 화면 연출 시간 (서버는 이것으로 정산을 늦춘다: 칩 숫자가 카드보다 먼저 바뀌지 않게)
-export const DEAL_MS = 360 // 첫 네 장, 카드 한 장마다
+// 테이블 (딜러가 판을 돌린다: 베팅 → 딜 → 모두 동시에 행동 → 딜러 → 정산 → 다음 판)
+export const SEATS = 5 // 테이블 하나의 자리
+export const BET_MS = 12000 // 누가 처음 베팅하면 이만큼 뒤 마감
+export const READY_MS = 1200 // 앉은 사람이 모두 베팅하면 이만큼 뒤 바로 마감
+export const TURN_MS = 20000 // 한 번 고를 때마다 기다리는 시간. 넘으면 스탠드
+export const SHOW_MS = 4000 // 정산 뒤 결과를 보여 주는 시간, 그다음 새 베팅
+
+// 화면 연출 시간 (서버는 이것으로 행동·정산 시각을 맞춘다: 칩 숫자가 카드보다 먼저 바뀌지 않게)
+export const DEAL_MS = 260 // 첫 딜, 카드 한 장마다
 export const HIT_MS = 360 // 히트·더블·스플릿 카드 한 장
 export const DEALER_MS = 650 // 딜러: 숨긴 카드 뒤집기, 한 장 더 받기마다
 export const RESULT_MS = 250 // 결과 표시
@@ -47,7 +53,7 @@ export function settleHand(hand, dealer) {
 export const dealerHits = cards => score(cards).total < 17
 
 // ---------- 기본 전략 (6덱 · S17 · 더블 애프터 스플릿 · 서렌더 없음) ----------
-// 화면의 '추천'과 시뮬레이션이 같이 쓴다. 이대로 하면 하우스 몫이 약 0.5%
+// 시뮬레이션(test-sim.mjs)이 쓴다. 이대로 하면 하우스 몫이 약 0.5% (화면에는 추천을 보여 주지 않음, 운영자 결정 2026-11-18)
 // 칸: H 히트 · S 스탠드 · D 더블(안 되면 히트) · Ds 더블(안 되면 스탠드) · P 스플릿
 const up = c => valueOf(c) === 11 ? 1 : valueOf(c) // 딜러 업카드 1(A)~10
 const inR = (u, a, b) => u >= a && u <= b
@@ -79,7 +85,7 @@ function pair(v, u) { // v = 카드 점수 (A = 11)
   return inR(u, 2, 7) // 2·3
 }
 
-// 추천 행동: 'hit' | 'stand' | 'double' | 'split'
+// 기본 전략 행동: 'hit' | 'stand' | 'double' | 'split'
 export function advise(cards, upCard, { canDouble = true, canSplit = false } = {}) {
   const u = up(upCard)
   canDouble = canDouble && cards.length === 2

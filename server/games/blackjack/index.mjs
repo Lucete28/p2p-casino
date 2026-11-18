@@ -1,87 +1,208 @@
-// 블랙잭 (관리 모드, CASINO.md 3·5장). 규칙은 public/blackjack/rules.mjs, 한 판 진행은 engine.mjs
-// 사람마다 자기 테이블(6덱 슈 하나)에서 딜러와 1:1로 한다.
+// 블랙잭 (관리 모드, CASINO.md 3·5장). 규칙은 public/blackjack/rules.mjs, 한 판 규칙은 engine.mjs
+// 여러 명이 한 테이블(5자리, 6덱 슈 하나)에서 딜러와 한다. 판은 딜러(서버)가 돌린다 (운영자 결정 2026-11-18):
+//   베팅 ─ 누가 처음 걸면 BET_MS 뒤 마감 (앉은 사람이 모두 걸면 READY_MS 뒤)
+//   딜   ─ 자리 순서대로 두 장씩, 딜러는 업카드 + 숨긴 카드 (숨긴 카드는 딜러 차례까지 보내지 않음)
+//   행동 ─ 건 사람 모두 동시에. 한 번 고를 때마다 TURN_MS, 넘으면 스탠드
+//   딜러 ─ 모두 끝나면 숨긴 카드 → 17까지 받기 → 정산 (화면 연출이 끝날 때 ctx.payout)
+//   결과 ─ SHOW_MS 보여 준 뒤 새 베팅
+// 들어오면 빈자리가 있는 테이블(사람이 가장 많은 곳)에 자동으로 앉는다. 다 차면 새 테이블.
 //
-//   브라우저 → { t: 'deal', bet }                       새 판 (칩에서 bet을 건다)
-//              { t: 'act', a: 'hit'|'stand'|'double'|'split', seq }   seq = 마지막으로 받은 state의 seq (두 번 누름 막기)
-//   서버 → { t: 'state', ev, seq, phase: 'idle'|'play'|'done', hands, active, dealer, actions, turnMs, back, shoe, lastBet }
-//          딜러의 숨긴 카드는 판이 끝날 때까지 보내지 않는다 (dealer = [업카드, null])
+//   브라우저 → { t: 'bet', amount }   베팅 (0 = 취소). 베팅 시간에만
+//              { t: 'act', a: 'hit'|'stand'|'double'|'split', seq }   seq = 받은 state의 seq (두 번 누름 막기)
+//   서버 → { t: 'state', ev, seat?, table, phase: 'bet'|'play'|'dealer'|'result', phaseMs, dealer, seats, me, seq, actions, shoe }
 //
-// 칩 흐름: 딜 때 ctx.bet(bet), 더블·스플릿 때 ctx.bet(그 손의 베팅). 판이 끝나면 화면 연출(카드가 다 놓일 때)만큼
-// 기다렸다가 ctx.payout — 칩 숫자가 카드보다 먼저 바뀌어 결과가 미리 보이지 않게 (슬롯·룰렛과 같은 방식).
-// 30초 동안 아무것도 안 하면 그 손은 스탠드. 나가기·끊김 60초면 남은 손을 모두 스탠드하고 딜러까지 끝내 정산한다.
-// 서버가 판 도중 꺼지면 코어가 그 판을 무효로 하고 건 칩을 돌려준다 (이미 끝난 판은 결과대로 정산).
-import { deal, act, actions, standAll } from './engine.mjs'
-import { SHOE_SIZE, CUT, TURN_MS, DEAL_MS, HIT_MS, DEALER_MS, RESULT_MS } from '../../../public/blackjack/rules.mjs'
+// 칩: 베팅 마감 때 ctx.bet, 더블·스플릿 때 ctx.bet, 딜러 연출이 끝날 때 ctx.payout.
+// 판 도중(행동 시간) 나가기를 누르면 건 칩을 잃는다 (딜러 결과가 아직 없어서. 화면이 먼저 확인을 받음, CASINO.md 4장).
+// 연결이 끊기면 자리는 60초 남고, 그사이 행동 시간이 지나 스탠드 → 판이 끝나 정산된다. 딜러 결과가 나온 뒤 나가면 바로 정산.
+// 서버가 판 도중 꺼지면 코어가 그 판을 무효로 하고 건 칩을 돌려준다 (결과가 나온 판은 결과대로 정산).
+import { dealRound, seatActions, seatAct, dealerPlay, settleSeat } from './engine.mjs'
+import { DECKS, SHOE_SIZE, CUT, SEATS, BET_MS, READY_MS, TURN_MS, SHOW_MS, DEAL_MS, HIT_MS, DEALER_MS, RESULT_MS } from '../../../public/blackjack/rules.mjs'
 
 const ACTS = new Set(['hit', 'stand', 'double', 'split'])
-const tables = new Map() // 사용자 ID → { shoe, pos, shuffled, round, roundId, seq, turn, turnAt, pay, lastBet }
+const SEAT_ORDER = [2, 1, 3, 0, 4] // 가운데 자리부터 채움
+const tables = new Map() // 테이블 번호 → 테이블
+const seatOf = new Map() // 사용자 ID → 자리
+let nextNo = 1
 
-function table(p, ctx) {
-  let t = tables.get(p.id)
-  if (!t) { t = { shoe: ctx.rng.deck(6), pos: 0, shuffled: true, round: null, roundId: null, seq: 0, turn: null, turnAt: 0, pay: null, lastBet: 0 }; tables.set(p.id, t) }
+const online = p => !p.sockets || p.sockets.size > 0 // 코어 플레이어의 연결 (읽기만)
+const seated = t => t.seats.filter(Boolean)
+const playing = t => seated(t).filter(s => s.inRound)
+const toast = (ctx, p, msg) => ctx.send(p, { t: 'toast', msg })
+
+function newTable(ctx) {
+  const t = { no: nextNo++, seats: Array(SEATS).fill(null), shoe: ctx.rng.deck(DECKS), pos: 0, shuffled: true,
+    phase: 'bet', endsAt: 0, timer: null, timerFn: null, closing: false, dealer: [], roundId: null, ctx }
+  tables.set(t.no, t)
   return t
 }
-function drawer(t, ctx) {
+function newSeat(p, t, i) {
+  return { p, t, i, bet: 0, ready: false, inRound: false, hands: [], active: 0, done: true, seq: 0, turnAt: 0, turnTimer: null,
+    back: null, staked: 0, net: 0, results: null, paid: true, total: 0 }
+}
+// 빈자리가 있는 테이블 중 사람이 가장 많은 곳 (없으면 새 테이블)
+function sit(p, ctx) {
+  let t = null
+  for (const x of tables.values()) if (seated(x).length < SEATS && (!t || seated(x).length > seated(t).length)) t = x
+  t ||= newTable(ctx)
+  const i = SEAT_ORDER.find(k => !t.seats[k])
+  const s = newSeat(p, t, i)
+  t.seats[i] = s
+  seatOf.set(p.id, s)
+  return s
+}
+
+// 테이블 진행 타이머 (한 번에 하나)
+function schedule(t, ms, fn) {
+  clearTimeout(t.timer)
+  t.timerFn = fn
+  t.timer = setTimeout(() => { t.timer = null; t.timerFn = null; fn() }, ms)
+}
+function unschedule(t) { clearTimeout(t.timer); t.timer = null; t.timerFn = null }
+function drawer(t) {
   return () => {
-    if (t.pos >= t.shoe.length) { t.shoe = ctx.rng.deck(6); t.pos = 0; t.shuffled = true } // 한 판에 78장 넘게 쓸 일은 없지만 혹시 몰라
+    if (t.pos >= t.shoe.length) { t.shoe = t.ctx.rng.deck(DECKS); t.pos = 0; t.shuffled = true } // 한 판에 78장 넘게 쓸 일은 없지만 혹시 몰라
     return t.shoe[t.pos++]
   }
 }
 
-function view(t, p, ev) {
-  const r = t.round
-  const done = r?.phase === 'done'
-  const msg = {
-    t: 'state', ev, seq: t.seq,
-    phase: r ? r.phase : 'idle',
-    hands: r ? r.hands.map((h, i) => ({ cards: h.cards, bet: h.bet, doubled: h.doubled, split: h.split, ...(done ? r.results[i] : {}) })) : [],
-    active: r ? r.active : 0,
-    dealer: r ? (done ? r.dealer : [r.dealer[0], null]) : [],
-    actions: actions(r, p.chips),
-    turnMs: r && !done ? Math.max(0, t.turnAt - Date.now()) : 0,
-    back: done ? r.back : null,
+// ---------- 화면에 보낼 상태 (보는 사람마다 me·seq·actions만 다름) ----------
+function view(t, viewer, ev, extra) {
+  const now = Date.now()
+  const open = t.phase === 'dealer' || t.phase === 'result' // 딜러 카드·결과 공개
+  const my = seatOf.get(viewer.id)
+  const mine = my?.t === t ? my : null
+  return {
+    t: 'state', ev, ...extra,
+    table: t.no, phase: t.phase,
+    phaseMs: t.endsAt ? Math.max(0, t.endsAt - now) : 0,
+    dealer: !t.dealer.length ? [] : open ? t.dealer : [t.dealer[0], null],
+    seats: t.seats.map(s => s && {
+      name: s.p.name || '손님', me: s === mine, online: online(s.p),
+      bet: s.bet, ready: s.ready, inRound: s.inRound, done: s.done, active: s.active,
+      hands: s.inRound ? s.hands.map((h, k) => ({ cards: h.cards, bet: h.bet, doubled: h.doubled, split: h.split, ...(open && s.results ? s.results[k] : {}) })) : [],
+      staked: s.inRound ? s.hands.reduce((a, h) => a + h.bet, 0) : 0,
+      back: open ? s.back : null,
+      turnMs: s.inRound && !s.done && t.phase === 'play' ? Math.max(0, s.turnAt - now) : 0,
+      total: s.total,
+    }),
+    me: mine ? mine.i : -1,
+    seq: mine ? mine.seq : 0,
+    actions: mine && t.phase === 'play' && mine.inRound ? seatActions(mine, viewer.chips) : seatActions(null),
     shoe: { left: t.shoe.length - t.pos, size: SHOE_SIZE, cut: SHOE_SIZE - CUT, shuffled: t.shuffled },
-    lastBet: t.lastBet,
   }
-  return msg
 }
-const send = (t, p, ctx, ev) => ctx.send(p, view(t, p, ev))
-
-function startTurn(t, p, ctx) {
-  clearTimeout(t.turn)
-  t.turnAt = Date.now() + TURN_MS
-  t.turn = setTimeout(() => {
-    const r = t.round
-    if (!r || r.phase !== 'play') return
-    const pos = t.pos
-    act(r, 'stand', drawer(t, ctx))
-    after(t, p, ctx, 'timeout', pos)
-  }, TURN_MS)
+function broadcast(t, ev, extra) {
+  for (const s of seated(t)) t.ctx.send(s.p, view(t, s.p, ev, extra))
 }
 
-// 행동 뒤: 판이 끝났으면 화면 연출만큼 늦게 정산, 아니면 다음 차례 30초
-function after(t, p, ctx, ev, pos) {
-  const r = t.round
-  t.seq++
-  if (r.phase === 'done') {
-    clearTimeout(t.turn); t.turn = null
-    const dealerDraws = r.dealer.length - 2
-    const mine = Math.max(0, t.pos - pos - dealerDraws - (ev === 'deal' ? 2 : 0)) // 이번에 플레이어가 받은 카드
-    const ms = (ev === 'deal' ? 4 * DEAL_MS : mine * HIT_MS) + (1 + dealerDraws) * DEALER_MS + RESULT_MS + 150
-    const detail = { hands: r.hands.map((h, i) => ({ cards: h.cards.join(' '), bet: h.bet, result: r.results[i].result })), dealer: r.dealer.join(' ') }
-    const job = { back: r.back, round: t.roundId, detail, timer: null }
-    job.timer = setTimeout(() => pay(t, p, ctx), ms)
-    t.pay = job
-  } else startTurn(t, p, ctx)
-  send(t, p, ctx, ev)
+// ---------- 베팅 ----------
+function placeBet(s, amount) {
+  const { t } = s, { ctx } = t, p = s.p
+  if (t.phase !== 'bet') return toast(ctx, p, '지금은 베팅할 수 없어요. 이번 판이 끝나면 걸 수 있어요.')
+  if (amount === 0) { s.ready = false; return broadcast(t, 'bet', { seat: s.i }) }
+  if (!Number.isSafeInteger(amount) || amount < 1) return toast(ctx, p, '베팅은 1칩 이상 정수로 해 주세요.')
+  if (amount > p.chips) return toast(ctx, p, p.chips ? '칩이 모자라요.' : '먼저 칩을 바꿔 주세요.')
+  s.bet = amount
+  s.ready = true
+  if (!t.endsAt) { t.endsAt = Date.now() + BET_MS; schedule(t, BET_MS, () => closeBetting(t)) }
+  allReady(t)
+  broadcast(t, 'bet', { seat: s.i })
+}
+// 앉아 있고(연결됨) 칩이 있는 사람이 모두 걸었으면 곧 마감
+function allReady(t) {
+  if (t.phase !== 'bet' || !t.endsAt) return
+  const can = seated(t).filter(s => online(s.p) && (s.p.chips >= 1 || s.ready))
+  if (can.length && can.every(s => s.ready) && t.endsAt - Date.now() > READY_MS) {
+    t.endsAt = Date.now() + READY_MS
+    schedule(t, READY_MS, () => closeBetting(t))
+  }
 }
 
-function pay(t, p, ctx) {
-  const job = t.pay
-  if (!job) return
-  clearTimeout(job.timer)
-  t.pay = null
-  ctx.payout(p, job.back, job.round, job.detail)
+function closeBetting(t) {
+  const { ctx } = t
+  const roundId = 'b' + t.no + '_' + Date.now().toString(36) + ctx.rng.int(1e6).toString(36)
+  const players = []
+  for (const s of seated(t)) {
+    if (!s.ready) continue
+    s.ready = false
+    if (!online(s.p)) continue // 끊긴 사람은 이번 판 빠짐 (칩은 그대로)
+    if (ctx.bet(s.p, s.bet, roundId)) players.push(s)
+    else toast(ctx, s.p, '칩이 모자라 이번 판은 빠졌어요.')
+  }
+  t.endsAt = 0
+  if (!players.length) return broadcast(t, 'bet')
+  t.shuffled = false
+  if (t.pos >= CUT) { t.shoe = ctx.rng.deck(DECKS); t.pos = 0; t.shuffled = true }
+  t.roundId = roundId
+  t.closing = false
+  for (const s of players) { s.inRound = true; s.paid = false; s.back = null; s.results = null; s.seq++ }
+  const { dealer, cards } = dealRound(players, drawer(t))
+  t.dealer = dealer
+  t.phase = 'play'
+  const dealMs = cards * DEAL_MS // 화면이 카드를 다 나눈 뒤부터 행동 시간
+  for (const s of players) if (!s.done) startTurn(s, dealMs)
+  broadcast(t, 'deal')
+  allDone(t, dealMs)
+}
+
+// ---------- 행동 ----------
+function startTurn(s, delay) {
+  clearTimeout(s.turnTimer)
+  s.turnAt = Date.now() + delay + TURN_MS
+  s.turnTimer = setTimeout(() => {
+    s.turnTimer = null
+    if (s.t.phase === 'play' && s.inRound && !s.done && s.t.seats[s.i] === s) act(s, 'stand', 'timeout')
+  }, delay + TURN_MS)
+}
+function act(s, a, ev) {
+  const t = s.t
+  const pos = t.pos
+  if (!seatAct(s, a, drawer(t))) return
+  s.seq++
+  const anim = Math.max(0, t.pos - pos) * HIT_MS
+  if (s.done) { clearTimeout(s.turnTimer); s.turnTimer = null } else startTurn(s, anim)
+  broadcast(t, ev, { seat: s.i })
+  allDone(t, anim)
+}
+// 건 사람이 모두 끝났으면 (마지막 카드 연출 뒤) 딜러 차례
+function allDone(t, anim) {
+  if (t.phase !== 'play' || t.closing || !playing(t).every(s => s.done)) return
+  t.closing = true
+  schedule(t, anim + 150, () => dealerTurn(t))
+}
+
+// ---------- 딜러 · 정산 ----------
+function dealerTurn(t) {
+  const players = playing(t)
+  if (!players.length) return newBetting(t) // 건 사람이 모두 나감
+  dealerPlay(t.dealer, players, drawer(t))
+  for (const s of players) { settleSeat(s, t.dealer); s.net = s.back - s.staked; s.total += s.net }
+  t.phase = 'dealer'
+  broadcast(t, 'dealer')
+  const anim = (1 + t.dealer.length - 2) * DEALER_MS + RESULT_MS + 150 // 숨긴 카드 뒤집기 + 받은 카드 + 결과 표시
+  schedule(t, anim, () => {
+    for (const s of playing(t)) pay(s)
+    t.phase = 'result'
+    t.endsAt = Date.now() + SHOW_MS
+    broadcast(t, 'result')
+    schedule(t, SHOW_MS, () => newBetting(t))
+  })
+}
+function pay(s) {
+  if (s.paid || s.back === null) return
+  s.paid = true
+  const t = s.t
+  const detail = { table: t.no, seat: s.i, dealer: t.dealer.join(' '),
+    hands: s.hands.map((h, k) => ({ cards: h.cards.join(' '), bet: h.bet, result: s.results[k].result })) }
+  t.ctx.payout(s.p, s.back, t.roundId, detail)
+}
+function newBetting(t) {
+  t.phase = 'bet'
+  t.dealer = []
+  t.endsAt = 0
+  t.closing = false
+  for (const s of seated(t)) { s.inRound = false; s.hands = []; s.done = true; s.results = null; s.back = null; s.ready = false; clearTimeout(s.turnTimer) }
+  broadcast(t, 'bet')
 }
 
 export default {
@@ -89,61 +210,75 @@ export default {
   title: '블랙잭',
   buyIn: { min: 1 },
 
+  // 접속할 때마다 (새로고침·다른 탭 포함). 처음이면 자리에 앉히고 테이블 모두에게 알림
   join(p, ctx) {
-    send(table(p, ctx), p, ctx, 'join')
+    const had = seatOf.get(p.id)
+    const s = had || sit(p, ctx)
+    if (had) ctx.send(p, view(s.t, p, 'join'))
+    else broadcast(s.t, 'join', { seat: s.i })
   },
 
   message(p, d, ctx) {
-    const t = table(p, ctx)
-    if (d.t === 'deal') {
-      if (t.round?.phase === 'play') return ctx.send(p, { t: 'toast', msg: '판이 진행 중이에요.' })
-      if (!ctx.limit(p, 'deal', 400)) return
-      if (t.pay) pay(t, p, ctx) // 지난 판 결과 연출을 건너뛰고 바로 새 판
-      if (p.inPlay) return ctx.send(p, { t: 'toast', msg: '판이 진행 중이에요.' })
-      const bet = Number(d.bet) // 정수·범위·칩 잔액은 ctx.bet이 본다
-      const roundId = 'b_' + Date.now().toString(36) + ctx.rng.int(1e6).toString(36)
-      if (!ctx.bet(p, bet, roundId)) return ctx.send(p, { t: 'toast', msg: !p.chips ? '먼저 칩을 바꿔 주세요.' : bet > p.chips ? '칩이 모자라요.' : '베팅은 1칩 이상 정수로 해 주세요.' })
-      t.shuffled = false
-      if (t.pos >= CUT) { t.shoe = ctx.rng.deck(6); t.pos = 0; t.shuffled = true }
-      const pos = t.pos
-      t.round = deal(bet, drawer(t, ctx))
-      t.roundId = roundId
-      t.lastBet = bet
-      return after(t, p, ctx, 'deal', pos)
+    const s = seatOf.get(p.id)
+    if (!s) return
+    if (d.t === 'bet') {
+      if (!ctx.limit(p, 'bet', 150)) return
+      return placeBet(s, Number(d.amount))
     }
     if (d.t === 'act') {
-      const r = t.round
-      if (!r || r.phase !== 'play' || !ACTS.has(d.a)) return
-      if (d.seq !== t.seq) return send(t, p, ctx, 'sync') // 이미 처리한 화면에서 누른 것 (두 번 누름)
-      if (!actions(r, p.chips)[d.a]) return ctx.send(p, { t: 'toast', msg: d.a === 'double' || d.a === 'split' ? '칩이 모자라 지금은 할 수 없어요.' : '지금은 할 수 없어요.' })
-      if ((d.a === 'double' || d.a === 'split') && !ctx.bet(p, r.hands[r.active].bet, t.roundId)) return ctx.send(p, { t: 'toast', msg: '칩이 모자라요.' })
-      const pos = t.pos
-      act(r, d.a, drawer(t, ctx))
-      return after(t, p, ctx, d.a, pos)
+      const t = s.t
+      if (t.phase !== 'play' || !s.inRound || s.done || !ACTS.has(d.a)) return
+      if (d.seq !== s.seq) return ctx.send(p, view(t, p, 'sync')) // 이미 처리한 화면에서 누른 것 (두 번 누름)
+      if (!seatActions(s, p.chips)[d.a]) return toast(ctx, p, d.a === 'double' || d.a === 'split' ? '칩이 모자라 지금은 할 수 없어요.' : '지금은 할 수 없어요.')
+      if ((d.a === 'double' || d.a === 'split') && !ctx.bet(p, s.hands[s.active].bet, t.roundId)) return toast(ctx, p, '칩이 모자라요.')
+      return act(s, d.a, 'act')
     }
   },
 
-  // 나가기·끊김 60초: 남은 손을 모두 스탠드하고 딜러까지 끝낸 뒤 바로 정산 (건 칩을 잃게 하지 않음)
+  // 칩을 바꾼 직후: 베팅할 수 있게 됐으니 내 화면을 다시 보내고 '모두 걸었나'를 다시 본다
+  chipsChanged(p, ctx) {
+    const s = seatOf.get(p.id)
+    if (s) { ctx.send(p, view(s.t, p, 'sync')); allReady(s.t) }
+  },
+
+  // 나가기·끊김 60초: 결과가 나온 판은 바로 정산. 행동 시간에 나가면 코어가 건 칩을 거둔다 (위 설명)
   leave(p, ctx) {
-    const t = tables.get(p.id)
-    if (!t) return
-    clearTimeout(t.turn)
-    if (t.round?.phase === 'play') {
-      const pos = t.pos
-      standAll(t.round, drawer(t, ctx))
-      after(t, p, ctx, 'leave', pos)
-    }
-    pay(t, p, ctx)
-    tables.delete(p.id)
+    const s = seatOf.get(p.id)
+    if (!s) return
+    const t = s.t
+    seatOf.delete(p.id)
+    clearTimeout(s.turnTimer)
+    if (t.phase === 'dealer' || t.phase === 'result') pay(s)
+    t.seats[s.i] = null
+    if (!seated(t).length) { unschedule(t); tables.delete(t.no); return }
+    broadcast(t, 'leave', { seat: s.i })
+    allDone(t, 0)
+    allReady(t)
   },
 
-  // 서버를 끌 때: 이미 끝난 판은 결과대로 정산. 진행 중인 판은 코어가 무효로 하고 건 칩을 돌려준다
-  shutdown(ctx) {
-    for (const p of ctx.players()) {
-      const t = tables.get(p.id)
-      if (!t) continue
-      clearTimeout(t.turn)
-      pay(t, p, ctx)
+  summary() {
+    return { players: seatOf.size, tables: tables.size }
+  },
+
+  // 서버를 끌 때: 결과가 나온 판은 결과대로 정산. 행동 중인 판은 코어가 무효로 하고 건 칩을 돌려준다
+  shutdown() {
+    for (const t of tables.values()) {
+      unschedule(t)
+      for (const s of seated(t)) {
+        clearTimeout(s.turnTimer)
+        if (t.phase === 'dealer' || t.phase === 'result') pay(s)
+      }
     }
   },
 }
+
+// 테스트·시뮬레이션용: 이 사람 테이블의 다음 진행(베팅 마감·딜러·정산·새 베팅)을 기다리지 않고 바로
+export function _advance(p) {
+  const t = seatOf.get(p.id)?.t
+  if (!t?.timerFn) return false
+  const fn = t.timerFn
+  unschedule(t)
+  fn()
+  return true
+}
+export const _tables = tables
