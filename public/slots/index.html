@@ -108,6 +108,35 @@
       <path d="M50 8 61 37h31L67 55l9 31-26-18-26 18 9-31L8 37h31Z" fill="url(#g-star)" stroke="#a24f00" stroke-width="3" stroke-linejoin="round"/>
       <path d="M50 28 55 42h14l-11 8 4 14-12-8-12 8 4-14-11-8h14Z" fill="#fff6c8" opacity=".6"/>
     </symbol>
+    <!-- 럭키 스타: 밤하늘 그림 -->
+    <radialGradient id="g-moon" cx=".4" cy=".35" r=".8"><stop offset="0" stop-color="#fffbe8"/><stop offset=".6" stop-color="#ffe9a0"/><stop offset="1" stop-color="#d4a83c"/></radialGradient>
+    <symbol id="sym-moon" viewBox="0 0 100 100">
+      <path d="M62 12A40 40 0 1 0 88 70 32 32 0 1 1 62 12Z" fill="url(#g-moon)" stroke="#9c7425" stroke-width="2.5"/>
+      <circle cx="40" cy="62" r="5" fill="#e8c770" opacity=".7"/><circle cx="30" cy="44" r="3.5" fill="#e8c770" opacity=".6"/>
+    </symbol>
+    <symbol id="sym-planet" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="24" fill="#5ac8ff" stroke="#1d5f8a" stroke-width="2"/>
+      <path d="M30 42c8-4 20-4 34 2M28 54c10 4 26 4 42-2" stroke="#b8ecff" stroke-width="3" fill="none" opacity=".6"/>
+      <ellipse cx="50" cy="52" rx="44" ry="11" fill="none" stroke="#f3cf74" stroke-width="4" transform="rotate(-16 50 52)"/>
+    </symbol>
+    <symbol id="sym-comet" viewBox="0 0 100 100">
+      <path d="M12 18 64 52 52 64Z" fill="#b38cff" opacity=".45"/><path d="M22 14 66 48 58 56Z" fill="#e3d3ff" opacity=".55"/>
+      <circle cx="66" cy="62" r="18" fill="#fff6c8" stroke="#ffd23f" stroke-width="3"/><circle cx="60" cy="56" r="5" fill="#fff"/>
+    </symbol>
+    <symbol id="sym-clover" viewBox="0 0 100 100">
+      <g fill="#33c56b" stroke="#1a6e3a" stroke-width="2"><circle cx="38" cy="36" r="15"/><circle cx="62" cy="36" r="15"/><circle cx="38" cy="58" r="15"/><circle cx="62" cy="58" r="15"/></g>
+      <path d="M50 52c2 14 8 26 18 36" stroke="#1a6e3a" stroke-width="5" fill="none" stroke-linecap="round"/><circle cx="50" cy="47" r="5" fill="#a8f5c4"/>
+    </symbol>
+    <symbol id="sym-horseshoe" viewBox="0 0 100 100">
+      <path d="M24 22c-6 30 0 58 26 62 26-4 32-32 26-62h-12c4 24 0 44-14 48-14-4-18-24-14-48Z" fill="url(#g-gold)" stroke="#7a5a1a" stroke-width="2.5" stroke-linejoin="round"/>
+      <g fill="#7a5a1a"><circle cx="28" cy="34" r="2.5"/><circle cx="29" cy="50" r="2.5"/><circle cx="72" cy="34" r="2.5"/><circle cx="71" cy="50" r="2.5"/></g>
+    </symbol>
+    <!-- 다이아몬드: 배수 릴 칸 -->
+    <symbol id="sym-x1" viewBox="0 0 100 100"><text x="50" y="62" text-anchor="middle" font-family="Pretendard, sans-serif" font-weight="900" font-size="34" fill="#8a7a55">×1</text></symbol>
+    <symbol id="sym-x2" viewBox="0 0 100 100"><text x="50" y="64" text-anchor="middle" font-family="Pretendard, sans-serif" font-weight="900" font-size="40" fill="url(#g-gold)" stroke="#5a3c0a" stroke-width="1.5">×2</text></symbol>
+    <symbol id="sym-x3" viewBox="0 0 100 100"><text x="50" y="64" text-anchor="middle" font-family="Pretendard, sans-serif" font-weight="900" font-size="40" fill="url(#g-gold)" stroke="#5a3c0a" stroke-width="1.5">×3</text></symbol>
+    <symbol id="sym-x5" viewBox="0 0 100 100"><text x="50" y="66" text-anchor="middle" font-family="Pretendard, sans-serif" font-weight="900" font-size="44" fill="url(#g-red)" stroke="#f3cf74" stroke-width="2">×5</text></symbol>
+    <symbol id="sym-x10" viewBox="0 0 100 100"><text x="50" y="64" text-anchor="middle" font-family="Pretendard, sans-serif" font-weight="900" font-size="38" fill="url(#g-red)" stroke="#fff1b8" stroke-width="2.5">×10</text></symbol>
     <!-- 메가 잭팟: 잭팟 동전 -->
     <symbol id="sym-jp" viewBox="0 0 100 100">
       <circle cx="50" cy="50" r="40" fill="url(#g-gold)" stroke="#7a5a1a" stroke-width="3"/>
@@ -117,6 +146,7 @@
   </svg>
 
   <main class="sl" data-machine="classic">
+    <div class="sl-gjp" id="gjp" aria-live="polite"><span class="sl-gjp-k">⭐ 모두의 잭팟</span><b id="gjpPool">0</b><small id="gjpLast"></small></div>
     <nav class="sl-pick" id="pick" aria-label="머신 고르기"></nav>
     <div class="sl-machine">
       <section class="sl-cabinet" aria-label="슬롯머신">
@@ -133,10 +163,10 @@
             <div class="sl-reels" id="reels"></div>
             <svg class="sl-paylines" id="paylines" viewBox="0 0 300 300" preserveAspectRatio="none" aria-hidden="true"></svg>
             <div class="sl-fxtext" id="fxText" aria-hidden="true"></div>
-            <div class="sl-fs-banner" id="fsBanner" hidden><b>FREE SPINS</b><span id="fsBannerSub">10번 · 당첨 ×2</span></div>
+            <div class="sl-fs-banner" id="fsBanner" hidden><b>FREE SPINS</b><span id="fsBannerSub">8번 · 별이 뜰 때마다 배수 +1</span></div>
           </div>
           <div class="sl-fs" id="fsBar" hidden>
-            <span>프리스핀 <b id="fsN">1</b> / <b id="fsOf">10</b> · ×<b id="fsMult">2</b></span>
+            <span>남은 프리스핀 <b id="fsN">8</b>번 · 배수 ×<b id="fsMult">1</b></span>
             <span>합계 <b id="fsTotal">0</b></span>
             <button type="button" id="fsSkip">건너뛰기</button>
           </div>

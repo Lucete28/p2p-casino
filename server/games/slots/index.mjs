@@ -1,34 +1,39 @@
-// 슬롯머신 (관리 모드, CASINO.md 3·5장): 머신 다섯 대, 모두 RTP 약 99%. 규칙은 public/slots/rules.mjs (화면과 같이 씀)
+// 슬롯머신 (관리 모드, CASINO.md 3·5장): 머신 다섯 대 + 모두의 잭팟. 규칙은 public/slots/rules.mjs (화면과 같이 씀)
 //
 //   브라우저 → { t: 'spin', machine, lineBet, lines }    machine = classic·diamond·fruit5·lucky·jackpot
-//              { t: 'skip' }                             프리스핀 연출 건너뛰기 → 정해진 결과로 바로 정산
-//   서버 → { t: 'spun', machine, round, stops, lineBet, lines, total, wins, scatter, back, tease, bonus, jackpot }
-//            back = 이번 판에 돌려받을 칩 전부 (프리스핀·잭팟 포함). bonus = { mult, spins: [{ stops, wins, scatter, back }], total }
+//              { t: 'skip' }                             긴 연출(프리스핀·연쇄) 건너뛰기 → 정해진 결과로 바로 정산
+//   서버 → { t: 'spun', machine, round, stops, lineBet, lines, total, wins, scatter, mreel, steps, back, base, tease, bonus, jackpot }
+//            back = 이번 판에 돌려받을 칩 전부 (프리스핀·연쇄·잭팟 포함), base = 첫 화면의 당첨
+//            steps = 과일 폭탄 연쇄 (떨어진 새 과일 포함), bonus = 럭키 스타 프리스핀 { spins, total, mult }
+//            jackpot = { win, share, kind: 'mystery'|'line' }
 //          { t: 'hello', stops: { 머신: 멈춘 자리 }, spinning, jackpot }   접속할 때
-//          { t: 'jackpot', pool, last }                  누적 잭팟이 바뀔 때 (모두에게, 1초에 한 번까지)
+//          { t: 'jackpot', pool, last }                  모두의 잭팟이 바뀔 때 (모두에게, 1초에 한 번까지 · 누가 맞히면 바로)
 //
-// 칩 흐름: 돌리면 바로 ctx.bet(한 판 베팅). 연출이 끝날 때(릴 + 두근두근 + 프리스핀) ctx.payout(돌려받을 칩 전부).
-// 결과는 돌리는 순간 모두 정해진다 (프리스핀 10번 포함). 그사이 나가거나 끊기거나 서버를 꺼도 그 결과대로 바로 정산한다.
+// 칩 흐름: 돌리면 바로 ctx.bet(한 판 베팅). 연출이 끝날 즈음 ctx.payout(돌려받을 칩 전부). 화면은 연출이 끝날 때까지
+// 늘어난 칩 숫자를 보여 주지 않으므로 결과가 미리 보이지 않는다.
+// 결과는 돌리는 순간 모두 정해진다 (프리스핀·연쇄의 새 과일·잭팟 포함). 그사이 나가거나 끊기거나 서버를 꺼도 그 결과대로 바로 정산.
 import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { MACHINES, MACHINE_IDS, machineOf, checkBet, evaluate, teases, TEASE_MS } from '../../../public/slots/rules.mjs'
+import { MACHINE_IDS, JACKPOT, machineOf, checkBet, evaluate, freeSpins, teases, TEASE_MS } from '../../../public/slots/rules.mjs'
 
 export const SPIN_MS = 2300 // 화면의 릴 연출(마지막 릴 정지 약 2.0초)보다 약간 길게
 export const FS_MS = { intro: 2200, spin: 1800, outro: 800 } // 프리스핀 연출 (public/slots/app.js와 같게)
+export const CASCADE_MS = 1100 // 과일 폭탄 연쇄 한 번
 const MIN_GAP_MS = 800 // 스핀 간격 최소 (CASINO.md 5장)
+// 로컬에서 미스터리 잭팟 연출을 보려고 확률만 바꿀 때 (사이트에는 이 환경 변수가 없음)
+const JP_ODDS = Number(process.env.SLOTS_JP_ODDS) || JACKPOT.odds
 
 const pending = new Map() // 사용자 ID → { timer, round, back, result, jackpot }
 const lastStops = new Map() // 사용자 ID → { 머신: 멈춘 자리 } (다시 들어와도 같은 그림)
 
-// ---------- 누적 잭팟 (메가 잭팟 머신) ----------
-// 베팅의 contribute만큼 잭팟에, reserve만큼 다음 밑돈에 쌓는다. 가운데 줄 잭팟 셋이면
-// 베팅이 fullBet 이상일 때 잭팟 전부, 적으면 베팅 비율만큼 가져가고 나머지는 남는다.
-// 다 가져가면 밑돈이 새 잭팟이 된다 (floor보다 적으면 하우스가 floor까지 채움).
+// ---------- 모두의 잭팟 ----------
+// 어느 머신이든 베팅의 1.5%는 잭팟에, 0.5%는 다음 밑돈에. 판마다 베팅 ÷ odds 확률로 잭팟 전부 (미스터리).
+// 메가 잭팟 머신은 가운데 줄 잭팟 동전 셋으로도 (베팅 fullBet 이상이면 전부, 적으면 베팅 비율만큼).
+// 다 가져가면 밑돈이 새 잭팟 (floor보다 적으면 하우스가 floor까지 채움).
 // 금액은 DATA_DIR/slots-jackpot.json에 저장 (서버가 다시 켜져도 이어짐). 코어 저장소에 일반 저장 칸이 없어서 따로 둠
-const JP = MACHINES.jackpot.jackpot
 const DATA = process.env.DATA_DIR || join(import.meta.dirname, '..', '..', '..', 'data')
 const JP_FILE = join(DATA, 'slots-jackpot.json')
-let jp = { pool: JP.start, reserve: 0, hits: 0, last: null } // last = { name, win, at }
+let jp = { pool: JACKPOT.start, reserve: 0, hits: 0, last: null } // last = { name, win, machine, at }
 let saveT = null, sendT = null, sendAt = 0
 function loadJackpot() {
   try {
@@ -50,7 +55,10 @@ function announce(ctx, now_ = false) { // 모두에게 잭팟 금액 (1초에 �
   const now = Date.now()
   if (now_ || now - sendAt >= 1000) { clearTimeout(sendT); sendT = null; sendAt = now; ctx.broadcast(ctx.players(), jpMsg()); return }
   sendT ||= setTimeout(() => { sendT = null; sendAt = Date.now(); ctx.broadcast(ctx.players(), jpMsg()) }, 1000 - (now - sendAt))
+  sendT.unref?.()
 }
+// 테스트·시뮬레이션용: 지금 잭팟 상태 (소수점 포함)
+export const jackpotState = () => ({ ...jp })
 
 function finish(p, ctx) {
   const job = pending.get(p.id)
@@ -58,15 +66,16 @@ function finish(p, ctx) {
   clearTimeout(job.timer)
   pending.delete(p.id)
   ctx.payout(p, job.back, job.round, job.result)
-  if (job.jackpot) { jp.last = { name: p.name || '누군가', win: job.jackpot.win, at: Date.now() }; saveJackpot(); announce(ctx, true) }
-  else if (job.machine === 'jackpot') saveSoon()
+  if (job.jackpot) { jp.last = { name: p.name || '누군가', win: job.jackpot.win, machine: job.machine, at: Date.now() }; saveJackpot(); announce(ctx, true) }
+  else saveSoon()
 }
 
-// 테스트·시뮬레이션용: 지금 잭팟 상태 (소수점 포함)
-export const jackpotState = () => ({ ...jp })
-
-const randStops = (m, ctx) => m.strips.map(st => ctx.rng.int(st.length))
-const compactWins = wins => wins.map(w => [w.line, w.kind, w.pay])
+const randStops = (m, ctx) => {
+  const s = m.strips.map(st => ctx.rng.int(st.length))
+  if (m.mstrip) s.push(ctx.rng.int(m.mstrip.length)) // 다이아몬드 배수 릴
+  return s
+}
+const compactWins = wins => wins.map(w => [w.line ?? w.sym, w.kind, w.pay])
 
 export default {
   id: 'slots',
@@ -92,48 +101,43 @@ export default {
     if (!ctx.bet(p, bet.total, round)) return ctx.send(p, { t: 'toast', msg: p.chips ? '칩이 모자라요.' : '먼저 칩을 바꿔 주세요.' })
 
     const stops = randStops(m, ctx)
-    const r = evaluate(m, stops, bet.lines, bet.lineBet)
+    const draw = r => m.strips[r][ctx.rng.int(m.strips[r].length)] // 연쇄로 떨어질 새 과일
+    const r = evaluate(m, stops, bet.lines, bet.lineBet, 1, draw)
     let back = r.back, delay = SPIN_MS
     const tease = teases(m, stops, bet.lines)
     if (tease) delay += TEASE_MS
-    const result = { machine: m.id, stops, lineBet: bet.lineBet, lines: bet.lines, wins: compactWins(r.wins) } // 판 기록 (30일)
+    const result = { machine: m.id, stops, lineBet: bet.lineBet, lines: bet.lines } // 판 기록 (30일)
+    if (r.wins) result.wins = compactWins(r.wins)
     if (r.scatter?.pay) result.scatter = [r.scatter.count, r.scatter.pay]
+    if (r.mreel) result.mreel = r.mreel.value
+    if (r.steps) { result.steps = r.steps.map(s => [s.chain, s.pay]); delay += r.steps.length * CASCADE_MS }
 
-    // 프리스핀: 열 번을 지금 다 정한다 (다시 걸리지 않음)
+    // 럭키 스타 프리스핀: 지금 다 정한다 (별이 뜰 때마다 배수 +1, 별 셋이면 +3번)
     let bonus = null
     if (r.bonus) {
-      const { freeSpins, mult } = m.scatter
-      const spins = []
-      let total = 0
-      for (let i = 0; i < freeSpins; i++) {
-        const st = randStops(m, ctx)
-        const e = evaluate(m, st, bet.lines, bet.lineBet, mult)
-        spins.push({ stops: st, wins: e.wins, scatter: e.scatter, back: e.back })
-        total += e.back
-      }
-      bonus = { mult, spins, total }
-      back += total
-      delay += FS_MS.intro + freeSpins * FS_MS.spin + FS_MS.outro
-      result.fs = { total, stops: spins.map(s => s.stops) }
+      bonus = freeSpins(m, bet.lines, bet.lineBet, () => randStops(m, ctx))
+      back += bonus.total
+      delay += FS_MS.intro + bonus.spins.length * FS_MS.spin + FS_MS.outro
+      result.fs = { total: bonus.total, spins: bonus.spins.length, mult: bonus.mult }
     }
 
-    // 누적 잭팟: 쌓고, 맞으면 가져감
+    // 모두의 잭팟: 쌓고, 미스터리(베팅 비례 확률) 또는 메가 잭팟 줄이면 가져감
+    jp.pool += bet.total * JACKPOT.contribute
+    jp.reserve += bet.total * JACKPOT.reserve
     let jackpot = null
-    if (m.jackpot) {
-      jp.pool += bet.total * JP.contribute
-      jp.reserve += bet.total * JP.reserve
-      if (r.jackpot) {
-        const share = Math.min(1, bet.total / JP.fullBet)
-        const win = Math.floor(jp.pool * share)
-        jp.pool -= win
-        if (share >= 1) { jp.pool = Math.max(jp.pool + jp.reserve, JP.floor); jp.reserve = 0 }
-        jp.hits++
-        jackpot = { win, share }
-        back += win
-        result.jp = win
-      }
-      announce(ctx)
+    const mystery = ctx.rng.int(JP_ODDS) < bet.total
+    if (mystery || r.jackpotLine) {
+      const share = mystery ? 1 : Math.min(1, bet.total / JACKPOT.fullBet)
+      const win = Math.floor(jp.pool * share)
+      jp.pool -= win
+      if (share >= 1) { jp.pool = Math.max(jp.pool + jp.reserve, JACKPOT.floor); jp.reserve = 0 }
+      jp.hits++
+      jackpot = { win, share, kind: mystery ? 'mystery' : 'line' }
+      back += win
+      result.jp = [jackpot.kind, win]
+      delay += 2500
     }
+    announce(ctx)
 
     const all = lastStops.get(p.id) || {}
     all[m.id] = stops
@@ -142,7 +146,7 @@ export default {
     pending.set(p.id, { timer, round, back, result, jackpot, machine: m.id })
     ctx.send(p, {
       t: 'spun', machine: m.id, round, stops, lineBet: bet.lineBet, lines: bet.lines, total: bet.total,
-      wins: r.wins, scatter: r.scatter, back, base: r.back, tease, bonus, jackpot,
+      wins: r.wins || [], scatter: r.scatter, mreel: r.mreel, steps: r.steps, back, base: r.back, tease, bonus, jackpot,
     })
   },
 
