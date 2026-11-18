@@ -1,0 +1,200 @@
+/* 블랙잭 화면. 색은 shared/casino.css 변수 (블랙 & 골드 + 초록 펠트) */
+body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, var(--c-bg) 100%) fixed; }
+.bj { --cw: 70px; max-width: 760px; margin: 0 auto; padding: 16px 16px 48px; }
+
+/* ---------- 테이블 ---------- */
+.bj-table {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  min-height: calc(var(--cw) * 5.4); padding: 18px 16px 22px; overflow: hidden;
+  border-radius: 22px 22px 50% 50% / 22px 22px 26% 26%;
+  background:
+    radial-gradient(120% 90% at 50% 30%, rgba(255,255,255,.08), transparent 60%),
+    radial-gradient(circle at 50% 40%, #16744d 0%, var(--c-felt) 55%, #093824 100%);
+  border: 10px solid #3a2410;
+  box-shadow: inset 0 0 0 2px var(--c-gold-2), inset 0 0 40px rgba(0,0,0,.55), 0 0 0 2px #1a0f06, 0 24px 50px -18px rgba(0,0,0,.9), 0 0 70px -30px rgba(232,194,106,.35);
+}
+.bj-table::before { /* 펠트 위 금색 안쪽 줄 */
+  content: ""; position: absolute; inset: 10px; pointer-events: none;
+  border-radius: 14px 14px 50% 50% / 14px 14px 26% 26%; border: 1.5px solid var(--c-felt-line); opacity: .55;
+}
+.bj-zone { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; width: 100%; }
+.bj-label { display: flex; align-items: center; gap: 8px; height: 26px; font-size: 13px; font-weight: 700; color: rgba(245,239,224,.72); letter-spacing: .08em; }
+.bj-total { min-width: 32px; height: 26px; padding: 0 9px; border-radius: 13px; display: inline-grid; place-items: center;
+  background: rgba(0,0,0,.55); border: 1px solid var(--c-line); color: var(--c-ink); font-size: 15px; font-weight: 800; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.bj-total.bust { background: #6d0c12; border-color: #ff6b6b; }
+.bj-total.bj21 { background: linear-gradient(180deg, #ffe39b, #c99a3c); color: #2a1a03; border-color: #fff1c8; }
+
+.bj-felt-text { width: min(440px, 92%); height: auto; margin: -2px 0 -24px; overflow: visible; pointer-events: none; }
+.bj-felt-text text { fill: rgba(232,200,120,.62); font: 800 19px "Pretendard", sans-serif; letter-spacing: .28em; }
+.bj-felt-rule { margin: 0; font-size: 12px; color: rgba(232,200,120,.55); letter-spacing: .04em; text-align: center; }
+.bj-center { position: relative; z-index: 2; min-height: 30px; display: grid; place-items: center; }
+.bj-center span { padding: 5px 14px; border-radius: 16px; background: rgba(0,0,0,.5); color: var(--c-gold); font-size: 13px; font-weight: 700; animation: bj-fade 1.8s ease-out forwards; }
+@keyframes bj-fade { 0% { opacity: 0; transform: translateY(6px); } 15%, 75% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+
+/* 슈 */
+.bj-shoe { position: absolute; z-index: 2; right: 18px; top: 16px; width: 56px; }
+.bj-shoe-box { position: relative; height: 46px; border-radius: 6px 6px 10px 10px; background: linear-gradient(180deg, #2a1a0c, #120a04); border: 1px solid var(--c-gold-2);
+  box-shadow: 0 6px 12px rgba(0,0,0,.5); transform: perspective(120px) rotateX(18deg); }
+.bj-shoe-box i { position: absolute; left: 8px; right: 8px; height: 24px; top: 6px; border-radius: 4px; background: var(--back); border: 1.5px solid #fff; }
+.bj-shoe-box i:nth-child(2) { top: 9px; } .bj-shoe-box i:nth-child(3) { top: 12px; }
+.bj-shoe-bar { height: 4px; margin-top: 6px; border-radius: 2px; background: rgba(0,0,0,.5); overflow: hidden; }
+.bj-shoe-bar span { display: block; height: 100%; width: 100%; background: var(--c-gold); transition: width .4s; }
+.bj-shoe-bar span.low { background: #ff8a5a; }
+
+/* ---------- 카드 ---------- */
+:root { --back: repeating-linear-gradient(45deg, #9d1520 0 4px, #b81c28 4px 8px); }
+.bj-cards { display: flex; justify-content: center; min-height: calc(var(--cw) * 1.4); padding: 0 4px; }
+.card { position: relative; flex: none; width: var(--cw); height: calc(var(--cw) * 1.4); perspective: 600px; }
+.bj-dealer .card + .card { margin-left: calc(var(--cw) * -0.32); }
+.bj-hand .card + .card { margin-left: calc(var(--cw) * -0.6); }
+.card-in { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform .45s cubic-bezier(.3,.7,.3,1); }
+.card.down .card-in { transform: rotateY(180deg); }
+.card-face, .card-back { position: absolute; inset: 0; border-radius: calc(var(--cw) * .09); backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  box-shadow: 0 2px 0 rgba(0,0,0,.15), -2px 3px 8px rgba(0,0,0,.35); }
+.card-face { background: linear-gradient(160deg, #fff, #f3efe6); color: #16130f; border: 1px solid #d8d1c0; overflow: hidden; }
+.card-face.red { color: #c8141f; }
+.card-back { transform: rotateY(180deg); background: var(--back); border: calc(var(--cw) * .05) solid #fdf8ec; }
+.card-back::after { content: ""; position: absolute; inset: 18% 22%; border-radius: 50%; border: 2px solid rgba(232,194,106,.85); background: rgba(0,0,0,.18); }
+.card-corner { position: absolute; left: 7%; top: 5%; display: flex; flex-direction: column; align-items: center; line-height: .95; font-weight: 800; }
+.card-corner b { font-size: calc(var(--cw) * .3); letter-spacing: -.04em; }
+.card-corner i { font-style: normal; font-size: calc(var(--cw) * .22); }
+.card-corner.br { left: auto; top: auto; right: 7%; bottom: 5%; transform: rotate(180deg); }
+.card-pip { position: absolute; inset: 0; display: grid; place-items: center; font-size: calc(var(--cw) * .62); line-height: 1; }
+.card-pip.face { font-size: calc(var(--cw) * .5); font-weight: 900; }
+.card-pip.face::before { content: ""; position: absolute; inset: 22% 20%; border-radius: 6px; border: 1.5px solid currentColor; opacity: .25; }
+.card.dbl { margin-top: calc(var(--cw) * .2); transform: rotate(90deg) translateY(calc(var(--cw) * .1)); }
+.bj-hand .card.dbl { margin-left: calc(var(--cw) * -0.12); }
+.card.win .card-face { box-shadow: 0 0 0 2px #ffe39b, 0 0 14px rgba(255,214,120,.7); }
+
+/* ---------- 내 손 ---------- */
+.bj-player { margin-top: auto; }
+.bj-hands { display: flex; justify-content: center; align-items: flex-end; gap: calc(var(--cw) * .35); min-height: calc(var(--cw) * 1.4 + 52px); }
+.bj-hand { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px 8px 4px; border-radius: 14px; transition: background .2s, box-shadow .2s, opacity .2s; }
+.bj-hand.active { background: rgba(255,226,150,.1); box-shadow: 0 0 0 2px rgba(232,194,106,.8), 0 0 20px rgba(232,194,106,.3); }
+.bj-hand.waiting { opacity: .6; }
+.bj-hand .bj-cards { min-height: calc(var(--cw) * 1.4); }
+.bj-hand-bet { display: flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 700; color: var(--c-ink); font-variant-numeric: tabular-nums; }
+.bj-tag { position: absolute; z-index: 3; left: 50%; top: 64%; transform: translate(-50%, -50%) rotate(-6deg); padding: 5px 12px; border-radius: 10px; white-space: nowrap;
+  font-size: 16px; font-weight: 900; letter-spacing: .02em; background: #1a1512; border: 2px solid var(--c-gold); color: var(--c-gold);
+  box-shadow: 0 6px 16px rgba(0,0,0,.5); animation: bj-pop .35s cubic-bezier(.2,1.6,.4,1); }
+.bj-tag.win { background: #0c4a2c; border-color: #4ade80; color: #d7ffe6; }
+.bj-tag.blackjack { background: linear-gradient(180deg, #ffe39b, #c99a3c); color: #2a1a03; border-color: #fff1c8; font-size: 18px; }
+.bj-tag.lose, .bj-tag.bust { background: #3a0a0e; border-color: #ff6b6b; color: #ffd0d0; }
+.bj-tag.push { background: #23201a; border-color: #bdb39c; color: #efe7d4; }
+@keyframes bj-pop { from { transform: translate(-50%, -50%) scale(.3); opacity: 0; } }
+
+/* 베팅 자리: 동그라미 + 칩 더미 */
+.bj-spot { position: relative; display: grid; place-items: center; width: 84px; height: 84px; margin-top: 4px; border-radius: 50%;
+  border: 2px dashed rgba(232,200,120,.55); background: rgba(0,0,0,.12); }
+.bj-spot.hide { display: none; }
+.bj-spot-amt { position: absolute; bottom: -10px; padding: 1px 9px; border-radius: 10px; background: rgba(0,0,0,.7); font-size: 13px; color: var(--c-gold); font-variant-numeric: tabular-nums; }
+.bj-spot-amt:empty { display: none; }
+.bj-stack { position: relative; width: 44px; height: 44px; }
+.bj-stack i { position: absolute; left: 0; bottom: 0; width: 44px; height: 44px; }
+.chip { display: block; width: 100%; height: 100%; border-radius: 50%; background: var(--chip, #2a63c4);
+  box-shadow: inset 0 0 0 4px var(--chip), inset 0 0 0 7px rgba(255,255,255,.95), inset 0 0 0 9px var(--chip), 0 2px 0 rgba(0,0,0,.45);
+  background-image: repeating-conic-gradient(rgba(255,255,255,.9) 0 12deg, transparent 12deg 45deg);
+  position: relative; }
+.chip::after { content: ""; position: absolute; inset: 22%; border-radius: 50%; background: var(--chip); box-shadow: inset 0 0 0 1.5px rgba(255,255,255,.6); }
+.bj-hand-bet .chip { width: 18px; height: 18px; box-shadow: inset 0 0 0 2px var(--chip), inset 0 0 0 3.5px #fff; background-image: none; }
+.bj-hand-bet .chip::after { display: none; }
+
+/* ---------- 아래 조작판 ---------- */
+.bj-panel { margin-top: 14px; padding: 14px; border-radius: 18px; background: linear-gradient(180deg, #17140f, #0e0c09); border: 1px solid var(--c-line); }
+.bj-result { margin-bottom: 12px; padding: 10px 14px; border-radius: 12px; background: #060504; border: 1px solid #2d2617; box-shadow: inset 0 0 18px rgba(0,0,0,.9); }
+.bj-result-main { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-height: 30px; }
+.bj-result-title { font-size: 18px; font-weight: 800; }
+.bj-result-amt { font-size: 22px; font-weight: 900; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bj-result-amt.plus { color: #6ee7a0; } .bj-result-amt.minus { color: #ff8a8a; } .bj-result-amt.even { color: var(--c-muted); }
+.bj-result-sub { margin: 2px 0 0; font-size: 13px; color: var(--c-muted); min-height: 18px; }
+.bj-result.big .bj-result-title { color: #ffe39b; text-shadow: 0 0 14px rgba(255,200,90,.6); }
+
+/* 칩 버튼 */
+.bj-chips { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; justify-items: center; }
+.bj-chip { --chip: #2a63c4; position: relative; width: 100%; max-width: 64px; aspect-ratio: 1; padding: 0; border: 0; border-radius: 50%; cursor: pointer; background: none;
+  transition: transform .12s; }
+.bj-chip .chip { box-shadow: inset 0 0 0 4px var(--chip), inset 0 0 0 7px rgba(255,255,255,.95), inset 0 0 0 9px var(--chip), 0 3px 0 rgba(0,0,0,.6), 0 6px 12px rgba(0,0,0,.4); }
+.bj-chip b { position: absolute; inset: 0; z-index: 1; display: grid; place-items: center; font-size: clamp(11px, 3.2vw, 14px); font-weight: 900; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.7); }
+.bj-chip:hover:not([disabled]) { transform: translateY(-3px); }
+.bj-chip:active:not([disabled]) { transform: translateY(1px) scale(.96); }
+.bj-chip[disabled] { opacity: .3; cursor: default; }
+.bj-chip:focus-visible { outline: 2px solid var(--c-gold); outline-offset: 3px; }
+.bj-bet-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0; }
+.bj-small { height: 44px; border-radius: 12px; border: 1px solid var(--c-line); background: var(--c-panel-2); color: var(--c-ink); font: 700 14px "Pretendard", sans-serif; cursor: pointer; }
+.bj-small:hover:not([disabled]) { border-color: var(--c-gold); }
+.bj-small[disabled] { opacity: .4; cursor: default; }
+.bj-deal { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; height: 58px; border: 0; border-radius: 16px; cursor: pointer;
+  font: 900 22px "Pretendard", sans-serif; color: #1a1205; letter-spacing: .06em;
+  background: linear-gradient(180deg, #ffe39b, var(--c-gold) 45%, #b8913f); box-shadow: 0 4px 0 #6d5320, 0 10px 24px -8px rgba(232,194,106,.6); }
+.bj-deal small { font-size: 15px; font-weight: 700; letter-spacing: 0; opacity: .8; font-variant-numeric: tabular-nums; }
+.bj-deal:active:not([disabled]) { transform: translateY(3px); box-shadow: 0 1px 0 #6d5320; }
+.bj-deal[disabled] { filter: grayscale(.6); opacity: .5; cursor: default; }
+.bj-deal.short { background: linear-gradient(180deg, #5a4a33, #3a2f20); color: var(--c-ink); box-shadow: 0 4px 0 #1d170f; }
+
+/* 행동 버튼 */
+.bj-timer { position: relative; height: 22px; margin-bottom: 10px; border-radius: 11px; background: rgba(0,0,0,.5); overflow: hidden; }
+.bj-timer span { position: absolute; inset: 0 auto 0 0; width: 100%; background: linear-gradient(90deg, #a9833a, var(--c-gold)); opacity: .35; }
+.bj-timer.hurry span { background: #ff6b5e; opacity: .55; }
+.bj-timer small { position: relative; display: block; text-align: center; line-height: 22px; font-size: 12px; color: var(--c-ink); }
+.bj-act-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.bj-btn { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; height: 72px; padding: 0 4px;
+  border-radius: 14px; border: 1px solid rgba(255,255,255,.14); cursor: pointer; color: #fff; font-family: "Pretendard", sans-serif;
+  box-shadow: 0 4px 0 rgba(0,0,0,.55); transition: transform .08s, filter .15s; }
+.bj-btn b { font-size: 19px; font-weight: 900; }
+.bj-btn small { font-size: 11.5px; opacity: .85; white-space: nowrap; }
+.bj-btn.hit { background: linear-gradient(180deg, #2e9d63, #17663f); }
+.bj-btn.stand { background: linear-gradient(180deg, #d0414a, #8e1820); }
+.bj-btn.double { background: linear-gradient(180deg, #e4b552, #a27a2b); color: #1f1405; }
+.bj-btn.split { background: linear-gradient(180deg, #4b7fd6, #284f96); }
+.bj-btn:active:not([disabled]) { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,.55); }
+.bj-btn[disabled] { filter: grayscale(1) brightness(.55); cursor: default; box-shadow: none; }
+.bj-btn.advice::after { content: "추천"; position: absolute; top: -9px; right: -4px; padding: 2px 7px; border-radius: 9px; font-size: 11px; font-weight: 900;
+  color: #2a1a03; background: linear-gradient(180deg, #fff1c8, #e8c26a); box-shadow: 0 2px 6px rgba(0,0,0,.5); animation: bj-bob 1s ease-in-out infinite alternate; }
+.bj-btn.advice { box-shadow: 0 4px 0 rgba(0,0,0,.55), 0 0 0 2px #ffe39b, 0 0 16px rgba(255,214,120,.55); }
+@keyframes bj-bob { to { transform: translateY(-3px); } }
+.bj-act.wait .bj-btn { pointer-events: none; }
+
+.bj-tools { display: flex; justify-content: center; gap: 8px; margin-top: 12px; }
+.bj-tool { height: 44px; padding: 0 14px; border-radius: 22px; border: 1px solid var(--c-line); background: transparent; color: var(--c-muted); font: 600 13px "Pretendard", sans-serif; cursor: pointer; }
+.bj-tool[aria-pressed="true"] { color: var(--c-gold); border-color: rgba(232,194,106,.55); background: rgba(232,194,106,.07); }
+.bj-tool[aria-pressed="false"] { text-decoration: line-through; text-decoration-thickness: 1px; }
+#help { text-decoration: none; }
+
+/* 하는 법 */
+.bj-help { width: min(440px, calc(100vw - 48px)); }
+.bj-howto { margin: 12px 0; padding: 0; list-style: none; counter-reset: s; display: grid; gap: 10px; }
+.bj-howto li { counter-increment: s; display: grid; grid-template-columns: 26px 1fr; column-gap: 10px; font-size: 13.5px; line-height: 1.5; }
+.bj-howto li::before { content: counter(s); grid-row: span 2; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--c-gold); color: #1a1205; font-weight: 900; }
+.bj-howto b { color: var(--c-ink); } .bj-howto span { color: var(--c-muted); } .bj-howto em { font-style: normal; color: var(--c-gold); font-weight: 700; }
+.bj-help-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+.bj-help-grid div { padding: 10px 12px; border-radius: 12px; background: var(--c-panel-2); border: 1px solid var(--c-line); }
+.bj-help-grid h3 { margin: 0 0 4px; font-size: 13px; color: var(--c-gold); }
+.bj-help-grid p { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--c-ink); }
+.bj-help-note { font-size: 12.5px !important; }
+
+/* ---------- 넓은 화면: 조작판을 테이블 옆에 (스크롤 없이 한 화면) ---------- */
+@media (min-width: 1080px) {
+  .bj { max-width: 1200px; display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; align-items: start; }
+  .bj-panel { position: sticky; top: 72px; margin-top: 0; }
+  .bj-chips { grid-template-columns: repeat(3, 1fr); }
+  .bj-act-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* ---------- 휴대폰 ---------- */
+@media (max-width: 600px) {
+  .bj { --cw: 52px; padding: 10px 10px 32px; }
+  .bj-table { padding: 14px 8px 18px; border-width: 7px; border-radius: 18px 18px 50% 50% / 18px 18px 18% 18%; }
+  .bj-table::before { border-radius: 12px 12px 50% 50% / 12px 12px 18% 18%; }
+  .bj-shoe { right: 10px; top: 10px; width: 42px; }
+  .bj-shoe-box { height: 36px; } .bj-shoe-box i { height: 18px; left: 6px; right: 6px; }
+  .bj-felt-text text { font-size: 22px; }
+  .bj-felt-rule { font-size: 11px; }
+  .bj-spot { width: 70px; height: 70px; } .bj-stack, .bj-stack i { width: 38px; height: 38px; }
+  .bj-tag { font-size: 14px; padding: 4px 9px; } .bj-tag.blackjack { font-size: 15px; }
+  .bj-panel { padding: 12px; }
+  .bj-chips { gap: 6px; }
+  .bj-btn { height: 66px; } .bj-btn b { font-size: 17px; } .bj-btn small { font-size: 10.5px; }
+  .bj-act-grid { gap: 6px; }
+}
+@media (max-width: 360px) { .bj { --cw: 46px; } .bj-btn small { display: none; } }
+@media (prefers-reduced-motion: reduce) { .card-in { transition: none; } .bj-btn.advice::after { animation: none; } }
