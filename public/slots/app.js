@@ -992,6 +992,7 @@ const firstVisit = !store.get('guide')
 
 // ---------- 시작 ----------
 showMachine()
+say(cur.name, '', cur.desc) // 처음 문구도 머신에 맞게 (크래시에 '레버를 당겨 보세요'가 뜨지 않게)
 paintPick(); paintSound(); paintBet(); layoutLever()
 if (firstVisit) helpDlg.showModal()
 
