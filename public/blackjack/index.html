@@ -42,15 +42,13 @@
     </section>
 
     <section class="bj-panel">
-      <!-- 돈: 건 칩 → 받은 칩 = 이득/손해 -->
+      <!-- 돈: 보유 칩 · 베팅 · 득실 (운영자 요청 2026-11-18) -->
       <div class="bj-money" id="money" aria-live="polite">
-        <div class="bj-money-head"><b id="mTitle">얼마 걸까요?</b><span class="bj-session" id="mSession"></span></div>
-        <div class="bj-money-row">
-          <div class="bj-cell"><small id="mBetL">걸 칩</small><b id="mBet">0</b></div>
-          <i class="bj-op" aria-hidden="true">→</i>
-          <div class="bj-cell"><small id="mBackL">이기면 받는 칩</small><b id="mBack">0</b></div>
-          <i class="bj-op" aria-hidden="true">=</i>
-          <div class="bj-cell net" id="mNetCell"><small id="mNetL">이득</small><b id="mNet">0</b></div>
+        <div class="bj-money-head"><b id="mTitle">얼마 걸까요?</b></div>
+        <div class="bj-stats">
+          <div class="bj-stat" id="stChips"><small>보유 칩</small><b id="sChips">0</b><em id="sChipsSub"></em></div>
+          <div class="bj-stat" id="stBet"><small>베팅</small><b id="sBet">0</b><em id="sBetSub"></em></div>
+          <div class="bj-stat net" id="stNet"><small>득실</small><b id="sNet">±0</b><em id="sNetSub"></em></div>
         </div>
         <p class="bj-money-sub" id="mSub"></p>
       </div>
@@ -79,6 +77,7 @@
       </div>
 
       <div class="bj-tools">
+        <button type="button" class="bj-tool" id="standUp" hidden>일어나기</button>
         <button type="button" class="bj-tool" id="help">하는 법</button>
         <button type="button" class="bj-tool" id="sound" aria-pressed="true">소리</button>
       </div>
@@ -89,7 +88,7 @@
   <dialog class="casino-dialog bj-help" id="helpDlg" aria-labelledby="helpTitle">
     <h2 id="helpTitle">블랙잭 하는 법</h2>
     <ol class="bj-howto">
-      <li><b>베팅</b><span>칩을 눌러 걸 만큼 쌓고 <em>베팅하기</em>. 테이블의 누군가 처음 걸면 12초 뒤 딜러가 카드를 나눠요 (모두 걸면 바로).</span></li>
+      <li><b>앉고 베팅</b><span>처음엔 관전이에요. 빈자리를 누르거나 칩을 쌓고 <em>베팅하기</em>를 누르면 앉아요. 누군가 처음 걸면 12초 뒤 딜러가 카드를 나눠요 (앉은 사람이 모두 걸면 바로).</span></li>
       <li><b>21에 가깝게</b><span>나와 딜러가 두 장씩 받아요 (딜러 한 장은 뒤집혀 있어요). 21을 넘으면 <em>버스트</em>로 져요.</span></li>
       <li><b>고르기</b><span><em>히트</em> 한 장 더 · <em>스탠드</em> 그만 받기 · <em>더블</em> 베팅 2배 걸고 딱 한 장 · <em>스플릿</em> 같은 점수 두 장을 두 손으로. 모두 동시에 골라요 (20초).</span></li>
       <li><b>딜러 차례</b><span>모두 고르면 딜러가 16 이하면 받고 17부터 멈춰요. 딜러보다 높거나 딜러가 버스트하면 이겨요.</span></li>
@@ -98,7 +97,7 @@
       <div><h3>카드 점수</h3><p>2~10은 숫자 그대로<br>J · Q · K는 10<br>A는 1 또는 11 (좋은 쪽으로)</p></div>
       <div><h3>받는 칩</h3><p>이기면 건 칩의 <b>2배</b><br>블랙잭(첫 두 장 A+10)은 <b>2.5배</b><br>비기면 건 칩을 돌려받아요</p></div>
     </div>
-    <p class="bj-help-note">다른 사람과 승부하는 게 아니라 <b>모두 딜러와</b> 승부해요. 카드를 받는 중에 나가면 건 칩을 잃어요.</p>
+    <p class="bj-help-note">다른 사람과 승부하는 게 아니라 <b>모두 딜러와</b> 승부해요. 테이블은 7자리, 3판 동안 걸지 않으면 자리에서 일어나 관전으로 돌아가요. 카드를 받는 중에 나가면 건 칩을 잃어요.</p>
     <div class="row"><button class="casino-btn" type="button" id="helpOk">시작하기</button></div>
   </dialog>
 

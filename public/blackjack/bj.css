@@ -86,7 +86,7 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
 
 /* 다른 사람: 작은 카드, 한 줄 */
 .bj-others { position: relative; z-index: 1; display: flex; justify-content: center; gap: 6px; width: 100%; margin: 4px 0 2px; }
-.bj-others .bj-seat { --cw: var(--cw-mini); flex: 1 1 0; max-width: 150px; padding: 6px 4px 4px; border-radius: 14px; background: rgba(0,0,0,.14); }
+.bj-others .bj-seat { --cw: var(--cw-mini); flex: 1 1 0; min-width: 0; max-width: 130px; padding: 6px 4px 4px; border-radius: 14px; background: rgba(0,0,0,.14); }
 .bj-others .bj-seat-hands { min-height: calc(var(--cw) * 1.4 + 26px); }
 .bj-others .bj-hand { padding: 2px 3px 0; }
 .bj-others .bj-total { height: 20px; min-width: 24px; font-size: 12px; padding: 0 6px; }
@@ -95,6 +95,13 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
 .bj-mine .bj-seat-status:not(:empty)::before { content: "· "; color: var(--c-muted); }
 .bj-others .bj-avatar { width: 18px; height: 18px; font-size: 10px; }
 .bj-seat.empty { justify-content: center; border: 1.5px dashed rgba(232,200,120,.28); background: transparent; color: rgba(232,200,120,.45); font-size: 12px; min-height: 80px; }
+.bj-seat.empty.sit { gap: 2px; cursor: pointer; font: inherit; color: var(--c-gold); border-color: rgba(232,200,120,.6); background: rgba(232,194,106,.06); }
+.bj-seat.empty.sit b { font-size: 15px; font-weight: 900; }
+.bj-seat.empty.sit small { font-size: 11px; color: rgba(232,200,120,.6); }
+.bj-seat.empty.sit:hover { background: rgba(232,194,106,.16); }
+.bj-seat.empty.sit:focus-visible { outline: 2px solid var(--c-gold); outline-offset: 2px; }
+.bj-watch { display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 6px 0 4px; padding: 10px 18px; border-radius: 14px; background: rgba(0,0,0,.35); text-align: center; }
+.bj-watch b { color: var(--c-gold); font-size: 15px; } .bj-watch span { font-size: 12.5px; color: rgba(245,239,224,.8); }
 
 /* 내 자리 */
 .bj-mine { margin-top: 6px; }
@@ -115,7 +122,11 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
 /* 번 칩·잃은 칩이 떠오름 */
 .bj-float { position: absolute; z-index: 4; left: 50%; top: 18%; transform: translate(-50%, 0); pointer-events: none; white-space: nowrap;
   font-size: 30px; font-weight: 900; font-variant-numeric: tabular-nums; text-shadow: 0 2px 10px rgba(0,0,0,.8); opacity: 0; }
-.bj-others .bj-float { font-size: 17px; top: 8%; }
+.bj-others .bj-float { font-size: 17px; top: -12px; }
+/* 내 자리: 카드 오른쪽에 크게 (결과 도장·총점과 겹치지 않게) */
+.bj-mine .bj-float { left: calc(50% + var(--cw) * 1.25); top: 34%; transform: none; }
+.bj-mine .bj-float.show { animation-name: bj-float-r; }
+@keyframes bj-float-r { 0% { opacity: 0; transform: translateY(18px) scale(.6); } 12% { opacity: 1; transform: scale(1.15); } 22% { transform: none; } 100% { opacity: 1; transform: translateY(-4px); } }
 .bj-float.show { animation: bj-float 2.6s ease-out forwards; }
 .bj-float.plus { color: var(--plus); } .bj-float.minus { color: var(--minus); } .bj-float.even { color: #e8e1cf; }
 @keyframes bj-float { 0% { opacity: 0; transform: translate(-50%, 18px) scale(.6); } 12% { opacity: 1; transform: translate(-50%, 0) scale(1.15); } 22% { transform: translate(-50%, 0) scale(1); } 80% { opacity: 1; } 100% { opacity: .9; transform: translate(-50%, -6px); } }
@@ -143,22 +154,27 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
 .bj-money { margin-bottom: 12px; padding: 10px 12px 10px; border-radius: 14px; background: #060504; border: 1px solid #2d2617; box-shadow: inset 0 0 18px rgba(0,0,0,.9); }
 .bj-money-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .bj-money-head b { font-size: 17px; font-weight: 800; }
-.bj-session { font-size: 12.5px; color: var(--c-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.bj-session b { font-size: 13px; }
-.bj-money-row { display: grid; grid-template-columns: 1fr auto 1fr auto 1.15fr; align-items: stretch; gap: 6px; }
-.bj-cell { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; padding: 6px 8px; border-radius: 10px; background: var(--c-panel-2); border: 1px solid rgba(255,255,255,.06); text-align: center; }
-.bj-cell small { font-size: 11.5px; color: var(--c-muted); white-space: nowrap; }
-.bj-cell b { font-size: 19px; font-weight: 900; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bj-cell.net { border-width: 1.5px; }
-.bj-cell.net.plus { background: rgba(74,222,128,.12); border-color: rgba(110,231,160,.6); } .bj-cell.net.plus b { color: var(--plus); }
-.bj-cell.net.minus { background: rgba(255,107,107,.1); border-color: rgba(255,138,138,.55); } .bj-cell.net.minus b { color: var(--minus); }
-.bj-cell.net.even b { color: var(--c-ink); }
-.bj-cell.dim b { color: var(--c-muted); }
-.bj-op { display: grid; place-items: center; font-style: normal; font-weight: 800; color: var(--c-muted); }
+.bj-stats { display: grid; grid-template-columns: 1.2fr 1fr 1.1fr; gap: 6px; }
+.bj-stat { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-width: 0; padding: 7px 6px 6px; border-radius: 12px;
+  background: var(--c-panel-2); border: 1px solid rgba(255,255,255,.07); text-align: center; transition: background .3s, border-color .3s; }
+.bj-stat small { font-size: 12px; font-weight: 700; color: var(--c-muted); white-space: nowrap; }
+.bj-stat b { max-width: 100%; font-size: 22px; font-weight: 900; line-height: 1.15; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bj-stat em { font-style: normal; font-size: 11.5px; color: var(--c-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; min-height: 15px; }
+.bj-stat em b { font-size: 11.5px; font-weight: 800; }
+#stChips b { color: #ffd36b; }
+#stChips.up { animation: bj-up 1s ease-out; } #stChips.down { animation: bj-down 1s ease-out; }
+@keyframes bj-up { 0% { background: rgba(74,222,128,.35); border-color: #6ee7a0; } }
+@keyframes bj-down { 0% { background: rgba(255,107,107,.3); border-color: #ff8a8a; } }
+.bj-stat.net.plus { background: rgba(74,222,128,.1); border-color: rgba(110,231,160,.55); } .bj-stat.net.plus > b { color: var(--plus); }
+.bj-stat.net.minus { background: rgba(255,107,107,.09); border-color: rgba(255,138,138,.5); } .bj-stat.net.minus > b { color: var(--minus); }
+.bj-stat.net.pop > b { animation: bj-pop-n .5s cubic-bezier(.2,1.6,.4,1); }
+@keyframes bj-pop-n { from { transform: scale(.6); } }
 .bj-money-sub { margin: 7px 0 0; font-size: 12.5px; color: var(--c-muted); min-height: 17px; }
 .bj-money.big { border-color: var(--c-gold-2); box-shadow: inset 0 0 18px rgba(0,0,0,.9), 0 0 20px rgba(232,194,106,.25); }
 .bj-money.big .bj-money-head b { color: #ffe39b; }
-.plus-t { color: var(--plus); } .minus-t { color: var(--minus); }
+.plus-t { color: var(--plus); } .minus-t { color: var(--minus); } .even-t { color: var(--c-ink); }
+/* 윗줄 칩 표시는 돈판의 '보유 칩'과 겹쳐서 숨김 (코인·칩 바꾸기는 그대로) */
+.casino-top [data-chips-pill] { display: none !important; }
 
 /* 칩 버튼 */
 .bj-chips { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; justify-items: center; }
@@ -226,7 +242,7 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
 
 /* ---------- 휴대폰 ---------- */
 @media (max-width: 600px) {
-  .bj { --cw: 50px; --cw-mini: 30px; padding: 10px 10px 32px; }
+  .bj { --cw: 50px; --cw-mini: 27px; padding: 10px 10px 32px; }
   .bj-table { padding: 12px 6px 16px; border-width: 7px; border-radius: 18px 18px 50% 50% / 18px 18px 14% 14%; }
   .bj-table::before { border-radius: 12px 12px 50% 50% / 12px 12px 14% 14%; }
   .bj-tableno { left: 12px; top: 10px; }
@@ -236,23 +252,35 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
   .bj-felt-rule { font-size: 11px; margin-top: 2px; }
   .bj-center { min-height: 28px; }
   .bj-panel:has(#actBox:not([hidden])) .bj-tools { display: none; } /* 내 차례에는 아래 도구를 숨겨 행동 버튼이 화면 안에 */
-  .bj-others { gap: 4px; }
+  .bj-others { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+  .bj-others.all { grid-template-columns: repeat(4, 1fr); }
+  .bj-others .bj-seat { max-width: none; }
+  .bj-others .bj-hand-bet { display: none; }
+  .bj-others .bj-hand { position: relative; }
+  .bj-others .bj-total { position: absolute; z-index: 2; top: -4px; right: -6px; }
+  .bj-others .bj-seat-hands { min-height: calc(var(--cw) * 1.4 + 2px); }
+  .bj-others .bj-hand { padding: 1px 2px 0; gap: 0; }
+  .bj-others .bj-seat-info { margin-top: 1px; line-height: 1.2; }
+  .bj-others .bj-seat-status { min-height: 13px; }
+  .bj-panel:has(#actBox:not([hidden])) .bj-money-sub { display: none; } /* 내 차례에는 카드 합이 테이블에 보이니 설명 줄을 숨겨 버튼을 화면 안에 */
+  .bj-center { min-height: 24px; }
+  .bj-stat b { font-size: 18px; } .bj-stat small { font-size: 11px; } .bj-stat em, .bj-stat em b { font-size: 10.5px; }
+  .bj-stat { padding: 6px 4px 5px; }
   .bj-others .bj-seat { padding: 4px 2px 3px; }
   .bj-others .bj-seat-info { font-size: 11px; gap: 3px; }
   .bj-others .bj-avatar { display: none; }
   .bj-others .bj-seat-status, .bj-others .bj-hand-bet { font-size: 10.5px; }
   .bj-others .bj-total { font-size: 11px; height: 18px; padding: 0 4px; min-width: 20px; }
-  .bj-seat.empty { min-height: 54px; font-size: 11px; }
-  .bj-others .bj-seat-hands { min-height: calc(var(--cw) * 1.4 + 22px); }
+  .bj-seat.empty { min-height: 50px; font-size: 11px; }
+
   .bj-spot { width: 70px; height: 70px; } .bj-stack, .bj-stack i { width: 38px; height: 38px; }
   .bj-tag { font-size: 13px; padding: 3px 8px; }
   .bj-float { font-size: 26px; }
   .bj-others .bj-float { font-size: 13px; }
+  .bj-mine .bj-float { left: calc(50% + var(--cw) * 1.1); }
   .bj-panel { padding: 10px; margin-top: 10px; }
   .bj-money { margin-bottom: 8px; padding: 8px 10px; } .bj-money-head { margin-bottom: 6px; } .bj-money-head b { font-size: 16px; }
   .bj-timer { margin-bottom: 8px; }
-  .bj-cell { padding: 5px 4px; } .bj-cell b { font-size: 16px; } .bj-cell small { font-size: 10.5px; }
-  .bj-money-row { gap: 4px; }
   .bj-chips { gap: 6px; }
   .bj-btn { height: 66px; } .bj-btn b { font-size: 17px; } .bj-btn small { font-size: 10.5px; }
   .bj-act-grid { gap: 6px; }
