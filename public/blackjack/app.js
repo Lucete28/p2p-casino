@@ -208,6 +208,7 @@ function paintMeta() {
     e.avatar.textContent = (s.name || '?').trim().slice(0, 1)
     e.name.textContent = s.me ? '나' : s.name
     e.el.classList.toggle('away', !s.online)
+    e.el.classList.toggle('split', s.hands.length > 1) // 스플릿한 자리는 칸을 넓히거나(PC) 카드를 줄여(휴대폰) 옆 칸을 넘지 않게
     s.hands.forEach((h, k) => {
       const hb = e.hands[k]; if (!hb) return
       hb.bet.innerHTML = `${chipHtml(stackOf(h.bet, 1)[0])}${fmt(h.bet)}${h.doubled ? ' <small>더블</small>' : ''}`
@@ -217,11 +218,11 @@ function paintMeta() {
     let text = '', cls = ''
     if (S.phase === 'bet') {
       if (s.ready) { text = `✓ ${fmt(s.bet)} 베팅`; cls = 'ready' } else text = s.me ? '칩을 골라 베팅해요' : '고르는 중'
-    } else if (!s.inRound) text = '구경 중'
+    } else if (!s.inRound) text = '이번 판 쉬어요'
     else if (S.phase === 'play') {
       if (s.done) text = s.me ? '딜러 차례를 기다려요' : `${fmt(s.staked)} · 다 골랐어요`
       else { const left = Math.max(0, Math.ceil(((turnEnd[i] ?? now) - now) / 1000)); text = s.me ? '' : `${fmt(s.staked)} · 고르는 중 ${left}`; cls = 'think' }
-    } else if (revealed) text = `${sign(s.back - s.staked)}`
+    } else if (revealed) { const n = s.back - s.staked; text = sign(n); cls = 'res ' + tone3(n) }
     e.status.textContent = text; e.status.className = 'bj-seat-status' + (cls ? ' ' + cls : '')
   }
   paintSpot()
@@ -300,6 +301,7 @@ function renderStatic(S) {
   revealed = false
   sessionTotal = S.total || 0
   paintMeta(); paintTotals()
+  if (S.dealer.length) dealerByPhase(S); else sayDealer(phaseEnd ? '곧 카드를 나눠요' : '베팅을 기다려요')
   if (S.phase === 'dealer' || S.phase === 'result') showResults(S, true)
 }
 function times(S) {
@@ -314,8 +316,10 @@ async function apply(S, speed) {
   if (S.ev !== 'dealer') sessionTotal = S.total || 0 // 딜러 차례의 득실은 결과 연출 때 바꿈 (미리 안 보이게)
   const fresh = !prev || prev.table !== S.table || S.ev === 'sync' || (S.ev === 'join' && S.seat === S.me) || (S.phase === 'bet' && prev.phase !== 'bet')
   if (fresh) { renderStatic(S); return }
+  if (S.phase === 'bet') sayDealer(phaseEnd ? '곧 카드를 나눠요' : '베팅을 기다려요')
   if (S.ev === 'deal') {
     syncSeats(S); clearCards(); revealed = false
+    sayDealer('카드를 나눠요')
     if (S.shoe.shuffled) centerMsg('새 슈 — 카드를 다시 섞었어요', 1600)
     const ins = S.seats.map((s, i) => s?.inRound ? i : -1).filter(i => i >= 0 && seats.get(i) && !seats.get(i).empty)
     for (const i of ins) { addHand(seats.get(i)); shown.seats[i] = [[]] }
@@ -330,6 +334,7 @@ async function apply(S, speed) {
       shown.dealer.push(k === 0 ? S.dealer[0] : null); paintTotals()
     }
     paintMeta()
+    dealerByPhase(S)
     if (mySeat()?.inRound && !mySeat().done) sfx.turn()
     return
   }
@@ -337,15 +342,21 @@ async function apply(S, speed) {
   await diffSeats(S, speed)
   paintMeta()
   if (S.ev === 'dealer') {
+    // 한 장 놓을 때마다: 더 받을 거면 '16 이하라 한 장 더', 끝이면 '멈춰요 / 버스트'
+    const step = () => {
+      const t = score(shown.dealer).total
+      if (shown.dealer.length < S.dealer.length) sayDealer(`${t} — 16 이하라 한 장 더 받아요`, 'hit')
+      else dealerFinal(shown.dealer)
+    }
     const hole = $('dealerCards').children[1]
     if (hole && S.dealer[1] && !shown.dealer[1]) {
       faceUp(hole, S.dealer[1], true); sfx.flip()
-      shown.dealer[1] = S.dealer[1]; paintTotals()
+      shown.dealer[1] = S.dealer[1]; paintTotals(); step()
       await sleep((reduced ? 150 : DEALER_MS) * speed)
     }
     for (let k = shown.dealer.length; k < S.dealer.length; k++) {
       await place($('dealerCards'), S.dealer[k], DEALER_MS * speed)
-      shown.dealer.push(S.dealer[k]); paintTotals()
+      shown.dealer.push(S.dealer[k]); paintTotals(); step()
     }
     showResults(S)
     await sleep(RESULT_MS)
@@ -373,6 +384,25 @@ async function diffSeats(S, speed) {
       }
     }
   }
+}
+// ---------- 딜러 한마디: 지금 무엇을 하는지 (규칙을 따로 적지 않아도 판을 보며 알 수 있게) ----------
+function sayDealer(text, tone = '') {
+  const el = $('dealerSay')
+  el.textContent = text
+  el.className = 'bj-dealer-say' + (tone ? ' ' + tone : '')
+}
+// 딜러 카드가 다 놓인 뒤의 말
+function dealerFinal(cards) {
+  const t = score(cards).total
+  if (isNatural(cards)) return sayDealer('딜러 블랙잭!', 'bj')
+  if (t > 21) return sayDealer(`${t} 버스트! 21을 넘었어요`, 'bust')
+  if (t < 17) return sayDealer(`${t} — 모두 버스트라 더 받지 않아요`, 'stop')
+  sayDealer(`${t} — 17 이상이라 멈춰요`, 'stop')
+}
+function dealerByPhase(S) {
+  if (S.phase === 'bet') return sayDealer(phaseEnd ? '곧 카드를 나눠요' : '베팅을 기다려요')
+  if (S.phase === 'play') return sayDealer(`보이는 카드 ${totalText([S.dealer[0]]).t} · 한 장은 뒤집혀 있어요`)
+  dealerFinal(S.dealer)
 }
 let centerT = null
 function centerMsg(text, ms) {
@@ -422,7 +452,7 @@ function paintMoney() {
   let title = '', sub = ''
   $('money').classList.remove('big')
   if (!game?.me) { title = '로그인하면 할 수 있어요'; sub = '로그인하고 코인을 칩으로 바꿔 시작해요' }
-  else if (S && S.me < 0) { title = '관전 중'; sub = S.phase === 'bet' ? '빈자리를 누르거나 칩을 쌓고 베팅하기를 누르면 앉아요' : '이 판이 끝나면 앉아서 걸 수 있어요' }
+  else if (S && S.me < 0) { title = '관전 중'; sub = S.phase === 'bet' ? '' : '이 판이 끝나면 앉아서 걸 수 있어요' }
   else if (my?.inRound && revealed) {
     const dl = score(S.dealer).total, me = my.hands.map(h => score(h.cards).total)
     if (my.hands.length > 1) {
@@ -446,7 +476,7 @@ function paintMoney() {
     sub = h ? `내 카드 ${totalText(h.cards).t} · 딜러 보이는 카드 ${S.dealer[0] ? totalText([S.dealer[0]]).t : '-'}` : ''
   } else if (S?.phase === 'bet') {
     title = my?.ready ? '✓ 베팅 완료' : '얼마 걸까요?'
-    sub = my?.ready ? '마감되면 보유 칩에서 빠져요 · 마감 전엔 취소할 수 있어요' : '칩을 눌러 쌓고 베팅하기'
+    sub = my?.ready ? '마감되면 보유 칩에서 빠져요 · 마감 전엔 취소할 수 있어요' : ''
   } else { title = '이번 판은 쉬어요'; sub = '이 판이 끝나면 걸 수 있어요' }
   $('mTitle').textContent = title
   $('mSub').textContent = sub

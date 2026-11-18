@@ -18,15 +18,28 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
   border-radius: 14px 14px 50% 50% / 14px 14px 22% 22%; border: 1.5px solid var(--c-felt-line); opacity: .55; }
 .bj-tableno { position: absolute; z-index: 2; left: 18px; top: 16px; font-size: 12px; font-weight: 700; color: rgba(232,200,120,.6); letter-spacing: .06em; }
 .bj-zone { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; width: 100%; }
-.bj-label { display: flex; align-items: center; gap: 8px; height: 26px; font-size: 13px; font-weight: 700; color: rgba(245,239,224,.72); letter-spacing: .08em; }
 .bj-total { min-width: 30px; height: 24px; padding: 0 8px; border-radius: 12px; display: inline-grid; place-items: center; white-space: nowrap;
   background: rgba(0,0,0,.6); border: 1px solid var(--c-line); color: var(--c-ink); font-size: 14px; font-weight: 800; letter-spacing: 0; font-variant-numeric: tabular-nums; }
 .bj-total.bust { background: #6d0c12; border-color: #ff6b6b; }
+/* 딜러: 이름표 + 큰 점수 + 지금 하는 일 한 줄 */
+.bj-dealer-plate { display: flex; align-items: center; gap: 7px; height: 32px; margin-bottom: 4px; padding: 0 4px 0 4px; border-radius: 16px;
+  background: rgba(0,0,0,.4); border: 1px solid var(--c-line); }
+.bj-dealer-plate > b:first-of-type { padding-right: 2px; font-size: 14px; font-weight: 800; letter-spacing: .1em; color: var(--c-ink); }
+.bj-dealer-icon { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; color: #1a1205;
+  background: radial-gradient(circle at 35% 30%, #fff1b8, var(--c-gold) 55%, var(--c-gold-2)); }
+.bj-dealer #dealerTotal { height: 26px; min-width: 38px; font-size: 17px; }
+.bj-dealer-say { margin: 6px 0 0; min-height: 24px; padding: 3px 12px; border-radius: 12px; font-size: 13px; font-weight: 700; line-height: 18px;
+  color: rgba(245,239,224,.88); background: rgba(0,0,0,.3); transition: background .2s, color .2s; }
+.bj-dealer-say:empty { visibility: hidden; }
+.bj-dealer-say.hit { color: #ffe39b; }
+.bj-dealer-say.stop { color: #d7f5e3; }
+.bj-dealer-say.bust { color: #fff; background: rgba(160,20,30,.75); animation: bj-say .4s cubic-bezier(.2,1.6,.4,1); }
+.bj-dealer-say.bj { color: #2a1a03; background: linear-gradient(180deg, #ffe39b, #c99a3c); animation: bj-say .4s cubic-bezier(.2,1.6,.4,1); }
+@keyframes bj-say { from { transform: scale(.7); } }
 .bj-total.bj21 { background: linear-gradient(180deg, #ffe39b, #c99a3c); color: #2a1a03; border-color: #fff1c8; }
 
-.bj-felt-text { width: min(420px, 90%); height: auto; margin: -2px 0 -24px; overflow: visible; pointer-events: none; }
+.bj-felt-text { width: min(420px, 90%); height: auto; margin: -8px 0 -30px; overflow: visible; pointer-events: none; }
 .bj-felt-text text { fill: rgba(232,200,120,.62); font: 800 19px "Pretendard", sans-serif; letter-spacing: .28em; }
-.bj-felt-rule { margin: 0; font-size: 12px; color: rgba(232,200,120,.55); letter-spacing: .04em; text-align: center; }
 /* 가운데 안내: 베팅 마감 카운트다운 등 */
 .bj-center { position: relative; z-index: 2; min-height: 34px; display: grid; place-items: center; }
 .bj-center span { padding: 5px 14px; border-radius: 16px; background: rgba(0,0,0,.55); color: var(--c-gold); font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; }
@@ -83,6 +96,8 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
 .bj-seat-status.ready { color: #8ff0b6; }
 .bj-seat-status.think { color: #ffe39b; }
 .bj-seat.away { opacity: .5; }
+.bj-seat-status.res { font-size: 13px; font-weight: 900; }
+.bj-seat-status.res.plus { color: var(--plus); } .bj-seat-status.res.minus { color: var(--minus); } .bj-seat-status.res.even { color: var(--c-ink); }
 
 /* 다른 사람: 작은 카드, 한 줄 */
 .bj-others { position: relative; z-index: 1; display: flex; justify-content: center; gap: 6px; width: 100%; margin: 4px 0 2px; }
@@ -122,7 +137,11 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
 /* 번 칩·잃은 칩이 떠오름 */
 .bj-float { position: absolute; z-index: 4; left: 50%; top: 18%; transform: translate(-50%, 0); pointer-events: none; white-space: nowrap;
   font-size: 30px; font-weight: 900; font-variant-numeric: tabular-nums; text-shadow: 0 2px 10px rgba(0,0,0,.8); opacity: 0; }
-.bj-others .bj-float { font-size: 17px; top: -12px; }
+.bj-others .bj-float { display: none; } /* 다른 사람 결과는 이름 아래 상태 줄에 (+100 / −50) */
+/* 스플릿: PC는 칸을 넓히고, 카드도 조금 작게 */
+.bj-others .bj-seat:not(.empty) { min-width: min-content; } /* 카드가 많아도 칸이 내용보다 좁아지지 않게 (빈자리가 대신 줄어듦) */
+.bj-others .bj-seat.split { flex-grow: 2; max-width: none; --cw: calc(var(--cw-mini) * .85); }
+.bj-others .bj-seat.split .bj-seat-hands { gap: 4px; }
 /* 내 자리: 카드 오른쪽에 크게 (결과 도장·총점과 겹치지 않게) */
 .bj-mine .bj-float { left: calc(50% + var(--cw) * 1.25); top: 34%; transform: none; }
 .bj-mine .bj-float.show { animation-name: bj-float-r; }
@@ -249,12 +268,16 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
   .bj-shoe { right: 10px; top: 10px; width: 42px; }
   .bj-shoe-box { height: 36px; } .bj-shoe-box i { height: 18px; left: 6px; right: 6px; }
   .bj-felt-text { display: none; } /* 좁으면 장식 글자는 빼고 규칙 한 줄만 (카드·버튼이 한 화면에 들어오게) */
-  .bj-felt-rule { font-size: 11px; margin-top: 2px; }
+  .bj-dealer-plate { height: 28px; } .bj-dealer-icon { width: 20px; height: 20px; font-size: 11px; }
+  .bj-dealer #dealerTotal { height: 24px; font-size: 15px; }
+  .bj-dealer-say { margin-top: 4px; font-size: 12px; min-height: 22px; }
   .bj-center { min-height: 28px; }
   .bj-panel:has(#actBox:not([hidden])) .bj-tools { display: none; } /* 내 차례에는 아래 도구를 숨겨 행동 버튼이 화면 안에 */
   .bj-others { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
   .bj-others.all { grid-template-columns: repeat(4, 1fr); }
   .bj-others .bj-seat { max-width: none; }
+  .bj-others .bj-seat.split { --cw: calc(var(--cw-mini) * .72); } /* 휴대폰은 칸 너비가 같아서 카드를 줄임 */
+  .bj-others .bj-seat.split .bj-hand .card + .card { margin-left: calc(var(--cw) * -0.62); }
   .bj-others .bj-hand-bet { display: none; }
   .bj-others .bj-hand { position: relative; }
   .bj-others .bj-total { position: absolute; z-index: 2; top: -4px; right: -6px; }
@@ -276,7 +299,6 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
   .bj-spot { width: 70px; height: 70px; } .bj-stack, .bj-stack i { width: 38px; height: 38px; }
   .bj-tag { font-size: 13px; padding: 3px 8px; }
   .bj-float { font-size: 26px; }
-  .bj-others .bj-float { font-size: 13px; }
   .bj-mine .bj-float { left: calc(50% + var(--cw) * 1.1); }
   .bj-panel { padding: 10px; margin-top: 10px; }
   .bj-money { margin-bottom: 8px; padding: 8px 10px; } .bj-money-head { margin-bottom: 6px; } .bj-money-head b { font-size: 16px; }

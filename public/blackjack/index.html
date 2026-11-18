@@ -26,15 +26,15 @@
       </div>
 
       <div class="bj-zone bj-dealer">
-        <div class="bj-label">딜러 <b class="bj-total" id="dealerTotal" hidden></b></div>
+        <div class="bj-dealer-plate"><span class="bj-dealer-icon" aria-hidden="true">♠&#xFE0E;</span><b>딜러</b><b class="bj-total" id="dealerTotal" hidden></b></div>
         <div class="bj-cards" id="dealerCards"></div>
+        <p class="bj-dealer-say" id="dealerSay" aria-live="polite"></p>
       </div>
 
       <svg class="bj-felt-text" viewBox="0 0 600 120" aria-hidden="true">
         <path id="arc" d="M60 20 Q300 120 540 20" fill="none"/>
         <text><textPath href="#arc" startOffset="50%" text-anchor="middle">BLACKJACK PAYS 3 TO 2</textPath></text>
       </svg>
-      <p class="bj-felt-rule" aria-hidden="true">딜러는 16 이하면 받고 17부터 멈춰요</p>
       <div class="bj-center" id="center" aria-live="polite"></div>
 
       <div class="bj-others" id="others" aria-label="다른 자리"></div>
