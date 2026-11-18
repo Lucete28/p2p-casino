@@ -16,9 +16,10 @@ ok('릴 3개, 24칸, 그림 수가 같다 (세븐 1 · 바 2 · 종 4 · 수박 
   }
 })
 
-ok('정확한 RTP 95.02% (하우스 몫 5% ±0.3%p)', () => {
+ok('정확한 RTP 99.18% (하우스 몫 약 0.8%)', () => {
   const { rtp } = exactRtp()
-  assert.ok(Math.abs(rtp - 0.95) < 0.003, String(rtp))
+  assert.ok(Math.abs(rtp - 0.9918) < 0.0005, String(rtp))
+  assert.ok(rtp < 1, '환급률이 100%를 넘으면 코인이 불어남')
 })
 
 ok('창은 s-1 · s · s+1, 끝에서 처음으로 이어진다', () => {
@@ -31,7 +32,7 @@ ok('창은 s-1 · s · s+1, 끝에서 처음으로 이어진다', () => {
 ok('한 줄 배당: 셋 > 체리 둘 > 체리 하나', () => {
   assert.equal(lineWin('seven', 'seven', 'seven').mult, 777)
   assert.equal(lineWin('cherry', 'cherry', 'cherry').mult, PAY3.cherry)
-  assert.equal(lineWin('cherry', 'cherry', 'bar').mult, 4)
+  assert.equal(lineWin('cherry', 'cherry', 'bar').mult, 6)
   assert.equal(lineWin('cherry', 'bar', 'cherry').mult, 1)
   assert.equal(lineWin('bar', 'cherry', 'cherry'), null)
   assert.equal(lineWin('bell', 'bell', 'bar'), null)

@@ -1,4 +1,4 @@
-// 슬롯 시뮬레이션 (CASINO.md 6장): 서버 모듈(index.mjs)에 진짜 난수로 1,000만 스핀을 돌려 하우스 몫이 이론값(약 4.98%) ±0.3%p인지 본다
+// 슬롯 시뮬레이션 (CASINO.md 6장): 서버 모듈(index.mjs)에 진짜 난수로 1,000만 스핀을 돌려 하우스 몫이 이론값(약 0.82%, RTP 99.18%) ±0.3%p인지 본다
 //   node server/games/slots/test-sim.mjs [스핀 수]
 // 스핀마다 5라인 · 라인당 1칩 (777이 777배라 베팅 크기를 섞으면 결과가 많이 흔들림). 라인 수·배팅 크기는 RTP에 영향 없음 (rules.mjs 참고)
 import assert from 'node:assert/strict'
@@ -49,6 +49,6 @@ console.log(`릴 멈춤 자리 고르기 χ² = ${chis.map(c => c.toFixed(1)).jo
 assert.equal(spins, SPINS)
 assert.equal(p.inPlay, 0)
 assert.ok(Math.abs(edge - EXPECT) <= 0.003, '하우스 몫이 범위를 벗어남')
-assert.ok(Math.abs(EXPECT - 0.05) <= 0.003, '이론 하우스 몫이 5% ±0.3%p가 아님')
+assert.ok(EXPECT > 0 && EXPECT < 0.012, '이론 하우스 몫이 0~1.2% 밖 (RTP 99% 목표, 100% 넘으면 코인이 불어남)')
 if (SPINS >= 100_000) for (const c of chis) assert.ok(c < 49.7, '멈춤 자리가 고르지 않음')
 console.log('통과')

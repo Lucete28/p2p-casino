@@ -1,11 +1,11 @@
-// 슬롯머신 규칙 (CASINO.md 5장: 3릴 · 5라인 · RTP 95%). 서버(server/games/slots)와 화면(app.js)이 같이 쓴다.
+// 슬롯머신 규칙 (3릴 · 5라인 · RTP 99%, 운영자 결정 2026-11-18. 처음엔 CASINO.md 5장의 95%). 서버(server/games/slots)와 화면(app.js)이 같이 쓴다.
 // 결과(릴이 멈출 자리)는 서버가 ctx.rng로 정하고, 이 파일은 그 자리를 그림·당첨으로 바꾸기만 한다.
 //
 // 릴: 24칸 띠 3개. 멈춘 자리 s면 창에 보이는 세 칸은 위 s-1 · 가운데 s · 아래 s+1.
 // 라인: 1개(가운데) · 3개(+위·아래) · 5개(+대각선 둘). 라인마다 같은 칩(lineBet)을 건다 → 한 판 = lineBet × 라인 수.
 // 배당은 라인당 건 칩의 몇 배를 돌려주는지 (건 칩 포함). 한 라인에서는 가장 큰 것 하나만.
 //
-// 정확한 RTP (모든 경우를 셈): 95.023% — 라인 수와 상관없이 같다 (라인마다 칸의 분포가 같으므로). exactRtp()로 확인.
+// 정확한 RTP (모든 경우를 셈): 99.18% — 라인 수와 상관없이 같다 (라인마다 칸의 분포가 같으므로). exactRtp()로 확인.
 
 export const SYMBOLS = {
   seven: { name: '세븐', short: '7' },
@@ -36,9 +36,9 @@ export const LINES = [
 export const LINE_CHOICES = [1, 3, 5]
 
 // 같은 그림 셋
-export const PAY3 = { seven: 777, bar: 80, bell: 30, melon: 15, lemon: 8, cherry: 8 }
+export const PAY3 = { seven: 777, bar: 80, bell: 30, melon: 12, lemon: 8, cherry: 8 }
 // 첫 릴부터 체리 둘 · 첫 릴 체리 하나 (셋이 아닐 때)
-export const PAY_CHERRY2 = 4
+export const PAY_CHERRY2 = 6 // 5줄이면 체리 둘 한 줄로도 건 칩(5)보다 많이 받음 → 이득 보는 판 23% → 38%
 export const PAY_CHERRY1 = 1
 
 // 한 판 베팅 상한은 없다 (CASINO.md 5장). 다만 돌려줄 칩이 안전한 정수를 넘지 않게 라인당 상한만 둔다

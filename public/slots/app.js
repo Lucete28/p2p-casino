@@ -286,7 +286,7 @@ function paintPaytables() {
     <p class="sl-lines-title">당첨되는 줄 <small>(지금 베팅: ${HINT[lines]})</small></p>
     <div class="sl-lines">${[0, 1, 2, 3, 4].map(i => lineMini(i, i < lines)).join('')}</div>
     <p class="sl-note">같은 그림이 걸린 줄 위에 <b>왼쪽부터</b> 나란히 서면 당첨. 여러 줄이 함께 맞으면 모두 더해 받아요.
-    한 줄에서는 가장 큰 것 하나만. 이론 환급률(RTP) 95% · 결과는 서버가 정해요. 코인은 게임용이며 현금이나 상품으로 바꿀 수 없어요.</p>`
+    한 줄에서는 가장 큰 것 하나만. 이론 환급률(RTP) 99% · 결과는 서버가 정해요. 코인은 게임용이며 현금이나 상품으로 바꿀 수 없어요.</p>`
   document.querySelectorAll('[data-paytable]').forEach(el => { el.innerHTML = html })
   $('payFor').textContent = $('helpFor').textContent = `베팅 ${fmt(bet)}칩일 때 받는 칩`
 }

@@ -1,4 +1,4 @@
-// 슬롯머신 (관리 모드, CASINO.md 3·5장): 3릴 · 5라인 · RTP 95.02%. 규칙은 public/slots/rules.mjs (화면과 같이 씀)
+// 슬롯머신 (관리 모드, CASINO.md 3·5장): 3릴 · 5라인 · RTP 99.18%. 규칙은 public/slots/rules.mjs (화면과 같이 씀)
 //
 //   브라우저 → { t: 'spin', lineBet, lines }            lines = 1·3·5
 //   서버 → { t: 'spun', round, stops, lineBet, lines, wins, back, tease }   멈출 자리는 ctx.rng.int(24) × 3
