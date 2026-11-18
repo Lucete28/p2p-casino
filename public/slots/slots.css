@@ -161,9 +161,18 @@ body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, 
 .sl-crash-auto select { height: 32px; padding: 0 6px; border-radius: 8px; border: 1px solid var(--c-line); background: #0c0907; color: var(--c-ink); font: 700 13px "Pretendard", sans-serif; }
 
 /* 코인 푸셔 무대 */
-.sl-pusher { position: absolute; inset: 0; border-radius: 8px; overflow: hidden; background: #12081e; }
+.sl-pusher { position: absolute; inset: 0; border-radius: 8px; overflow: hidden; background: #12081e; box-shadow: inset 0 0 0 2px rgba(255,77,109,.35); }
+.pu-neon { fill: #ffd1f0; stroke: #ff4dc4; stroke-width: .6; filter: drop-shadow(0 0 4px #ff4dc4) drop-shadow(0 0 10px #ff4dc4); animation: pu-flicker 4s steps(1) infinite; }
+@keyframes pu-flicker { 0%, 46%, 50%, 100% { opacity: 1; } 47%, 49% { opacity: .55; } }
+.pu-bulb0, .pu-bulb1 { fill: #ffe69a; animation: sl-bulb 1.2s steps(1) infinite; }
+.pu-bulb1 { animation-delay: .6s; }
+.pu-led { fill: #5ac8ff; filter: drop-shadow(0 0 3px #5ac8ff); animation: pu-led 1.1s ease-in-out infinite alternate; }
+@keyframes pu-led { to { fill: #ff4dc4; filter: drop-shadow(0 0 3px #ff4dc4); } }
+.pu-edge { filter: drop-shadow(0 0 4px #ffd36b); animation: pu-edge 1.4s ease-in-out infinite alternate; }
+@keyframes pu-edge { to { stroke: #fff; } }
+.pu-blink { animation: sl-hit .5s steps(2) infinite; }
 .sl-pusher svg { width: 100%; height: 100%; display: block; }
-.sl-pusher-gain { position: absolute; right: 10px; bottom: 6px; font: 900 22px/1 "Pretendard", sans-serif; color: #ffd36b; text-shadow: 0 0 10px rgba(255,190,70,.7); font-variant-numeric: tabular-nums; }
+.sl-pusher-gain { position: absolute; right: 12px; bottom: 8px; font: 900 22px/1 "Pretendard", sans-serif; color: #ffd36b; text-shadow: 0 0 10px rgba(255,190,70,.7); font-variant-numeric: tabular-nums; }
 .sl[data-machine="pusher"] .sl-cabinet { border-color: #f3cf74; }
 .sl[data-machine="pusher"] .sl-logo-7 { color: #ffd36b; }
 

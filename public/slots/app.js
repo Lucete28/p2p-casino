@@ -574,52 +574,100 @@ async function crashed(m) {
 }
 
 // ---------- 코인 푸셔 ----------
-// 판 위 코인은 보여 주기만 한다 (몇 개 떨어질지는 서버가 정함). 투입구는 좌우로 움직이고, 누르면 그 자리에 떨어진다
-const pusher = { coins: [], dropX: 150, raf: 0 }
-const fieldX = y => [30 - 22 * (y - 40) / 222, 270 + 22 * (y - 40) / 222] // 사다리꼴 판의 왼쪽·오른쪽 끝
-function coinEl(x, y, r = 11) {
+// 앞에서 비스듬히 내려다본 판. 판 위 자리는 (u: 왼→오 0~1, v: 뒤→앞 0~1). 코인은 보여 주기만 한다 (몇 개 떨어질지는 서버가 정함)
+const pusher = { coins: [], tray: 0, dropU: 0.5, slab: 0.2, raf: 0, pushing: false }
+const PU = { backY: 86, frontY: 232, backHalf: 88, frontHalf: 136 }
+const puY = v => PU.backY + v * (PU.frontY - PU.backY)
+const puX = (u, v) => 150 + (u - 0.5) * 2 * (PU.backHalf + v * (PU.frontHalf - PU.backHalf))
+const puS = v => 0.62 + 0.55 * v // 앞일수록 크게
+function coinEl(u, v, stack = 1, layer = 'coinLayer') {
   const g = document.createElementNS(svgNS, 'g')
-  g.innerHTML = `<circle r="${r}" fill="url(#g-gold)" stroke="#7a5a1a" stroke-width="2"/><circle r="${(r * 0.6).toFixed(1)}" fill="none" stroke="#7a5a1a" stroke-width="1.2" opacity=".6"/>`
-  g.setAttribute('transform', `translate(${x.toFixed(1)} ${y.toFixed(1)})`)
-  $('coinLayer').append(g)
-  return { x, y, el: g }
+  g.innerHTML = Array.from({ length: stack }, (_, i) => `<use href="#coin3d" x="-15" y="${-10 - i * 3.4}" width="30" height="20"/>`).join('')
+  $(layer).append(g)
+  const c = { u, v, stack, el: g }
+  placeCoin(c)
+  return c
 }
-function randomCoin(y0, y1) { const y = y0 + Math.random() * (y1 - y0), [l, r] = fieldX(y); return coinEl(l + 16 + Math.random() * (r - l - 32), y) }
-function sortCoins() { pusher.coins.sort((a, b) => a.y - b.y).forEach(c => $('coinLayer').append(c.el)) }
+function placeCoin(c, dy = 0) { c.el.setAttribute('transform', `translate(${puX(c.u, c.v).toFixed(1)} ${(puY(c.v) + dy).toFixed(1)}) scale(${puS(c.v).toFixed(3)})`) }
+function sortCoins() { pusher.coins.sort((a, b) => a.v - b.v).forEach(c => $('coinLayer').append(c.el)) }
+function drawSlab() {
+  const v = pusher.slab, y0 = puY(0) - 2, y1 = puY(v), h = 10 * puS(v)
+  const x0 = puX(0.02, 0), x1 = puX(0.98, 0), x2 = puX(0.98, v), x3 = puX(0.02, v)
+  $('slabTop').setAttribute('d', `M${x0} ${y0}H${x1}L${x2} ${y1}H${x3}Z`)
+  $('slabFront').setAttribute('d', `M${x3} ${y1}H${x2}V${y1 + h}H${x3}Z`)
+}
+function randomCoin(v0, v1) {
+  const v = v0 + Math.random() * (v1 - v0)
+  return coinEl(0.06 + Math.random() * 0.88, v, Math.random() < 0.18 ? 2 : 1)
+}
 function setupPusher() {
-  $('coinLayer').replaceChildren(); pusher.coins = []
-  for (let i = 0; i < 44; i++) pusher.coins.push(randomCoin(80, 252))
+  $('coinLayer').replaceChildren(); $('trayLayer').replaceChildren(); $('fallLayer').replaceChildren()
+  pusher.coins = []; pusher.tray = 0
+  for (let i = 0; i < 46; i++) pusher.coins.push(randomCoin(0.3, 0.97))
   sortCoins()
+  // 옆벽 LED · 뒷벽 전구
+  $('puLeds').innerHTML = Array.from({ length: 9 }, (_, i) => { const t = i / 8, yl = 70 + t * 160; return `<circle cx="${(3 + t * 6).toFixed(1)}" cy="${yl.toFixed(1)}" r="2.3" class="pu-led" style="animation-delay:${(i * 0.12).toFixed(2)}s"/><circle cx="${(297 - t * 6).toFixed(1)}" cy="${yl.toFixed(1)}" r="2.3" class="pu-led" style="animation-delay:${(i * 0.12).toFixed(2)}s"/>` }).join('')
+  $('puBulbs').innerHTML = Array.from({ length: 15 }, (_, i) => `<circle cx="${12 + i * 19.7}" cy="10" r="2.6" class="pu-bulb${i % 2}"/>`).join('')
   cancelAnimationFrame(pusher.raf)
-  const loop = now => { pusher.dropX = 150 + Math.sin(now / 650) * 104; $('dropper').setAttribute('transform', `translate(${pusher.dropX.toFixed(1)} 0)`); pusher.raf = requestAnimationFrame(loop) }
+  const loop = now => {
+    pusher.dropU = 0.5 + Math.sin(now / 650) * 0.4
+    $('dropper').setAttribute('transform', `translate(${puX(pusher.dropU, 0).toFixed(1)} 0)`)
+    if (!pusher.pushing) { pusher.slab = 0.2 + Math.sin(now / 900) * 0.035; drawSlab() }
+    pusher.raf = requestAnimationFrame(loop)
+  }
   pusher.raf = requestAnimationFrame(loop)
   $('pusherGain').textContent = ''
 }
-const moveCoin = (c, y, ms, extra = {}) => reduced ? Promise.resolve() : c.el.animate([{ transform: `translate(${c.x}px, ${c.y}px)` }, { transform: `translate(${extra.x ?? c.x}px, ${y}px)`, opacity: extra.opacity ?? 1 }], { duration: ms, delay: extra.delay || 0, easing: extra.easing || 'ease-in-out', fill: 'forwards' }).finished
+const easeIO = k => k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2
+const tween = (ms, fn) => new Promise(res => { if (reduced) { fn(1); return res() } const t0 = performance.now(); const step = now => { const k = Math.min(1, (now - t0) / ms); fn(k); k < 1 ? requestAnimationFrame(step) : res() }; requestAnimationFrame(step) })
 async function playPusher(m) {
-  // 1) 코인이 투입구에서 판으로
-  const x = pusher.dropX, drop = coinEl(x, 84, 12)
-  if (!reduced) await drop.el.animate([{ transform: `translate(${x}px, 8px) scale(1.7)` }, { transform: `translate(${x}px, 84px) scale(1)` }], { duration: 380, easing: 'cubic-bezier(.5,0,.75,0)' }).finished
-  pusher.coins.push(drop); sfx.stop()
-  // 2) 밀대가 밀면 판 위 코인이 앞으로, 맨 앞 n개는 떨어짐
-  if (!reduced) $('pushBar').animate([{ transform: 'translateY(0)' }, { transform: 'translateY(16px)' }, { transform: 'translateY(0)' }], { duration: 700, easing: 'ease-in-out' })
   const n = m.coins
-  pusher.coins.sort((a, b) => b.y - a.y)
-  while (pusher.coins.filter(c => c.y > 200).length < n) pusher.coins.unshift(randomCoin(236, 252)) // 앞쪽에 모자라면 채움 (와르르)
-  pusher.coins.sort((a, b) => b.y - a.y)
+  // 1) 투입구에서 코인이 떨어져 밀대 앞에 안착
+  const u = pusher.dropU, drop = coinEl(u, 0.24)
+  await tween(380, k => { const e = k * k; drop.el.setAttribute('transform', `translate(${puX(u, 0.24).toFixed(1)} ${(70 + (puY(0.24) - 70) * e).toFixed(1)}) scale(${(1.15 - 0.27 * e).toFixed(3)})`) })
+  placeCoin(drop); pusher.coins.push(drop); sortCoins(); sfx.stop()
+  // 2) 맨 앞 n개가 떨어질 코인 (모자라면 앞쪽에 채움 = 와르르)
+  pusher.coins.sort((a, b) => b.v - a.v)
+  while (pusher.coins.filter(c => c.v > 0.85).length < n) pusher.coins.push(randomCoin(0.88, 0.98))
+  pusher.coins.sort((a, b) => b.v - a.v)
   const fall = pusher.coins.slice(0, n), stay = pusher.coins.slice(n)
-  const moves = stay.map(c => { const ny = Math.min(254, c.y + 5 + Math.random() * 9); const p = moveCoin(c, ny, 600); return p.then(() => { c.y = ny; c.el.getAnimations().forEach(a => a.cancel()); c.el.setAttribute('transform', `translate(${c.x.toFixed(1)} ${c.y.toFixed(1)})`) }) })
-  if (n >= 10) floatText($('fxText'), 50, 40, '와르르!', '#fff1b8', true)
-  const falls = fall.map((c, i) => moveCoin(c, 300, 520, { delay: 150 + i * (n > 10 ? 25 : 70), easing: 'cubic-bezier(.5,0,.9,.6)', opacity: 0.2 }).then(() => c.el.remove()))
+  // 3) 밀대가 밀면 판 위 코인이 앞으로 (머문 코인은 앞 턱 직전까지만)
+  pusher.pushing = true
+  const from = stay.map(c => c.v), to = stay.map(c => Math.min(0.97, c.v + 0.03 + Math.random() * 0.05))
+  const s0 = pusher.slab
+  if (n >= 10) floatText($('fxText'), 50, 38, '와르르!', '#fff1b8', true)
+  await tween(650, k => {
+    const e = easeIO(k)
+    pusher.slab = s0 + Math.sin(e * Math.PI) * 0.14; drawSlab()
+    stay.forEach((c, i) => { c.v = from[i] + (to[i] - from[i]) * e; placeCoin(c) })
+    fall.forEach(c => { c.v = Math.min(1.02, c.v + 0.06 * e); placeCoin(c) })
+  })
+  pusher.pushing = false
+  // 4) 떨어지는 코인: 앞 턱을 넘어 굴러 받침으로
   let shown = 0
-  const tick = setInterval(() => { if (shown < n) { shown++; $('pusherGain').textContent = `+${shown}`; sfx.coin() } }, n > 10 ? 40 : 90)
-  await Promise.all([...moves, ...falls])
-  clearInterval(tick); $('pusherGain').textContent = n ? `+${n}` : ''
+  const falls = fall.map((c, i) => new Promise(res => setTimeout(async () => {
+    $('fallLayer').append(c.el)
+    const x0 = puX(c.u, 1.02), y0 = puY(1.02), x1 = x0 + (Math.random() - 0.5) * 30, y1 = 272 + Math.random() * 16, rot = (Math.random() - 0.5) * 540
+    await tween(480, k => { const e = k * k; c.el.setAttribute('transform', `translate(${(x0 + (x1 - x0) * k).toFixed(1)} ${(y0 + (y1 - y0) * e).toFixed(1)}) rotate(${(rot * k).toFixed(0)}) scale(${(1.17 - 0.2 * k).toFixed(3)})`) })
+    c.el.remove()
+    addTray(x1, y1)
+    shown++; $('pusherGain').textContent = `+${shown}`; sfx.coin()
+    res()
+  }, 120 + i * (n > 10 ? 28 : 90))))
+  await Promise.all(falls)
   pusher.coins = stay
-  while (pusher.coins.length < 40) pusher.coins.push(randomCoin(76, 120)) // 뒤쪽 채우기
+  while (pusher.coins.length < 42) pusher.coins.push(randomCoin(0.28, 0.45)) // 뒤쪽 채우기
   sortCoins()
   return showResult({ wins: [], back: m.base, total: m.total, mark: false,
     title: n ? `코인 ${n}개 떨어졌어요!` : '안 떨어졌어요', sub: n ? undefined : `${fmt(m.total)}칩 · 다음 코인에 밀려 떨어질지도!` })
+}
+// 받침에 쌓인 코인 (보여 주기만, 많아지면 오래된 것부터 치움)
+function addTray(x, y) {
+  const g = document.createElementNS(svgNS, 'g')
+  g.innerHTML = '<use href="#coin3d" x="-15" y="-10" width="30" height="20"/>'
+  g.setAttribute('transform', `translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${((Math.random() - 0.5) * 30).toFixed(0)}) scale(.95)`)
+  $('trayLayer').append(g)
+  while ($('trayLayer').children.length > 40) $('trayLayer').firstChild.remove()
 }
 
 // ---------- 모두의 잭팟 ----------
