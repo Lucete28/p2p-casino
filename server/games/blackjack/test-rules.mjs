@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { mock } from 'node:test'
 import bj from './index.mjs'
-import { score, isNatural, settleHand, CUT, SHOE_SIZE, BET_MS, READY_MS, TURN_MS, SHOW_MS, DEAL_MS } from '../../../public/blackjack/rules.mjs'
+import { score, isNatural, settleHand, MIN_BET, CUT, SHOE_SIZE, BET_MS, READY_MS, TURN_MS, SHOW_MS, DEAL_MS } from '../../../public/blackjack/rules.mjs'
 
 let n = 0
 const ok = async (name, fn) => { await fn(); n++; console.log('✓', name) }
@@ -249,8 +249,9 @@ await ok('딜러 결과가 나온 뒤(연출 중) 나가면 결과대로 바로 
 await ok('끊긴 사람의 베팅은 이번 판에서 빠짐, 이상한 베팅·취소', () => {
   const T = setup(['Ts', '9d', '9c', '8h'], [1000, 1000])
   const [A, B] = T.ps
-  for (const bad of [-5, 1.5, 'abc', 1e20, 1001]) T.bet(A, bad)
-  assert.equal(T.last(A).me, -1); assert.equal(T.toasts(A).length, 5)
+  for (const bad of [-5, 1.5, 'abc', 1e20, 1001, 1, MIN_BET - 1]) T.bet(A, bad) // 최소 베팅 10 미만도 거절
+  assert.equal(T.last(A).me, -1); assert.equal(T.toasts(A).length, 7)
+  assert.ok(T.toasts(A).at(-1).includes('10칩 이상'))
   T.bet(A, 100); T.bet(A, 0)
   assert.equal(T.last(B).seats[3].ready, false, '취소')
   T.bet(A, 100); T.bet(B, 100)
@@ -286,7 +287,7 @@ await ok(`슈: 312장 중 ${CUT}장 넘게 쓰면 다음 딜 전에 다시 섞�
   const [A] = T.ps
   let shuffled = 0
   for (let i = 0; i < 120; i++) {
-    dealAll(T, [1])
+    dealAll(T, [MIN_BET])
     if (T.last(A).shoe.shuffled) shuffled++
     else assert.ok(SHOE_SIZE - T.last(A).shoe.left <= CUT + 20)
     while (!T.me(A).done) T.act(A, 'stand')

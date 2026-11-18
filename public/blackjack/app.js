@@ -2,7 +2,7 @@
 // 딜러의 숨긴 카드는 딜러 차례가 되어야 서버가 보내 준다. 칩 숫자는 서버가 연출 시간(rules.mjs의 *_MS)만큼 늦게 정산한 값.
 // 돈은 '보유 칩 · 베팅 · 이번 판' 세 칸으로 보여 준다 (운영자 요청 2026-11-18, 누적 득실은 보여 주지 않음). 처음엔 관전, 빈자리를 누르거나 베팅하면 앉는다
 import { startGame } from '../shared/casino.js'
-import { score, isNatural, SEATS, DEAL_MS, HIT_MS, DEALER_MS, RESULT_MS, TURN_MS } from './rules.mjs'
+import { score, isNatural, SEATS, MIN_BET, DEAL_MS, HIT_MS, DEALER_MS, RESULT_MS, TURN_MS } from './rules.mjs'
 
 const $ = id => document.getElementById(id)
 const fmt = n => Number(n || 0).toLocaleString('ko-KR')
@@ -184,7 +184,7 @@ function clearCards() {
 function totalText(cards, natural) {
   const s = score(cards)
   if (natural) return { t: '블랙잭', cls: 'bj21' }
-  if (s.total > 21) return { t: `${s.total} 버스트`, cls: 'bust' }
+  if (s.total > 21) return { t: `${s.total} 버스트`, h: `${s.total}<span class="bj-bust-w"> 버스트</span>`, cls: 'bust' }
   return { t: s.soft && s.total < 21 ? `${s.total - 10}/${s.total}` : String(s.total), cls: '' }
 }
 function paintTotal(el, cards, natural) {
@@ -192,9 +192,30 @@ function paintTotal(el, cards, natural) {
   el.hidden = !known.length
   if (!known.length) return
   const x = totalText(known, natural)
-  el.textContent = x.t; el.className = 'bj-total' + (x.cls ? ' ' + x.cls : '')
+  if (x.h) el.innerHTML = x.h; else el.textContent = x.t // x.h는 숫자로만 만든 글자
+  el.className = 'bj-total' + (x.cls ? ' ' + x.cls : '')
 }
+// 다른 사람 줄이 테이블 폭을 넘으면 (꽉 찬 테이블 + 스플릿) 작은 카드를 더 작게, 그래도 넘으면 두 줄로
+let fitPending = false
+function fitOthers() {
+  if (fitPending) return
+  fitPending = true
+  setTimeout(() => { // 카드가 한 장씩 놓일 때마다 부르므로 한 번으로 모음 (rAF는 가려진 탭에서 멈춰서 setTimeout)
+    fitPending = false
+    const box = $('others')
+    box.style.removeProperty('--cw-mini'); box.classList.remove('wrap')
+    const grid = getComputedStyle(box).display === 'grid'
+    const kids = [...box.children]
+    const gap = parseFloat(getComputedStyle(box).columnGap) || 0
+    const need = () => grid ? box.scrollWidth : kids.reduce((a, c) => a + c.getBoundingClientRect().width, 0) + gap * (kids.length - 1)
+    let cw = parseFloat(getComputedStyle(box).getPropertyValue('--cw-mini')) || 36
+    while (need() > box.clientWidth + 1 && cw > 18) { cw -= 2; box.style.setProperty('--cw-mini', cw + 'px') }
+    if (need() > box.clientWidth + 1) box.classList.add('wrap')
+  }, 0)
+}
+addEventListener('resize', fitOthers)
 function paintTotals() {
+  fitOthers()
   paintTotal($('dealerTotal'), shown.dealer, shown.dealer.length === 2 && shown.dealer.every(Boolean) && isNatural(shown.dealer))
   for (const [i, hands] of Object.entries(shown.seats)) {
     const e = seats.get(Number(i)); if (!e || e.empty) continue
@@ -563,7 +584,7 @@ function paintMoney() {
 }
 
 // ---------- 아래 조작판 ----------
-let bet = Number(store.get('bet')) || 100
+let bet = Math.max(MIN_BET, Number(store.get('bet')) || 100)
 const busy = () => pending > 0 || !!acting
 function paintPanel() {
   const S = state, my = mySeat()
@@ -581,20 +602,23 @@ function paintPanel() {
   else if (S?.phase === 'bet' && S.me < 0 && S.seats.every(Boolean)) { text = '빈자리가 없어요'; dis = true }
   else if (S?.phase === 'bet') {
     if (my?.ready) { text = '베팅 취소'; amt = ''; kind = 'cancel' }
+    else if (chips < MIN_BET) { text = `칩이 ${MIN_BET}개보다 적어요`; kind = 'short'; amt = '' }
     else if (bet > chips) { text = '칩이 모자라요'; kind = 'short' }
+    else if (bet < MIN_BET) { text = `최소 ${MIN_BET}칩`; kind = 'short' }
   } else { text = my?.inRound ? '이번 판 진행 중' : '다음 판에 베팅'; dis = true }
   if (S?.phase === 'bet' && S.me < 0 && text === '베팅하기') text = '앉아서 베팅하기'
   $('betGoText').textContent = text; $('betGoAmt').textContent = amt
   go.disabled = dis; go.className = 'bj-deal' + (kind ? ' ' + kind : '')
   const lock = !!my?.ready
   document.querySelectorAll('#chipBtns button, .bj-bet-row button').forEach(b => { b.disabled = lock })
-  if (!lock) { $('clearBet').disabled = !bet; $('halfBet').disabled = bet < 2; $('dblBet').disabled = !bet || (!!game?.me && bet * 2 > chips); $('allBet').disabled = !!game?.me && !chips }
+  if (!lock) { $('clearBet').disabled = !bet; $('halfBet').disabled = bet <= MIN_BET; $('dblBet').disabled = !bet || (!!game?.me && bet * 2 > chips); $('allBet').disabled = !!game?.me && !chips }
   $('standUp').hidden = !my || my.inRound
   store.set('bet', String(bet))
   paintMoney(); paintSpot()
 }
 $('standUp').onclick = () => game?.send({ t: 'stand' })
-function setBet(v) { bet = Math.max(0, Math.floor(v)); paintPanel() }
+// 베팅은 0(비움) 또는 최소 베팅 이상. ½·올인도 최소 아래로 내려가지 않음
+function setBet(v) { v = Math.floor(v); bet = v <= 0 ? 0 : Math.max(MIN_BET, v); paintPanel() }
 $('chipBtns').innerHTML = CHIPS.map(c => `<button type="button" class="bj-chip" data-v="${c.v}" aria-label="${fmt(c.v)}칩 더하기" style="--chip:${c.c}">${chipHtml(c.c)}<b>${c.l}</b></button>`).join('')
 $('chipBtns').querySelectorAll('button').forEach(b => b.onclick = () => { sfx.chip(); setBet(bet + Number(b.dataset.v)) })
 $('clearBet').onclick = () => setBet(0)
@@ -608,6 +632,8 @@ $('betGo').onclick = () => {
   if (!game.chips && !game.inPlay && !my?.inRound) return game.openBuyIn()
   if (state?.phase !== 'bet') return
   if (!bet) return game.toast('칩을 눌러 걸 만큼 쌓아 주세요.')
+  if (game.chips < MIN_BET) return game.toast(`칩이 ${MIN_BET}개보다 적어 걸 수 없어요. 칩을 더 바꾸거나 '코인으로'를 눌러 돌려받아요.`)
+  if (bet < MIN_BET) return game.toast(`베팅은 ${MIN_BET}칩부터예요.`)
   if (bet > game.chips) return game.toast(`칩이 ${fmt(game.chips)}개 있어요. 베팅을 줄이거나 칩을 더 바꿔 주세요.`)
   sfx.chip()
   game.send({ t: 'bet', amount: bet })
@@ -670,6 +696,30 @@ $('helpOk').onclick = () => {
 }
 const firstVisit = !store.get('guide')
 
+// 로컬에서만: ?demo=full (행동 중) · ?demo=result (결과) — 7자리가 꽉 차고 여러 명이 스플릿한 테이블을 서버 없이 그려 화면 점검
+const demoKind = /^(127\.0\.0\.1|localhost)$/.test(location.hostname) ? new URLSearchParams(location.search).get('demo') : null
+function demoState(result) {
+  const H = (cards, bet, o = {}) => ({ cards, bet, doubled: false, split: false, ...o })
+  const R = (h, res, back, extra = {}) => result ? { ...h, result: res, back, ...extra } : h
+  const seat = (name, hands, o = {}) => ({ name, me: false, online: true, bet: hands[0].bet, ready: false, inRound: true, done: result || !!o.done, active: o.active ?? 0,
+    hands, staked: hands.reduce((a, h) => a + h.bet, 0), back: result ? hands.reduce((a, h) => a + (h.back || 0), 0) : null, turnMs: result || o.done ? 0 : 14000, ...o })
+  const seats = [
+    seat('민수', [R(H(['8s', '3d', 'Kc', '2h'], 50, { split: true }), 'win', 100), R(H(['8h', 'Tc', '5d'], 50, { split: true }), 'lose', 0)], { active: 1 }),
+    seat('지은', [R(H(['2s', '3c', '4d', '2h', '5s'], 100), 'lose', 0)]),
+    seat('가나다라마바사아자차', [R(H(['As', 'Kd'], 200, { split: true }), 'win', 400), R(H(['Ac', '9h'], 200, { split: true }), 'push', 200)], { done: true, active: 1 }),
+    { ...seat('나', [R(H(['9s', '2c', 'Td'], 200, { split: true, doubled: true }), 'push', 200), R(H(['9d', 'Ah', '3c', '4s', '2d'], 100, { split: true }), 'lose', 0)], { active: 1 }), me: true },
+    seat('bob', [R(H(['Ks', 'Ad'], 50), 'blackjack', 125)], { done: true }),
+    seat('carol', [R(H(['7s', '4d', 'Th'], 100, { split: true, doubled: true }), 'push', 100), R(H(['7c', '4h', 'Js'], 100, { split: true, doubled: true }), 'push', 100)], { done: true, active: 1 }),
+    seat('dave', [R(H(['Ts', '5d', '4c', '9h'], 1000), 'bust', 0)], { done: true }),
+  ]
+  return { t: 'state', ev: 'sync', table: 1, phase: result ? 'result' : 'play', phaseMs: result ? 3000 : 0, dealer: result ? ['Ts', '6d', '5h'] : ['Ts', null],
+    seats, me: 3, watching: 4, seq: 1, actions: { hit: true, stand: true, double: false, split: false }, shoe: { left: 180, size: 312, cut: 78, shuffled: false }, at: performance.now() }
+}
+function showDemo() {
+  const S = demoState(demoKind === 'result')
+  state = S; times(S); renderStatic(S); paintShoe(S.shoe); paintPanel()
+}
+
 // ---------- 시작 ----------
 paintSound(); paintPanel()
 if (firstVisit) helpDlg.showModal()
@@ -686,9 +736,10 @@ game = await startGame({
   onReady() { paintPanel() },
   onChips() { paintPanel() },
   onMessage(m) {
-    if (m.t !== 'state') return
+    if (m.t !== 'state' || demoKind === 'full' || demoKind === 'result') return // 미리 보기 중엔 서버 상태를 그리지 않음
     if (m.ev !== 'act' || m.seat === m.me) releaseAct()
     enqueue(m)
   },
 })
 paintPanel()
+if (demoKind === 'full' || demoKind === 'result') showDemo()
