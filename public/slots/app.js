@@ -5,7 +5,7 @@
 //   클래식: 베팅 1 → 가운데 줄 1개 · 3 → 가로 3줄 · 5 이상(5의 배수) → 5줄 모두
 //   나머지: 베팅 = 단위 × (줄 수 · 과일 폭탄은 25). 다이아몬드는 줄 1개라 아무 금액
 import { startGame } from '../shared/casino.js'
-import { MACHINES, MACHINE_IDS, SYMBOLS, JACKPOT, TEASE_MS, checkBet, linesOf, exactRtp } from './rules.mjs'
+import { MACHINES, MACHINE_IDS, SYMBOLS, JACKPOT, TEASE_MS, checkBet, linesOf, exactRtp, crashMultAt, pusherTotal } from './rules.mjs'
 import { burst, flyCoins, floatText, shake, celebrate, celebrating } from './fx.js'
 
 const $ = id => document.getElementById(id)
@@ -31,7 +31,8 @@ function kindLabel(k) {
 const main = document.querySelector('.sl')
 const TOP = { classic: 'seven3', diamond: 'diamond3', fruit5: 'seven5', lucky: 'moon5' } // 머신의 가장 큰 그림
 const TOP_LABEL = { classic: 'JACKPOT 777', diamond: 'DIAMOND!!', fruit5: '7 7 7 7 7', lucky: 'FULL MOON' }
-const ICON = { classic: 'seven', diamond: 'diamond', fruit5: 'melon', lucky: 'star' }
+const ICON = { classic: 'seven', diamond: 'diamond', fruit5: 'melon', lucky: 'star', crash: 'rocket', pusher: 'coins' }
+const ARCADE = m => m.type === 'crash' || m.type === 'pusher' // 릴이 없는 머신
 
 // ---------- 머신 ----------
 let cur = MACHINES[store.get('machine')] || MACHINES.classic
@@ -54,6 +55,8 @@ function hintOf(m, bet) {
   if (m.lineChoices) return { 1: '가운데 줄 1개만', 3: '가로 줄 3개', 5: '줄 5개 모두' }[lines] + jp
   if (m.type === 'gem') return '가운데 줄 하나 + 배수 릴' + jp
   if (m.type === 'cascade') return '줄 없음 · 연쇄마다 ×1·×2·×3·×5' + jp
+  if (m.type === 'crash') return '터지기 전에 내리면 베팅 × 그 배수'
+  if (m.type === 'pusher') return '코인 1개 = 베팅. 떨어진 코인 수만큼 받아요'
   let h = `줄 ${lines}개 모두`
   return h + jp
 }
@@ -99,7 +102,12 @@ function buildReels() {
   main.dataset.type = cur.type
   const w = colWeights()
   $('reels').style.gridTemplateColumns = w.map(x => `${x}fr`).join(' ')
-  $('paylines').setAttribute('viewBox', `0 0 ${w.reduce((a, b) => a + b, 0) * 100} ${(cur.rows || 3) * 100}`)
+  $('paylines').setAttribute('viewBox', `0 0 ${Math.max(1, w.reduce((a, b) => a + b, 0)) * 100} ${(cur.rows || 3) * 100}`)
+  $('crashStage').hidden = cur.type !== 'crash'
+  $('pusherStage').hidden = cur.type !== 'pusher'
+  $('crashAutoRow').hidden = cur.type !== 'crash'
+  if (cur.type === 'crash') setupCrash()
+  if (cur.type === 'pusher') setupPusher(); else cancelAnimationFrame(pusher.raf)
   reels = w.map((_, r) => {
     const el = document.createElement('div'); el.className = 'sl-reel' + (r >= cur.reels ? ' mreel' : '')
     const strip = document.createElement('div'); strip.className = 'sl-strip'
@@ -467,6 +475,153 @@ async function playCascade(m) {
     title: steps ? (steps > 1 ? `${steps}연쇄!` : kindLabel(wins.sort((a, b) => b.pay - a.pay)[0].kind)) : '꽝' })
 }
 
+// ---------- 크래시 ----------
+// 배수는 서버와 같은 식(crashMultAt)으로 화면 시계로 그린다. 내리기·터짐은 서버가 정하고 알려 준다
+const crash = { flying: false, cashed: false, sent: false, round: null, t0: 0, total: 0, mult: 1, raf: 0, hist: [], jackpot: null, win: 0 }
+let crashG = null
+function setupCrash() { stopCrashView(); drawCrash(0, 1, 'idle'); $('crashMult').textContent = '×1.00'; $('crashNote').textContent = '시작을 누르면 로켓이 떠요'; paintCrashHist() }
+function stopCrashView() { cancelAnimationFrame(crash.raf); crash.flying = false; $('crashStage').classList.remove('flying', 'boom', 'out') }
+function paintCrashHist() {
+  $('crashHist').innerHTML = crash.hist.map(x => `<span class="${x >= 10 ? 'gold' : x >= 2 ? 'good' : 'bad'}">×${x.toFixed(2)}</span>`).join('')
+}
+function crashTicks(max) { const out = []; for (const v of [1.5, 2, 3, 5, 10, 20, 50, 100, 200, 500, 1000]) if (v < max) out.push(v); return out.slice(-4) }
+function drawCrash(t, mult, state) {
+  const c = $('crashCanvas'), r = c.getBoundingClientRect(), d = Math.min(2, devicePixelRatio || 1)
+  if (!r.width) return [0, 0]
+  if (c.width !== Math.round(r.width * d) || c.height !== Math.round(r.height * d)) { c.width = Math.round(r.width * d); c.height = Math.round(r.height * d); crashG = null }
+  const g = crashG ||= c.getContext('2d')
+  g.setTransform(d, 0, 0, d, 0, 0)
+  const W = r.width, H = r.height
+  g.clearRect(0, 0, W, H)
+  const tMax = Math.max(8000, t * 1.15), mMax = Math.max(2, mult * 1.3)
+  const X = tt => 30 + (W - 46) * tt / tMax, Y = mm => H - 20 - (H - 56) * (mm - 1) / (mMax - 1)
+  g.font = '600 11px Pretendard, sans-serif'; g.lineWidth = 1
+  for (const v of crashTicks(mMax)) { const y = Y(v); g.strokeStyle = 'rgba(255,255,255,.08)'; g.beginPath(); g.moveTo(30, y); g.lineTo(W - 8, y); g.stroke(); g.fillStyle = 'rgba(255,255,255,.4)'; g.fillText('×' + v, 2, y + 4) }
+  if (state === 'idle') return [X(0), Y(1)]
+  g.beginPath()
+  for (let i = 0; i <= 80; i++) { const tt = t * i / 80, x = X(tt), y = Y(Math.exp(cur.grow * tt)); i ? g.lineTo(x, y) : g.moveTo(x, y) }
+  const tip = [X(t), Y(Math.exp(cur.grow * t))]
+  g.strokeStyle = state === 'boom' ? '#ff4d6d' : crash.cashed ? 'rgba(255,211,107,.45)' : '#ffd36b'; g.lineWidth = 4; g.lineJoin = 'round'; g.stroke()
+  g.lineTo(tip[0], H - 20); g.lineTo(X(0), H - 20); g.closePath()
+  const grad = g.createLinearGradient(0, tip[1], 0, H); grad.addColorStop(0, state === 'boom' ? 'rgba(255,77,109,.35)' : 'rgba(255,211,107,.3)'); grad.addColorStop(1, 'rgba(255,211,107,0)')
+  g.fillStyle = grad; g.fill()
+  return tip
+}
+function placeRocket(tip, t) {
+  const el = $('crashRocket'), stage = $('crashStage')
+  const slope = Math.atan2(-(Math.exp(cur.grow * (t + 300)) - Math.exp(cur.grow * t)), 1) // 대충 오르는 기울기
+  el.style.transform = `translate(${tip[0]}px, ${tip[1]}px) translate(-50%, -50%) rotate(${45 + Math.max(-45, slope * -900 / Math.PI)}deg)`
+  el.hidden = false
+}
+let crashTick = 0
+function crashLoop() {
+  const t = performance.now() - crash.t0
+  crash.mult = crashMultAt(cur, t)
+  const tip = drawCrash(t, crash.mult, 'fly')
+  placeRocket(tip, t)
+  $('crashMult').textContent = '×' + crash.mult.toFixed(2)
+  if (!crash.cashed) { paintSpin(); if (crash.mult >= crashTick + 0.25) { crashTick = crash.mult; tone(300 + crash.mult * 60, 0, 0.05, 'square', 0.02) } }
+  crash.raf = requestAnimationFrame(crashLoop)
+}
+function crashStart(m) {
+  clearTimeout(waitT); awaiting = false
+  if (cur.id !== 'crash') { busy = false; switchMachine('crash') }
+  Object.assign(crash, { flying: true, cashed: false, sent: false, round: m.round, t0: performance.now(), total: m.total, mult: 1, jackpot: m.jackpot, win: 0 })
+  crashTick = 1
+  setBusy(true)
+  $('crashStage').classList.remove('boom', 'out'); $('crashStage').classList.add('flying')
+  $('crashNote').textContent = m.auto ? `×${m.auto.toFixed(2)}에서 자동으로 내려요` : '터지기 전에 내리기!'
+  say('로켓 발사!', '', `${fmt(m.total)}칩 걸었어요 · 언제 내릴까요?`)
+  sfx.lever()
+  cancelAnimationFrame(crash.raf)
+  crashLoop()
+}
+async function crashCashed(m) {
+  if (m.round !== crash.round) return
+  crash.cashed = true; crash.win = m.win
+  $('crashStage').classList.add('out')
+  $('crashNote').textContent = `×${m.mult.toFixed(2)}에서 내렸어요!`
+  const total = crash.total, back = m.win + (crash.jackpot?.win || 0)
+  streak = m.win > total ? streak + 1 : 0
+  paintSpin()
+  await showResult({ wins: [], back: m.win, total, mark: false, title: `×${m.mult.toFixed(2)} 내리기 성공!` })
+  if (crash.jackpot) await playJackpot({ jackpot: crash.jackpot, total, back })
+  setBusy(false)
+  if (auto && !celebrating()) setTimeout(() => { if (auto) requestSpin() }, 1200)
+}
+async function crashed(m) {
+  if (m.round !== crash.round) return
+  cancelAnimationFrame(crash.raf)
+  const t = performance.now() - crash.t0
+  const tip = drawCrash(t, m.at, 'boom')
+  $('crashMult').textContent = '×' + m.at.toFixed(2)
+  $('crashRocket').hidden = true
+  $('crashStage').classList.add('boom')
+  crash.flying = false
+  crash.hist = [m.at, ...crash.hist].slice(0, 12); paintCrashHist()
+  const r = $('crashCanvas').getBoundingClientRect()
+  if (!reduced) burst(r.left + tip[0], r.top + tip[1], 18, { power: 0.9, confetti: 12 })
+  if (m.after) { $('crashNote').textContent = `로켓은 ×${m.at.toFixed(2)}에서 터졌어요`; return } // 이미 내린 판
+  sfx.lose(); shake(document.querySelector('.sl-machine'), 0.6)
+  $('crashNote').textContent = '펑! 터졌어요'
+  streak = 0
+  main.classList.add('lose')
+  say(`×${m.at.toFixed(2)}에서 터졌어요`, '', `${fmt(crash.total)}칩을 잃었어요 · 다음엔 일찍?`)
+  paintSpin()
+  if (crash.jackpot) await playJackpot({ jackpot: crash.jackpot, total: crash.total, back: crash.jackpot.win })
+  setBusy(false)
+  if (auto && !celebrating()) setTimeout(() => { if (auto) requestSpin() }, 1200)
+}
+
+// ---------- 코인 푸셔 ----------
+// 판 위 코인은 보여 주기만 한다 (몇 개 떨어질지는 서버가 정함). 투입구는 좌우로 움직이고, 누르면 그 자리에 떨어진다
+const pusher = { coins: [], dropX: 150, raf: 0 }
+const fieldX = y => [30 - 22 * (y - 40) / 222, 270 + 22 * (y - 40) / 222] // 사다리꼴 판의 왼쪽·오른쪽 끝
+function coinEl(x, y, r = 11) {
+  const g = document.createElementNS(svgNS, 'g')
+  g.innerHTML = `<circle r="${r}" fill="url(#g-gold)" stroke="#7a5a1a" stroke-width="2"/><circle r="${(r * 0.6).toFixed(1)}" fill="none" stroke="#7a5a1a" stroke-width="1.2" opacity=".6"/>`
+  g.setAttribute('transform', `translate(${x.toFixed(1)} ${y.toFixed(1)})`)
+  $('coinLayer').append(g)
+  return { x, y, el: g }
+}
+function randomCoin(y0, y1) { const y = y0 + Math.random() * (y1 - y0), [l, r] = fieldX(y); return coinEl(l + 16 + Math.random() * (r - l - 32), y) }
+function sortCoins() { pusher.coins.sort((a, b) => a.y - b.y).forEach(c => $('coinLayer').append(c.el)) }
+function setupPusher() {
+  $('coinLayer').replaceChildren(); pusher.coins = []
+  for (let i = 0; i < 44; i++) pusher.coins.push(randomCoin(80, 252))
+  sortCoins()
+  cancelAnimationFrame(pusher.raf)
+  const loop = now => { pusher.dropX = 150 + Math.sin(now / 650) * 104; $('dropper').setAttribute('transform', `translate(${pusher.dropX.toFixed(1)} 0)`); pusher.raf = requestAnimationFrame(loop) }
+  pusher.raf = requestAnimationFrame(loop)
+  $('pusherGain').textContent = ''
+}
+const moveCoin = (c, y, ms, extra = {}) => reduced ? Promise.resolve() : c.el.animate([{ transform: `translate(${c.x}px, ${c.y}px)` }, { transform: `translate(${extra.x ?? c.x}px, ${y}px)`, opacity: extra.opacity ?? 1 }], { duration: ms, delay: extra.delay || 0, easing: extra.easing || 'ease-in-out', fill: 'forwards' }).finished
+async function playPusher(m) {
+  // 1) 코인이 투입구에서 판으로
+  const x = pusher.dropX, drop = coinEl(x, 84, 12)
+  if (!reduced) await drop.el.animate([{ transform: `translate(${x}px, 8px) scale(1.7)` }, { transform: `translate(${x}px, 84px) scale(1)` }], { duration: 380, easing: 'cubic-bezier(.5,0,.75,0)' }).finished
+  pusher.coins.push(drop); sfx.stop()
+  // 2) 밀대가 밀면 판 위 코인이 앞으로, 맨 앞 n개는 떨어짐
+  if (!reduced) $('pushBar').animate([{ transform: 'translateY(0)' }, { transform: 'translateY(16px)' }, { transform: 'translateY(0)' }], { duration: 700, easing: 'ease-in-out' })
+  const n = m.coins
+  pusher.coins.sort((a, b) => b.y - a.y)
+  while (pusher.coins.filter(c => c.y > 200).length < n) pusher.coins.unshift(randomCoin(236, 252)) // 앞쪽에 모자라면 채움 (와르르)
+  pusher.coins.sort((a, b) => b.y - a.y)
+  const fall = pusher.coins.slice(0, n), stay = pusher.coins.slice(n)
+  const moves = stay.map(c => { const ny = Math.min(254, c.y + 5 + Math.random() * 9); const p = moveCoin(c, ny, 600); return p.then(() => { c.y = ny; c.el.getAnimations().forEach(a => a.cancel()); c.el.setAttribute('transform', `translate(${c.x.toFixed(1)} ${c.y.toFixed(1)})`) }) })
+  if (n >= 10) floatText($('fxText'), 50, 40, '와르르!', '#fff1b8', true)
+  const falls = fall.map((c, i) => moveCoin(c, 300, 520, { delay: 150 + i * (n > 10 ? 25 : 70), easing: 'cubic-bezier(.5,0,.9,.6)', opacity: 0.2 }).then(() => c.el.remove()))
+  let shown = 0
+  const tick = setInterval(() => { if (shown < n) { shown++; $('pusherGain').textContent = `+${shown}`; sfx.coin() } }, n > 10 ? 40 : 90)
+  await Promise.all([...moves, ...falls])
+  clearInterval(tick); $('pusherGain').textContent = n ? `+${n}` : ''
+  pusher.coins = stay
+  while (pusher.coins.length < 40) pusher.coins.push(randomCoin(76, 120)) // 뒤쪽 채우기
+  sortCoins()
+  return showResult({ wins: [], back: m.base, total: m.total, mark: false,
+    title: n ? `코인 ${n}개 떨어졌어요!` : '안 떨어졌어요', sub: n ? undefined : `${fmt(m.total)}칩 · 다음 코인에 밀려 떨어질지도!` })
+}
+
 // ---------- 모두의 잭팟 ----------
 let jpShown = 0, jpRaf = 0
 function paintJackpot() {
@@ -516,7 +671,12 @@ function paintPaytables() {
   const amt = x => `<b title="${fmt(x)}칩">${fmtShort(x)}칩</b>`
   const any = '<span class="any">?</span>'
   let rows = ''
-  if (m.type === 'gem') {
+  if (m.type === 'crash') {
+    for (const x of [1.5, 2, 3, 5, 10, 50, 100]) rows += `<li class="row5"><span class="icons">${ic('rocket')}</span><span class="lbl">×${x}까지 갈 확률 ${x === 1.5 ? '67' : Math.round(100 / x * 10) / 10}%</span>${amt(Math.floor(total * x))}</li>`
+  } else if (m.type === 'pusher') {
+    const T = pusherTotal(m)
+    for (const [c, w] of [...m.drops].reverse()) rows += `<li class="row5 ${c >= 25 ? 'top' : ''}"><span class="icons">${ic('coins')}</span><span class="lbl">코인 ${c}개 떨어짐 · ${(w / T * 100).toFixed(1)}%</span>${amt(c * total)}</li>`
+  } else if (m.type === 'gem') {
     const W = m.wildPays
     rows += `<li class="top"><span class="icons">${ic('diamond').repeat(3)}</span><span class="lbl">다이아 셋 (× 배수 릴)</span>${amt(lineBet * W[3])}</li>`
     for (const [s, p] of Object.entries(m.pays)) rows += `<li><span class="icons">${ic(s).repeat(3)}</span><span class="lbl">${SYMBOLS[s]} 셋 · 다이아 섞이면 ×2·×4</span>${amt(lineBet * p[3])}</li>`
@@ -549,7 +709,9 @@ function paintPaytables() {
       }
     }
   }
-  const how = m.type === 'gem' ? '가운데 줄 하나만 봐요. 다이아는 아무 그림이나 대신하고, 섞일 때마다 ×2. 당첨에 오른쪽 배수 릴의 가운데 값을 곱해요. '
+  const how = m.type === 'crash' ? '시작하면 배수가 ×1.00부터 올라가요. 로켓이 터지기 전에 내리기를 누르면 베팅 × 그 배수를 받고, 터지면 건 칩을 잃어요. 터지는 배수는 시작할 때 서버가 정하고 미리 보내지 않아요. 언제 내려도 기댓값은 같아요(100%). 자동 내리기를 고르면 그 배수에서 서버가 대신 내려요. '
+    : m.type === 'pusher' ? '떨어뜨리기를 누르면 움직이는 투입구에서 코인이 떨어지고, 밀대가 밀어 앞으로 떨어진 코인 수만큼 받아요 (코인 1개 = 베팅). 몇 개 떨어질지는 서버가 정하고, 떨어뜨리는 위치는 연출이에요. '
+    : m.type === 'gem' ? '가운데 줄 하나만 봐요. 다이아는 아무 그림이나 대신하고, 섞일 때마다 ×2. 당첨에 오른쪽 배수 릴의 가운데 값을 곱해요. '
     : m.type === 'cascade' ? '줄이 없어요. 맨 왼쪽 릴부터 같은 과일이 있는 릴이 3개 이상 이어지면 당첨, 릴마다 그 과일 칸 수를 곱한 만큼(웨이) 받아요. 맞은 과일은 터지고 위에서 새 과일이 떨어져 또 맞으면 연쇄 — 배수 ×1 → ×2 → ×3 → ×5. 위 칩은 웨이 하나 값이에요. '
     : m.scatter ? '별은 줄과 상관없이 창 어디든 세요. 프리스핀은 공짜이고, 별이 뜰 때마다 배수가 1씩 커져 끝까지 유지돼요. 프리스핀 중 별 셋이면 3번 더. '
     : '같은 그림이 걸린 줄 위에 <b>왼쪽부터</b> 이어지면 당첨. 여러 줄이 함께 맞으면 모두 더해 받아요. '
@@ -592,7 +754,7 @@ $('creditAdd').onclick = () => game?.openBuyIn()
 function paintPick() {
   $('pick').innerHTML = MACHINE_IDS.map(id => {
     const m = MACHINES[id]
-    const sub = m.type === 'gem' ? '와일드·배수' : m.type === 'cascade' ? '연쇄 폭발' : m.scatter ? '프리스핀' : '3릴 · 5줄'
+    const sub = m.type === 'gem' ? '와일드·배수' : m.type === 'cascade' ? '연쇄 폭발' : m.type === 'crash' ? '타이밍 승부' : m.type === 'pusher' ? '코인 밀어내기' : m.scatter ? '프리스핀' : '3릴 · 5줄'
     return `<button type="button" data-id="${id}" aria-pressed="${id === cur.id}"><span class="ic">${symSvg(ICON[id])}</span><b>${m.short}</b><small>${sub}</small></button>`
   }).join('')
   $('pick').querySelectorAll('button').forEach(b => b.onclick = () => switchMachine(b.dataset.id))
@@ -603,10 +765,11 @@ function showMachine() {
   $('mName').textContent = cur.name
   buildReels()
   const st = lastStops[cur.id] || defaultStops(cur)
-  if (cur.type === 'cascade') paintGrid(gridFromStops(cur, st)); else st.forEach((s, r) => setStatic(r, s))
+  if (cur.type === 'cascade') paintGrid(gridFromStops(cur, st)); else if (!ARCADE(cur)) st.forEach((s, r) => setStatic(r, s))
 }
 function switchMachine(id) {
   if (busy || id === cur.id || !MACHINES[id]) return
+  stopCrashView()
   setAuto(false); queued = false
   cur = MACHINES[id]
   store.set('machine', id)
@@ -620,7 +783,8 @@ function switchMachine(id) {
 }
 // 처음 보이는 그림: 머신의 대표 그림이 가운데 줄에
 const defaultStops = m => {
-  const s = { classic: 'seven', diamond: 'diamond', fruit5: 'seven', lucky: 'moon' }[m.id]
+  if (m.id === 'fruit5') return [3, 10, 17, 24, 31] // 과일 폭탄은 당첨이 없는 섞인 그림으로 (test-rules가 확인)
+  const s = { classic: 'seven', diamond: 'diamond', lucky: 'moon' }[m.id]
   const st = m.strips.map(x => Math.max(0, x.indexOf(s)))
   if (m.mstrip) st.push(Math.max(0, m.mstrip.indexOf('x10')))
   return st
@@ -643,10 +807,14 @@ function setAuto(on) {
 // 큰 버튼 글자: 지금 할 일을 알려 줌
 function paintSpin() {
   const b = $('spin')
-  const label = !game ? 'SPIN' : !game.me ? '로그인' : !game.chips && !game.inPlay && !busy ? '칩 바꾸기' : 'SPIN'
+  const go = cur.type === 'crash' ? '시작' : cur.type === 'pusher' ? '떨어뜨리기' : 'SPIN'
+  let label = !game ? go : !game.me ? '로그인' : !game.chips && !game.inPlay && !busy ? '칩 바꾸기' : go
+  const out = cur.type === 'crash' && crash.flying && !crash.cashed
+  if (out) label = crash.sent ? '내리는 중…' : `내리기 +${fmtShort(Math.floor(crash.total * crash.mult))}`
   b.textContent = label
-  b.classList.toggle('word', label !== 'SPIN')
-  b.disabled = busy
+  b.classList.toggle('word', label !== 'SPIN' && !out)
+  b.classList.toggle('cashout', out)
+  b.disabled = busy && !(out && !crash.sent)
   $('leverTip').hidden = label !== 'SPIN' || busy || !!store.get('pulled')
 }
 
@@ -667,7 +835,8 @@ function requestSpin() {
   cancelAnimationFrame(countRaf)
   say('돌아가는 중…', '', `${fmt(ok.total)}칩 걸었어요`)
   sfx.lever()
-  game.send({ t: 'spin', machine: cur.id, lineBet, lines })
+  const autoOut = cur.type === 'crash' ? Number($('crashAuto').value) || undefined : undefined
+  game.send({ t: 'spin', machine: cur.id, lineBet, lines, auto: autoOut })
   clearTimeout(waitT)
   awaiting = true
   waitT = setTimeout(() => refused('다시 눌러 주세요'), 2500) // 답이 없으면 (연결 끊김 등)
@@ -702,6 +871,8 @@ async function playSpin(m) {
   streak = net > 0 ? streak + 1 : 0
   if (cur.type === 'cascade') {
     await playCascade(m)
+  } else if (cur.type === 'pusher') {
+    await playPusher(m)
   } else {
     ticking(true)
     const R = reels.length, times = stopTimes(R)
@@ -795,11 +966,15 @@ lever.addEventListener('pointercancel', release)
 new ResizeObserver(layoutLever).observe(document.querySelector('.sl-window'))
 
 $('spin').onclick = () => {
+  if (cur.type === 'crash' && crash.flying && !crash.cashed) { if (!crash.sent) { crash.sent = true; game.send({ t: 'crashOut' }); paintSpin() } return }
   if (busy) return
   if ($('spin').textContent === 'SPIN') animatePull(1, 150, () => animatePull(0, 520))
   requestSpin()
 }
-$('auto').onclick = () => { setAuto(!auto); if (auto && !busy) requestSpin() }
+$('auto').onclick = () => {
+  if (!auto && cur.type === 'crash' && !$('crashAuto').value) return game?.toast('크래시 자동 반복은 \'자동 내리기\' 배수를 먼저 골라 주세요.')
+  setAuto(!auto); if (auto && !busy) requestSpin()
+}
 document.addEventListener('keydown', e => {
   if (e.code !== 'Space' || e.target !== document.body || e.repeat) return
   e.preventDefault(); $('spin').click()
@@ -845,6 +1020,9 @@ game = await startGame({
       return
     }
     if (m.t === 'spun') return onSpun(m)
+    if (m.t === 'crashStart') return crashStart(m)
+    if (m.t === 'crashCashed') return crashCashed(m)
+    if (m.t === 'crashed') return crashed(m)
   },
 })
 paintBet()
