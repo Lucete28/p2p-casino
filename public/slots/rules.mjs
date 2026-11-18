@@ -1,34 +1,35 @@
-// 슬롯머신 규칙: 머신 다섯 대의 릴·줄·배당과 당첨 계산. 서버(server/games/slots)와 화면(app.js)이 같이 쓴다.
+// 슬롯머신 규칙: 머신 다섯 대의 릴·배당과 당첨 계산. 서버(server/games/slots)와 화면(app.js)이 같이 쓴다.
 // 결과(릴이 멈출 자리)는 서버가 ctx.rng로 정하고, 이 파일은 그 자리를 그림·당첨으로 바꾸기만 한다.
+// (프리스핀은 서버가 판마다 멈출 자리를 새로 뽑고, 연쇄 폭발의 새 과일도 서버가 뽑아 결과에 담아 보낸다)
 //
-// 공통
-// - 릴 띠를 돌려 멈춘 자리 s면 창에 보이는 세 칸은 위 s-1 · 가운데 s · 아래 s+1.
-// - 줄 = 릴마다 몇 번째 칸(0 위 · 1 가운데 · 2 아래). 줄마다 같은 칩(lineBet)을 건다 → 한 판 = lineBet × 줄 수.
-// - 줄 당첨: 맨 왼쪽 릴부터 같은 그림이 n개 이어지면 pays[그림][n]배 (건 칩 포함). 한 줄에서는 하나만.
-// - 별(스캐터): 줄과 상관없이 창 어디든 n개면 한 판 베팅의 scatter.pays[n]배, trigger개 이상이면 프리스핀.
-// - 잭팟: 가운데 줄에 잭팟 그림 셋 → 누적 잭팟 (금액은 서버가 들고 있음, server/games/slots/index.mjs).
+// 머신 종류 (type)
+//   lines   — 줄 당첨: 맨 왼쪽 릴부터 같은 그림이 n개 이어지면 pays[그림][n]배 (클래식 · 럭키 스타 · 메가 잭팟)
+//             scatter가 있으면 별은 창 어디든 세고, trigger개 이상이면 프리스핀 (럭키 스타)
+//   gem     — 다이아몬드: 가운데 줄 하나 + 오른쪽 배수 릴. 다이아는 와일드(아무 그림), 하나 섞일 때마다 ×2
+//   cascade — 과일 폭탄: 5×4 칸, 줄 없이 옆 릴끼리 이어지면(웨이) 당첨 → 맞은 과일이 터지고 위에서 새 과일이
+//             떨어진다 (새 과일은 서버가 그 릴의 띠에서 무작위로 뽑음: draw). 연쇄마다 배수 chain[i]
 //
-// 환급률(RTP)은 exactRtp(머신)이 모든 경우를 셈. 운영자 결정(2026-11-18)으로 모두 약 99%:
-//   클래식 99.18 · 다이아몬드 99.26 · 과일 5릴 99.26 · 럭키 스타 98.91 (프리스핀 포함) · 메가 잭팟 99.23 (잭팟 몫 2% 포함)
+// 공통: 릴 띠를 돌려 멈춘 자리 s면 창에 보이는 칸은 위에서부터 s-1, s, s+1 (4칸 창은 s+2까지).
+// 환급률(RTP): 운영자 결정(2026-11-18)으로 머신 기본 약 100% + 모든 머신이 같이 쌓는 미스터리 잭팟 2%.
+//   lines·gem은 exactRtp()가 모든 경우를 셈. 연쇄·프리스핀 배수는 시뮬레이션 값(rtpRef)을 적어 둠 (test-sim.mjs로 확인)
 
 export const SYMBOLS = {
   seven: '7', bar: 'BAR', bell: '종', melon: '수박', lemon: '레몬', cherry: '체리',
   diamond: '다이아', ruby: '루비', sapphire: '사파이어', emerald: '에메랄드', blank: '빈칸',
   grape: '포도', orange: '오렌지', plum: '자두', star: '별', jp: '잭팟',
+  moon: '달', planet: '행성', comet: '혜성', clover: '네잎클로버', horseshoe: '말굽',
+  x1: '×1', x2: '×2', x3: '×3', x5: '×5', x10: '×10',
 }
 
 // 3릴 줄 (클래식과 같음): 1 가운데 · 2 위 · 3 아래 · 4 ↘ · 5 ↗
 const LINES3 = [[1, 1, 1], [0, 0, 0], [2, 2, 2], [0, 1, 2], [2, 1, 0]]
-// 5릴 줄 20개 (앞 10개는 럭키 스타도 씀)
+// 5릴 줄 10개
 const LINES5 = [
   [1, 1, 1, 1, 1], [0, 0, 0, 0, 0], [2, 2, 2, 2, 2], [0, 1, 2, 1, 0], [2, 1, 0, 1, 2],
   [0, 0, 1, 2, 2], [2, 2, 1, 0, 0], [1, 0, 0, 0, 1], [1, 2, 2, 2, 1], [1, 0, 1, 2, 1],
-  [1, 2, 1, 0, 1], [0, 1, 1, 1, 0], [2, 1, 1, 1, 2], [0, 1, 0, 1, 0], [2, 1, 2, 1, 2],
-  [1, 1, 0, 1, 1], [1, 1, 2, 1, 1], [0, 0, 2, 0, 0], [2, 2, 0, 2, 2], [0, 2, 0, 2, 0],
 ]
 
 // 그림 수만 주면 같은 그림이 고르게 흩어진 띠를 만든다 (결정적: 코드가 같으면 띠도 같다).
-// shift로 릴마다 시작점을, 순서를 바꿔 릴마다 다른 띠가 되게 한다
 function strip(counts, shift = 0, reverse = false) {
   const list = reverse ? [...counts].reverse() : counts
   const len = list.reduce((s, [, n]) => s + n, 0)
@@ -58,67 +59,76 @@ const CLASSIC = [
 
 export const MACHINES = {
   classic: {
-    id: 'classic', name: '클래식 777', short: '클래식', desc: '3릴 · 줄 5개. 자주 작게, 가끔 777',
-    reels: 3, strips: CLASSIC, lines: LINES3, lineChoices: [1, 3, 5],
-    pays: { seven: { 3: 777 }, bar: { 3: 80 }, bell: { 3: 30 }, melon: { 3: 12 }, lemon: { 3: 8 }, cherry: { 1: 1, 2: 6, 3: 8 } },
+    id: 'classic', type: 'lines', name: '클래식 777', short: '클래식', desc: '3릴 · 줄 5개. 자주 작게, 가끔 777',
+    reels: 3, rows: 3, strips: CLASSIC, lines: LINES3, lineChoices: [1, 3, 5],
+    pays: { seven: { 3: 777 }, bar: { 3: 80 }, bell: { 3: 30 }, melon: { 3: 13 }, lemon: { 3: 8 }, cherry: { 1: 1, 2: 6, 3: 8 } },
     tease: ['seven', 'bar', 'bell'],
   },
   diamond: {
-    id: 'diamond', name: '다이아몬드', short: '다이아', desc: '3릴 · 줄 5개. 잘 안 터지지만 터지면 최고 ×2,000',
-    reels: 3, lines: LINES3,
-    strips: reels([['diamond', 1], ['ruby', 2], ['sapphire', 3], ['emerald', 6], ['blank', 20]], 3, [0, 11, 22]),
-    pays: { diamond: { 1: 3, 2: 50, 3: 2000 }, ruby: { 3: 550 }, sapphire: { 3: 200 }, emerald: { 3: 75 } },
-    tease: ['diamond', 'ruby', 'sapphire'],
-  },
-  fruit5: {
-    id: 'fruit5', name: '과일 5릴', short: '과일5', desc: '5릴 · 줄 20개. 왼쪽부터 3·4·5개, 자주 따요',
-    reels: 5, lines: LINES5,
-    strips: reels([['seven', 1], ['bell', 2], ['melon', 3], ['grape', 3], ['orange', 4], ['plum', 4], ['cherry', 6], ['lemon', 7]], 5, [0, 7, 14, 21, 4]),
-    pays: {
-      seven: { 3: 200, 4: 1000, 5: 4000 }, bell: { 3: 100, 4: 400, 5: 1500 }, melon: { 3: 60, 4: 200, 5: 750 },
-      grape: { 3: 40, 4: 150, 5: 600 }, orange: { 3: 20, 4: 75, 5: 300 }, plum: { 3: 20, 4: 75, 5: 300 },
-      cherry: { 2: 4, 3: 15, 4: 50, 5: 200 }, lemon: { 3: 12, 4: 40, 5: 150 },
-    },
-    tease: ['seven', 'bell', 'melon'],
-  },
-  lucky: {
-    id: 'lucky', name: '럭키 스타', short: '럭키스타', desc: '5릴 · 줄 10개. 별 3개면 프리스핀 10번 ×2',
-    reels: 5, lines: LINES5.slice(0, 10),
-    strips: reels([['star', 1], ['seven', 1], ['bar', 2], ['bell', 3], ['orange', 5], ['cherry', 7], ['lemon', 11]], 5, [0, 6, 12, 18, 24]),
-    pays: {
-      seven: { 3: 75, 4: 400, 5: 2000 }, bar: { 3: 50, 4: 150, 5: 600 }, bell: { 3: 25, 4: 75, 5: 250 },
-      orange: { 3: 12, 4: 30, 5: 100 }, cherry: { 2: 1, 3: 6, 4: 20, 5: 60 }, lemon: { 3: 5, 4: 12, 5: 30 },
-    },
-    scatter: { symbol: 'star', pays: { 3: 3, 4: 20, 5: 100 }, trigger: 3, freeSpins: 10, mult: 2 },
+    id: 'diamond', type: 'gem', name: '다이아몬드', short: '다이아', desc: '가운데 줄 하나 + 배수 릴. 다이아는 와일드, 섞일 때마다 ×2',
+    reels: 3, rows: 3, lines: [[1, 1, 1]],
+    strips: reels([['diamond', 1], ['ruby', 3], ['sapphire', 4], ['emerald', 6], ['blank', 18]], 3, [0, 11, 22]),
+    // 오른쪽 배수 릴: 가운데 칸의 배수가 줄 당첨에 곱해진다 (평균 ×1.88)
+    mstrip: strip([['x1', 16], ['x2', 5], ['x3', 2], ['x5', 1], ['x10', 1]], 0),
+    pays: { ruby: { 3: 40 }, sapphire: { 3: 15 }, emerald: { 3: 7 } },
+    wild: 'diamond', wildPays: { 1: 1, 2: 6, 3: 1000 }, anyGem: 1, // 다이아만 n개(나머지 빈칸·섞임) · 보석 셋 섞임. 최고 = 다이아 셋 × 배수 10 = ×10,000
     tease: [],
   },
+  fruit5: {
+    id: 'fruit5', type: 'cascade', name: '과일 폭탄', short: '과일폭탄', desc: '5×4 칸, 옆 릴끼리 이어지면 터지고 연쇄마다 ×1·×2·×3·×5',
+    reels: 5, rows: 4, unit: 25, // 한 판 베팅 = 25 × 단위 (줄 대신 웨이 1,024개, 배당은 웨이 하나당 단위의 몇 배)
+    strips: reels([['melon', 4], ['grape', 4], ['plum', 4], ['orange', 5], ['cherry', 5], ['lemon', 5], ['bell', 4], ['bar', 3], ['seven', 2]], 5, [0, 9, 18, 4, 13]),
+    pays: {
+      seven: { 3: 15, 4: 60, 5: 300 }, bar: { 3: 8, 4: 30, 5: 120 }, melon: { 3: 5, 4: 20, 5: 60 }, bell: { 3: 4, 4: 12, 5: 40 },
+      grape: { 3: 3, 4: 8, 5: 25 }, plum: { 3: 2, 4: 6, 5: 20 }, orange: { 3: 1, 4: 4, 5: 12 }, cherry: { 3: 1, 4: 3, 5: 10 }, lemon: { 3: 1, 4: 2, 5: 8 },
+    },
+    chain: [1, 2, 3, 5],
+    rtpRef: 0.9997, // 시뮬레이션 8,000만 판 (±0.05%p)
+    tease: [],
+  },
+  lucky: {
+    id: 'lucky', type: 'lines', name: '럭키 스타', short: '럭키스타', desc: '밤하늘 5릴. 별 3개면 프리스핀, 별이 뜰 때마다 배수 +1',
+    reels: 5, rows: 3, lines: LINES5,
+    strips: reels([['star', 1], ['moon', 1], ['planet', 2], ['comet', 3], ['clover', 5], ['horseshoe', 7], ['blank', 11]], 5, [0, 6, 12, 18, 24]),
+    pays: {
+      moon: { 3: 200, 4: 1000, 5: 4000 }, planet: { 3: 100, 4: 400, 5: 1500 }, comet: { 3: 50, 4: 150, 5: 600 },
+      clover: { 3: 20, 4: 80, 5: 250 }, horseshoe: { 2: 4, 3: 15, 4: 50, 5: 150 },
+    },
+    // 프리스핀: 시작 배수 1, 별이 뜰 때마다 +1 (끝까지 쌓임), 프리스핀 중 별 3개면 +3번 (최대 50번)
+    scatter: { symbol: 'star', pays: { 3: 2, 4: 10, 5: 50 }, trigger: 3, freeSpins: 8, retrigger: 3, maxSpins: 50 },
+    rtpRef: 1.0062, // 프리스핀 포함, 시뮬레이션 8,000만 판 (±0.05%p)
+    tease: ['moon'],
+  },
   jackpot: {
-    id: 'jackpot', name: '메가 잭팟', short: '잭팟', desc: '3릴 · 줄 5개. 가운데 줄 잭팟 셋이면 누적 잭팟',
-    reels: 3, lines: LINES3,
+    id: 'jackpot', type: 'lines', name: '메가 잭팟', short: '잭팟', desc: '가운데 줄 잭팟 동전 셋이면 모두의 잭팟',
+    reels: 3, rows: 3, lines: LINES3,
     strips: reels([['jp', 1], ['seven', 1], ['bar', 2], ['bell', 4], ['melon', 5], ['lemon', 8], ['cherry', 9]], 3, [0, 10, 20]),
-    pays: { seven: { 3: 400 }, bar: { 3: 75 }, bell: { 3: 25 }, melon: { 3: 10 }, lemon: { 3: 8 }, cherry: { 1: 1, 2: 4, 3: 8 } },
+    pays: { seven: { 3: 400 }, bar: { 3: 75 }, bell: { 3: 25 }, melon: { 3: 12 }, lemon: { 3: 9 }, cherry: { 1: 1, 2: 4, 3: 8 } },
     tease: ['jp', 'seven', 'bar'],
-    // 베팅의 1.5%는 잭팟에, 0.5%는 다음 잭팟 밑돈에. 베팅 fullBet 이상이면 잭팟 전부, 적으면 베팅 비율만큼
-    jackpot: { symbol: 'jp', line: 0, contribute: 0.015, reserve: 0.005, fullBet: 100, start: 10000, floor: 1000 },
+    jackpotLine: { symbol: 'jp', line: 0 }, // 가운데 줄 잭팟 셋 → 모두의 잭팟 (베팅 비율만큼)
   },
 }
 export const MACHINE_IDS = Object.keys(MACHINES)
 export const machineOf = id => MACHINES[id] || MACHINES.classic
 
-// 한 판 베팅 상한은 없다 (CASINO.md 5장). 다만 돌려줄 칩이 안전한 정수를 넘지 않게 라인당 상한만 둔다
-export const MAX_LINE_BET = Math.floor(Number.MAX_SAFE_INTEGER / (20 * 5000))
+// 모두의 잭팟 (미스터리): 어느 머신이든 한 판 베팅의 contribute는 잭팟에, reserve는 다음 밑돈에.
+// 판마다 (베팅 ÷ odds) 확률로 잭팟 전부. 메가 잭팟 머신은 가운데 줄 잭팟 셋으로도 (베팅 fullBet 이상이면 전부, 적으면 비율만큼).
+// 다 가져가면 밑돈이 새 잭팟 (floor보다 적으면 하우스가 floor까지 채움). 오래 보면 contribute + reserve 만큼이 플레이어에게 돌아감
+export const JACKPOT = { contribute: 0.015, reserve: 0.005, odds: 500000, fullBet: 100, start: 10000, floor: 1000 }
+
+// 한 판 베팅 상한은 없다 (CASINO.md 5장). 다만 돌려줄 칩이 안전한 정수를 넘지 않게 상한만 둔다
+export const MAX_LINE_BET = Math.floor(Number.MAX_SAFE_INTEGER / (20 * 100000))
 
 const modLen = (n, len) => ((n % len) + len) % len
+const rowsOf = m => m.rows || 3
 
-// 멈춘 자리 → 창의 그림. grid[릴][칸]
+// 멈춘 자리 → 창의 그림. grid[릴][칸] (칸 0 = 맨 위)
 export function windowOf(m, stops) {
-  return stops.map((s, r) => {
-    const st = m.strips[r], len = st.length
-    return [st[modLen(s - 1, len)], st[modLen(s, len)], st[modLen(s + 1, len)]]
-  })
+  const R = rowsOf(m)
+  return m.strips.map((st, r) => Array.from({ length: R }, (_, k) => st[modLen(stops[r] - 1 + k, st.length)]))
 }
 
-// n개 이어졌을 때 받을 배수: 정확히 n이 없으면 그보다 적은 개수의 배당 (예: 4개인데 3개 배당만 있으면 3개로)
+// n개 이어졌을 때 받을 배수: 정확히 n이 없으면 그보다 적은 개수의 배당
 function payFor(m, sym, n) {
   const p = m.pays[sym]
   if (!p) return null
@@ -126,8 +136,9 @@ function payFor(m, sym, n) {
   return null
 }
 
-// 한 줄의 그림들 → { kind, n, mult } 또는 null. 맨 왼쪽부터 같은 그림이 몇 개 이어지는지
+// lines: 한 줄의 그림들 → { kind, n, mult } 또는 null
 export function lineWin(m, cells) {
+  if (m.type === 'gem') return gemWin(m, cells)
   const s = cells[0]
   let n = 1
   while (n < cells.length && cells[n] === s) n++
@@ -135,62 +146,152 @@ export function lineWin(m, cells) {
   return w ? { kind: s + w.n, n: w.n, mult: w.mult } : null
 }
 
+// gem: 가운데 줄 세 칸 → { kind, n, mult } (배수 릴은 따로)
+export function gemWin(m, cells) {
+  const wild = cells.filter(s => s === m.wild).length
+  const rest = cells.filter(s => s !== m.wild)
+  if (wild === 3) return { kind: m.wild + '3', n: 3, mult: m.wildPays[3] }
+  const same = rest.every(s => s === rest[0])
+  if (same && m.pays[rest[0]]?.[3]) return { kind: rest[0] + '3', n: 3, mult: m.pays[rest[0]][3] * 2 ** wild, wild }
+  let best = null
+  if (wild) best = { kind: m.wild + wild, n: 3, mult: m.wildPays[wild], wild }
+  if (rest.every(s => s !== 'blank') && m.anyGem && (!best || m.anyGem * 2 ** wild > best.mult)) best = { kind: 'anyGem', n: 3, mult: m.anyGem * 2 ** wild, wild }
+  return best
+}
+
 // 브라우저가 보낸 베팅 검사 → { lineBet, lines, total } 또는 { error }
 export function checkBet(m, lineBet, lines) {
   lineBet = Number(lineBet); lines = Number(lines)
-  const choices = m.lineChoices || [m.lines.length]
+  const choices = m.lineChoices || [linesOf(m)]
   if (!choices.includes(lines)) return { error: `줄은 ${choices.join('·')}개 중에서 골라 주세요.` }
   if (!Number.isSafeInteger(lineBet) || lineBet < 1) return { error: '줄당 베팅은 1 이상 정수로 해 주세요.' }
   if (lineBet > MAX_LINE_BET) return { error: '베팅이 너무 커요.' }
   return { lineBet, lines, total: lineBet * lines }
 }
+// 한 판 베팅 = 줄당 × linesOf (연쇄는 unit)
+export const linesOf = m => m.type === 'cascade' ? m.unit : m.lines.length
 
-// 한 판 결과 → { grid, wins: [{ line, kind, n, mult, pay }], scatter: { count, pay, cells }, back, bonus, jackpot }
-//   mult: 프리스핀 배수 (보통 1). jackpot은 가운데 줄 잭팟 셋 여부만 (금액은 서버가 정함)
-export function evaluate(m, stops, lines, lineBet, mult = 1) {
+// ---------- 한 판 결과 ----------
+// lines·gem → { grid, wins: [{ line, kind, n, mult, pay }], scatter, back, bonus, jackpotLine, mreel }
+//   mult: 프리스핀 배수 (줄 당첨에만). gem은 mreel(배수 릴 가운데 값)을 곱함
+// cascade → { grid, steps: [{ grid, wins: [{ sym, kind, n, ways, mult, pay, cells }], chain, pay, removed }], back }
+export function evaluate(m, stops, lines, lineBet, mult = 1, draw) {
+  if (m.type === 'cascade') return cascade(m, stops, lineBet, draw)
   const grid = windowOf(m, stops)
   const wins = []
-  let back = 0
+  let back = 0, mreel = null
+  if (m.type === 'gem') {
+    const ms = m.mstrip, mi = stops[m.reels] ?? 0
+    mreel = { stop: mi, value: Number(ms[modLen(mi, ms.length)].slice(1)) }
+  }
   for (let i = 0; i < lines; i++) {
     const rows = m.lines[i]
     const w = lineWin(m, rows.map((row, r) => grid[r][row]))
     if (!w) continue
-    const pay = lineBet * w.mult * mult
-    wins.push({ line: i, kind: w.kind, n: w.n, mult: w.mult * mult, pay })
+    const x = mult * (mreel ? mreel.value : 1)
+    const pay = lineBet * w.mult * x
+    wins.push({ line: i, kind: w.kind, n: w.n, mult: w.mult * x, pay, wild: w.wild || 0 })
     back += pay
   }
   let scatter = null, bonus = false
   if (m.scatter) {
     const cells = []
     grid.forEach((col, r) => col.forEach((s, row) => { if (s === m.scatter.symbol) cells.push([r, row]) }))
-    const pay = (m.scatter.pays[cells.length] || 0) * lineBet * lines * mult
+    const pay = (m.scatter.pays[cells.length] || 0) * lineBet * lines
     scatter = { count: cells.length, pay, cells }
     back += pay
     bonus = cells.length >= m.scatter.trigger
   }
-  let jackpot = false
-  if (m.jackpot) {
-    const rows = m.lines[m.jackpot.line]
-    jackpot = rows.every((row, r) => grid[r][row] === m.jackpot.symbol)
+  let jackpotLine = false
+  if (m.jackpotLine) {
+    const rows = m.lines[m.jackpotLine.line]
+    jackpotLine = rows.every((row, r) => grid[r][row] === m.jackpotLine.symbol)
   }
-  return { grid, wins, scatter, back, bonus, jackpot }
+  return { grid, wins, scatter, back, bonus, jackpotLine, mreel }
+}
+
+// 과일 폭탄: 웨이 당첨 → 터짐 → 남은 과일이 아래로, 위에서 새 과일이 떨어짐 → 다시 확인 (최대 40번)
+//   draw(r) = r번 릴에 떨어질 새 과일 (서버: 그 릴의 띠에서 ctx.rng로 한 칸). 떨어진 과일은 steps[i].drops에 남는다
+export function cascade(m, stops, unit, draw) {
+  const H = rowsOf(m)
+  let grid = windowOf(m, stops)
+  const first = grid.map(c => [...c])
+  const steps = []
+  let back = 0
+  for (let step = 0; step < 40; step++) {
+    const wins = waysWins(m, grid)
+    if (!wins.length) break
+    const chain = m.chain[Math.min(step, m.chain.length - 1)]
+    let pay = 0
+    const removed = grid.map(() => new Set())
+    for (const w of wins) {
+      w.pay = unit * w.mult * w.ways * chain
+      pay += w.pay
+      for (const [r, k] of w.cells) removed[r].add(k)
+    }
+    // 떨어뜨리기: 남은 칸은 순서대로 아래로, 비는 만큼 새 과일이 위에서
+    const drops = grid.map((col, r) => Array.from({ length: removed[r].size }, () => draw(r)))
+    steps.push({ grid: grid.map(c => [...c]), wins, chain, pay, removed: removed.map(s => [...s].sort((a, b) => a - b)), drops })
+    back += pay
+    grid = grid.map((col, r) => [...drops[r], ...col.filter((_, k) => !removed[r].has(k))])
+  }
+  return { grid: first, steps, back, final: grid }
+}
+// 웨이: 맨 왼쪽 릴부터 그 그림이 있는 릴이 n개 이어지면, 릴마다 그 그림 칸 수를 곱한 만큼(웨이 수) 받는다
+export function waysWins(m, grid) {
+  const wins = []
+  for (const sym of Object.keys(m.pays)) {
+    let ways = 1, n = 0
+    const cells = []
+    for (let r = 0; r < grid.length; r++) {
+      const ks = grid[r].flatMap((s, k) => s === sym ? [k] : [])
+      if (!ks.length) break
+      ways *= ks.length; n++
+      for (const k of ks) cells.push([r, k])
+    }
+    const w = payFor(m, sym, n)
+    if (w && w.n >= 3 && n >= 3) wins.push({ sym, kind: sym + n, n, ways, mult: m.pays[sym][n] || w.mult, cells: cells.filter(([r]) => r < n) })
+  }
+  return wins
+}
+
+// 럭키 스타 프리스핀: 별이 뜰 때마다 배수 +별 수, 별 trigger개 이상이면 retrigger번 더. randStops = () => 멈출 자리
+export function freeSpins(m, lines, lineBet, randStops) {
+  const sc = m.scatter
+  const spins = []
+  let left = sc.freeSpins, mult = 1, total = 0
+  while (left > 0 && spins.length < sc.maxSpins) {
+    left--
+    const stops = randStops()
+    const stars = windowOf(m, stops).flat().filter(s => s === sc.symbol).length
+    mult += stars
+    const e = evaluate(m, stops, lines, lineBet, mult)
+    const more = stars >= sc.trigger ? sc.retrigger : 0
+    left += more
+    spins.push({ stops, wins: e.wins, scatter: e.scatter, back: e.back, mult, more, stars })
+    total += e.back
+  }
+  return { spins, total, mult }
 }
 
 // 두근두근: 마지막 릴만 남았는데 큰 당첨이 될 수 있으면 마지막 릴을 TEASE_MS 더 돌린다 (연출만, 결과는 이미 정해짐).
-// - 줄: 켠 줄에서 마지막 릴 앞까지 tease 그림이 다 같을 때
-// - 별: 마지막 릴 앞까지 별이 trigger-1개 이상일 때
-// 서버도 같은 판단으로 정산을 그만큼 늦춰서, 칩 숫자가 마지막 릴보다 먼저 바뀌지 않게 한다
+// 서버도 같은 판단으로 정산을 그만큼 늦춘다
 export const TEASE_MS = 1300
 export function teases(m, stops, lines) {
-  const g = windowOf(m, stops), last = m.reels - 1
+  if (m.type === 'cascade') return false
+  const g = windowOf(m, stops)
+  if (m.type === 'gem') { // 세 칸이 당첨이면 배수 릴이 멈출 때까지 두근두근
+    return !!gemWin(m, m.lines[0].map((row, r) => g[r][row]))
+  }
+  const last = m.reels - 1
   for (let i = 0; i < lines; i++) {
     const rows = m.lines[i], s = g[0][rows[0]]
     if (!m.tease.includes(s)) continue
     if (rows.slice(0, last).every((row, r) => g[r][row] === s)) return true
   }
-  if (m.jackpot) {
-    const rows = m.lines[m.jackpot.line]
-    if (rows.slice(0, last).every((row, r) => g[r][row] === m.jackpot.symbol)) return true
+  if (m.jackpotLine) {
+    const rows = m.lines[m.jackpotLine.line]
+    if (rows.slice(0, last).every((row, r) => g[r][row] === m.jackpotLine.symbol)) return true
   }
   if (m.scatter) {
     let n = 0
@@ -200,16 +301,29 @@ export function teases(m, stops, lines) {
   return false
 }
 
-// ---------- 정확한 기댓값 (테스트·배당표 확인용) ----------
-// 줄 하나의 기댓값: 줄마다 릴의 칸 분포가 같으므로 (멈춤 자리가 고르면) 모든 줄이 같다
-function freqOf(m) {
-  return m.strips.map(st => { const f = {}; for (const s of st) f[s] = (f[s] || 0) + 1; for (const k in f) f[k] /= st.length; return f })
+// ---------- 정확한 기댓값 (lines·gem) ----------
+function freqOf(strips) {
+  return strips.map(st => { const f = {}; for (const s of st) f[s] = (f[s] || 0) + 1; for (const k in f) f[k] /= st.length; return f })
 }
+// 돌려주는 값: rtp(머신 기본), line(줄), scatter(별), trigger(프리스핀 확률), hit(줄 당첨 확률), jpLine(잭팟 셋 확률)
+// 럭키 스타 프리스핀 몫은 배수가 쌓여 식이 길어서 rtpRef(시뮬레이션) 쪽에 둔다 → free: null
 export function exactRtp(m) {
-  const f = freqOf(m), R = m.reels
+  if (m.type === 'cascade') return { rtp: null, line: null }
+  const f = freqOf(m.strips), R = m.reels
   let line = 0, hit = 0
+  if (m.type === 'gem') {
+    const keys = Object.keys(SYMBOLS).filter(k => f.some(x => x[k]))
+    for (const a of keys) for (const b of keys) for (const c of keys) {
+      const p = (f[0][a] || 0) * (f[1][b] || 0) * (f[2][c] || 0)
+      if (!p) continue
+      const w = gemWin(m, [a, b, c])
+      if (w) { line += p * w.mult; hit += p }
+    }
+    const mf = freqOf([m.mstrip])[0]
+    const em = Object.entries(mf).reduce((s, [k, p]) => s + p * Number(k.slice(1)), 0)
+    return { rtp: line * em, line, hit, mean: em }
+  }
   for (const sym of Object.keys(m.pays)) {
-    // 정확히 n개 이어질 확률 = (앞 n개가 sym) × (n번째가 sym이 아님, 마지막이면 1)
     let pre = 1
     for (let n = 1; n <= R; n++) {
       pre *= f[n - 1][sym] || 0
@@ -218,22 +332,18 @@ export function exactRtp(m) {
       if (w) { line += exact * w.mult; hit += exact }
     }
   }
-  // 별: 릴마다 창에 별이 보일 확률 (별끼리 3칸 이상 떨어져 있어 한 릴 창에 많아야 하나)
   let scatter = 0, trigger = 0
   if (m.scatter) {
     let dist = [1]
     for (let r = 0; r < R; r++) {
-      const q = 3 * (f[r][m.scatter.symbol] || 0)
+      const q = rowsOf(m) * (f[r][m.scatter.symbol] || 0) // 별끼리 띠에서 rows칸 이상 떨어져 있어 한 릴 창에 많아야 하나
       const next = new Array(dist.length + 1).fill(0)
       dist.forEach((p, k) => { next[k] += p * (1 - q); next[k + 1] += p * q })
       dist = next
     }
     dist.forEach((p, k) => { scatter += p * (m.scatter.pays[k] || 0); if (k >= m.scatter.trigger) trigger += p })
   }
-  const base = line + scatter
-  const free = m.scatter ? trigger * m.scatter.freeSpins * m.scatter.mult * base : 0 // 프리스핀은 다시 걸리지 않음
-  const jackpot = m.jackpot ? m.jackpot.contribute + m.jackpot.reserve : 0 // 오래 보면 잭팟으로 돌아가는 몫
-  let jpHit = 0
-  if (m.jackpot) { jpHit = 1; for (let r = 0; r < R; r++) jpHit *= f[r][m.jackpot.symbol] || 0 }
-  return { rtp: base + free + jackpot, line, scatter, trigger, free, jackpot, jpHit, hit }
+  let jpLine = 0
+  if (m.jackpotLine) { jpLine = 1; for (let r = 0; r < R; r++) jpLine *= f[r][m.jackpotLine.symbol] || 0 }
+  return { rtp: m.scatter ? null : line + scatter, line, scatter, trigger, hit, jpLine }
 }
