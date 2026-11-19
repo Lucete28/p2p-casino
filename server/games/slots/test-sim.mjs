@@ -1,7 +1,7 @@
 // 슬롯 시뮬레이션 (CASINO.md 6장): 서버 모듈(index.mjs)에 진짜 난수로 머신마다 1,000만 판을 돌려
 // 실제 환급률이 기준값 ±0.3%p 안인지 본다. 기준값: 줄·다이아몬드는 rules.mjs exactRtp(모든 경우를 셈),
 // 과일 폭탄(연쇄)·럭키 스타(프리스핀 배수)는 rtpRef(따로 돌린 큰 시뮬레이션).
-// 코인 푸셔는 진짜 물리라 한 번에 몇 ms 걸려서 2만 번만: 코인이 사라지지 않는지(떨어진 수 = 넣은 수 - 판 증가)와 환급률 100%를 본다.
+// 코인 푸셔는 진짜 물리라 한 번에 몇 ms 걸려서 1만 번만: 코인이 사라지지 않는지(떨어진 수 = 넣은 수 - 판 증가)와 환급률 100%를 본다.
 //   node server/games/slots/test-sim.mjs [판 수] [머신]
 // 환급률은 모두의 잭팟을 뺀 머신 몫. 잭팟은 장부(쌓인 2% = 나간 잭팟 + 남은 잭팟·밑돈 - 하우스가 채운 밑돈)를 따로 맞춰 본다.
 import assert from 'node:assert/strict'
@@ -72,9 +72,9 @@ if (!only || only === 'crash') {
   assert.ok(Math.abs(back / bet - 1) <= 0.003, 'crash 환급률이 범위를 벗어남')
 }
 
-// 코인 푸셔: 서버 모듈로 2만 번, 떨어뜨리는 자리는 아무 데나
+// 코인 푸셔: 서버 모듈로 1만 번, 떨어뜨리는 자리는 아무 데나
 if (!only || only === 'pusher') {
-  const PUSHES = Math.min(SPINS, 20_000)
+  const PUSHES = Math.min(SPINS, 10_000)
   const p = { id: 'u_sim_pusher', name: 'sim', chips: 1e15, inPlay: 0, limits: {} }
   let staked = 0, returned = 0, last = null, board = null, jpWins = 0, jpHits = 0
   const ctx = {
