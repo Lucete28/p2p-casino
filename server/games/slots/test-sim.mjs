@@ -63,7 +63,7 @@ if (!only || only === 'crash') {
   const m = MACHINES.crash
   let bet = 0, back = 0, boom = 0
   for (let i = 0; i < SPINS; i++) {
-    const target = 1.03 + rng.int(1898) / 100
+    const target = 1.01 + rng.int(1900) / 100
     const c = crashPoint(m, rng.int(CRASH_U))
     bet += 1; if (c >= target) back += target; else boom++
   }
