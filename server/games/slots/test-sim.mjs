@@ -58,17 +58,17 @@ for (const m of Object.values(MACHINES)) {
   allStaked += staked; allJpWins += jpWins; allHits += jpHits
 }
 
-// 크래시: 판마다 1.01 ~ 20 사이 아무 배수에서 내린다고 치고 (어떤 전략이든 100%여야 함)
+// 크래시: 판마다 1.03 ~ 20 사이 아무 배수에서 내린다고 치고 (어떤 전략이든 rtp = 103%여야 함)
 if (!only || only === 'crash') {
   const m = MACHINES.crash
   let bet = 0, back = 0, boom = 0
   for (let i = 0; i < SPINS; i++) {
-    const target = 1.01 + rng.int(1900) / 100
+    const target = 1.03 + rng.int(1898) / 100
     const c = crashPoint(m, rng.int(CRASH_U))
     bet += 1; if (c >= target) back += target; else boom++
   }
-  console.log(`[크래시] 판 ${SPINS.toLocaleString()} · 환급률 ${(back / bet * 100).toFixed(3)}% (기준 100%, 허용 ±0.3%p) · 터져서 잃은 판 ${(boom / SPINS * 100).toFixed(1)}%`)
-  assert.ok(Math.abs(back / bet - 1) <= 0.003, 'crash 환급률이 범위를 벗어남')
+  console.log(`[크래시] 판 ${SPINS.toLocaleString()} · 환급률 ${(back / bet * 100).toFixed(3)}% (기준 ${(m.rtp * 100).toFixed(0)}%, 허용 ±0.3%p) · 터져서 잃은 판 ${(boom / SPINS * 100).toFixed(1)}%`)
+  assert.ok(Math.abs(back / bet - m.rtp) <= 0.003, 'crash 환급률이 범위를 벗어남')
 }
 
 // 모두의 잭팟 장부: 들어온 2% = 나간 잭팟 + (남은 잭팟 + 밑돈 증가) - 하우스가 채운 밑돈

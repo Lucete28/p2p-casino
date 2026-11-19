@@ -7,13 +7,14 @@
 //             scatter가 있으면 별은 창 어디든 세고, trigger개 이상이면 프리스핀 (럭키 스타)
 //   gem     — 다이아몬드: 가운데 줄 하나 + 오른쪽 배수 릴. 다이아는 와일드(아무 그림), 하나 섞일 때마다 ×2
 //   crash   — 크래시: 배수가 ×1.00부터 올라가다 터진다. 터지기 전에 내리면 베팅 × 그때 배수. 터지는 배수는 시작할 때
-//             서버가 정하고(crashPoint) 브라우저에는 터질 때까지 보내지 않는다. 언제 내려도 기댓값이 정확히 100%
+//             서버가 정하고(crashPoint) 브라우저에는 터질 때까지 보내지 않는다. 언제 내려도 기댓값이 정확히 rtp (103%)
 //   cascade — 과일 폭탄: 5×4 칸, 줄 없이 옆 릴끼리 이어지면(웨이) 당첨 → 맞은 과일이 터지고 위에서 새 과일이
 //             떨어진다 (새 과일은 서버가 그 릴의 띠에서 무작위로 뽑음: draw). 연쇄마다 배수 chain[i]
 //
 // 머신 다섯 대: 슬롯 네 대 + 크래시 (운영자 결정 2026-11-18. 모두의 잭팟은 다섯 대 모두에서 미스터리로)
 // 공통: 릴 띠를 돌려 멈춘 자리 s면 창에 보이는 칸은 위에서부터 s-1, s, s+1 (4칸 창은 s+2까지).
-// 환급률(RTP): 운영자 결정(2026-11-18)으로 머신 기본 약 100% + 모든 머신이 같이 쌓는 미스터리 잭팟 2%.
+// 환급률(RTP): 운영자 결정 — 머신 기본 약 103% + 모든 머신이 같이 쌓는 미스터리 잭팟 2% = 약 105%
+//   (2026-11-18 기본 100%, 2026-11-19 "사용자가 돈을 더 벌게" → 흔한 작은 당첨을 올려 103%).
 //   lines·gem은 exactRtp()가 모든 경우를 셈. 연쇄·프리스핀 배수는 시뮬레이션 값(rtpRef)을 적어 둠 (test-sim.mjs로 확인)
 
 export const SYMBOLS = {
@@ -64,7 +65,7 @@ export const MACHINES = {
   classic: {
     id: 'classic', type: 'lines', name: '클래식 777', short: '클래식', desc: '3릴 · 줄 5개. 자주 작게, 가끔 777',
     reels: 3, rows: 3, strips: CLASSIC, lines: LINES3, lineChoices: [1, 3, 5],
-    pays: { seven: { 3: 777 }, bar: { 3: 80 }, bell: { 3: 30 }, melon: { 3: 13 }, lemon: { 3: 8 }, cherry: { 1: 1, 2: 6, 3: 8 } },
+    pays: { seven: { 3: 777 }, bar: { 3: 80 }, bell: { 3: 30 }, melon: { 3: 13 }, lemon: { 3: 8 }, cherry: { 1: 1, 2: 7, 3: 8 } }, // 체리 둘 ×7: 5줄이면 한 줄만 맞아도 이득
     tease: ['seven', 'bar', 'bell'],
   },
   diamond: {
@@ -73,7 +74,7 @@ export const MACHINES = {
     strips: reels([['diamond', 1], ['ruby', 3], ['sapphire', 4], ['emerald', 6], ['blank', 18]], 3, [0, 11, 22]),
     // 오른쪽 배수 릴: 가운데 칸의 배수가 줄 당첨에 곱해진다 (평균 ×1.88)
     mstrip: strip([['x1', 16], ['x2', 5], ['x3', 2], ['x5', 1], ['x10', 1]], 0),
-    pays: { ruby: { 3: 40 }, sapphire: { 3: 15 }, emerald: { 3: 7 } },
+    pays: { ruby: { 3: 40 }, sapphire: { 3: 15 }, emerald: { 3: 8 } },
     wild: 'diamond', wildPays: { 1: 1, 2: 6, 3: 1000 }, anyGem: 1, // 다이아만 n개(나머지 빈칸·섞임) · 보석 셋 섞임. 최고 = 다이아 셋 × 배수 10 = ×10,000
     tease: [],
   },
@@ -83,10 +84,10 @@ export const MACHINES = {
     strips: reels([['melon', 4], ['grape', 4], ['plum', 4], ['orange', 5], ['cherry', 5], ['lemon', 5], ['bell', 4], ['bar', 3], ['seven', 2]], 5, [0, 9, 18, 4, 13]),
     pays: {
       seven: { 3: 15, 4: 60, 5: 300 }, bar: { 3: 8, 4: 30, 5: 120 }, melon: { 3: 5, 4: 20, 5: 60 }, bell: { 3: 4, 4: 12, 5: 40 },
-      grape: { 3: 3, 4: 8, 5: 25 }, plum: { 3: 2, 4: 6, 5: 20 }, orange: { 3: 1, 4: 4, 5: 12 }, cherry: { 3: 1, 4: 3, 5: 10 }, lemon: { 3: 1, 4: 2, 5: 8 },
+      grape: { 3: 3, 4: 8, 5: 25 }, plum: { 3: 2, 4: 6, 5: 20 }, orange: { 3: 2, 4: 4, 5: 12 }, cherry: { 3: 2, 4: 4, 5: 10 }, lemon: { 3: 2, 4: 3, 5: 8 }, // 흔한 과일 셋 ×2
     },
     chain: [1, 2, 3, 5],
-    rtpRef: 0.9997, // 시뮬레이션 8,000만 판 (±0.05%p)
+    rtpRef: 1.0310, // 시뮬레이션 8,000만 판 (±0.05%p)
     tease: [],
   },
   lucky: {
@@ -95,11 +96,11 @@ export const MACHINES = {
     strips: reels([['star', 1], ['moon', 1], ['planet', 2], ['comet', 3], ['clover', 5], ['horseshoe', 7], ['blank', 11]], 5, [0, 6, 12, 18, 24]),
     pays: {
       moon: { 3: 200, 4: 1000, 5: 4000 }, planet: { 3: 100, 4: 400, 5: 1500 }, comet: { 3: 50, 4: 150, 5: 600 },
-      clover: { 3: 20, 4: 80, 5: 250 }, horseshoe: { 2: 4, 3: 15, 4: 50, 5: 150 },
+      clover: { 3: 20, 4: 80, 5: 250 }, horseshoe: { 2: 4, 3: 17, 4: 50, 5: 150 }, // 편자 셋 ×17
     },
     // 프리스핀: 시작 배수 1, 별이 뜰 때마다 +1 (끝까지 쌓임), 프리스핀 중 별 3개면 +3번 (최대 50번)
     scatter: { symbol: 'star', pays: { 3: 2, 4: 10, 5: 50 }, trigger: 3, freeSpins: 8, retrigger: 3, maxSpins: 50 },
-    rtpRef: 1.0062, // 프리스핀 포함, 시뮬레이션 8,000만 판 (±0.05%p)
+    rtpRef: 1.0303, // 프리스핀 포함, 시뮬레이션 8,000만 판 (±0.05%p)
     tease: ['moon'],
   },
   crash: {
@@ -107,6 +108,7 @@ export const MACHINES = {
     lines: [[1]], reels: 0, strips: [], pays: {}, tease: [],
     grow: 0.00012, // 배수 = e^(grow × 경과 ms): ×2 약 5.8초, ×10 약 19초, ×100 약 38초
     max: 1000, // 이 배수까지 가면 그 자리에서 터짐
+    rtp: 1.03, // P(터지는 배수 ≥ x) = 1.03 / x → 어디서 내려도 기댓값 103%. ×1.03 전에는 안 터짐
   },
 }
 export const MACHINE_IDS = Object.keys(MACHINES)
@@ -272,11 +274,12 @@ export function freeSpins(m, lines, lineBet, randStops) {
 
 // ---------- 크래시 ----------
 // 터지는 배수: u = 0 ~ 1 미만 고른 수 → floor(100 / (1 - u)) / 100, 최대 max.
-// P(터지는 배수 ≥ x) = 1/x (x가 0.01 단위일 때 정확히) → x에서 내리면 기댓값 x × 1/x = 1 (100%), 어떤 전략이든 같다.
+// 터지는 배수 = floor(100 × rtp / (1 - u)) / 100 → P(≥ x) = rtp/x (x ≥ rtp, 0.01 단위일 때 정확히)
+// → x에서 내리면 기댓값 x × rtp/x = rtp (103%), 어떤 전략이든 같다. rtp 아래로는 안 터진다.
 // 서버는 u를 ctx.rng.int(CRASH_U) / CRASH_U로 뽑는다
 export const CRASH_U = 1e9
 export function crashPoint(m, n) { // n = 0 ~ CRASH_U-1
-  const c = Math.floor(100 * CRASH_U / (CRASH_U - n)) / 100
+  const c = Math.floor(Math.round(100 * m.rtp) * CRASH_U / (CRASH_U - n)) / 100
   return Math.min(c, m.max)
 }
 export const crashMultAt = (m, ms) => Math.max(1, Math.floor(100 * Math.exp(m.grow * Math.max(0, ms))) / 100)
@@ -313,7 +316,7 @@ function freqOf(strips) {
 // 럭키 스타 프리스핀 몫은 배수가 쌓여 식이 길어서 rtpRef(시뮬레이션) 쪽에 둔다 → free: null
 export function exactRtp(m) {
   if (m.type === 'cascade') return { rtp: null, line: null }
-  if (m.type === 'crash') return { rtp: 1, line: null } // 언제 내려도 100% (위 crashPoint 참고). 최대 배수에서 터지는 몫은 아주 작다
+  if (m.type === 'crash') return { rtp: m.rtp, line: null } // 언제 내려도 rtp (위 crashPoint 참고). 최대 배수에서 터지는 몫은 아주 작다
   const f = freqOf(m.strips), R = m.reels
   let line = 0, hit = 0
   if (m.type === 'gem') {
