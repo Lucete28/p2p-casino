@@ -8,11 +8,10 @@
 //   gem     — 다이아몬드: 가운데 줄 하나 + 오른쪽 배수 릴. 다이아는 와일드(아무 그림), 하나 섞일 때마다 ×2
 //   crash   — 크래시: 배수가 ×1.00부터 올라가다 터진다. 터지기 전에 내리면 베팅 × 그때 배수. 터지는 배수는 시작할 때
 //             서버가 정하고(crashPoint) 브라우저에는 터질 때까지 보내지 않는다. 언제 내려도 기댓값이 정확히 100%
-//   pusher  — 코인 푸셔: 진짜 물리(pusher.mjs). 코인끼리 밀고 부딪혀 앞으로 떨어진 코인 수만큼 받는다. 판은 베팅(코인 값)마다 따로 이어진다
 //   cascade — 과일 폭탄: 5×4 칸, 줄 없이 옆 릴끼리 이어지면(웨이) 당첨 → 맞은 과일이 터지고 위에서 새 과일이
 //             떨어진다 (새 과일은 서버가 그 릴의 띠에서 무작위로 뽑음: draw). 연쇄마다 배수 chain[i]
 //
-// 머신 여섯 대: 슬롯 네 대 + 크래시 · 코인 푸셔 (운영자 결정 2026-11-18. 모두의 잭팟은 여섯 대 모두에서 미스터리로)
+// 머신 다섯 대: 슬롯 네 대 + 크래시 (운영자 결정 2026-11-18. 모두의 잭팟은 다섯 대 모두에서 미스터리로)
 // 공통: 릴 띠를 돌려 멈춘 자리 s면 창에 보이는 칸은 위에서부터 s-1, s, s+1 (4칸 창은 s+2까지).
 // 환급률(RTP): 운영자 결정(2026-11-18)으로 머신 기본 약 100% + 모든 머신이 같이 쌓는 미스터리 잭팟 2%.
 //   lines·gem은 exactRtp()가 모든 경우를 셈. 연쇄·프리스핀 배수는 시뮬레이션 값(rtpRef)을 적어 둠 (test-sim.mjs로 확인)
@@ -109,11 +108,6 @@ export const MACHINES = {
     grow: 0.00012, // 배수 = e^(grow × 경과 ms): ×2 약 5.8초, ×10 약 19초, ×100 약 38초
     max: 1000, // 이 배수까지 가면 그 자리에서 터짐
   },
-  pusher: {
-    id: 'pusher', type: 'pusher', name: '코인 푸셔', short: '코인푸셔', desc: '코인을 떨어뜨리면 밀대가 밀어 앞으로 떨어진 만큼 받아요',
-    lines: [[1]], reels: 0, strips: [], pays: {}, tease: [],
-    // 양옆이 막혀 있어 넣은 코인은 결국 앞으로 나온다: 오래 보면 100% (판에 남은 코인은 다음에 이어짐)
-  },
 }
 export const MACHINE_IDS = Object.keys(MACHINES)
 export const machineOf = id => MACHINES[id] || MACHINES.classic
@@ -176,7 +170,7 @@ export function checkBet(m, lineBet, lines) {
   return { lineBet, lines, total: lineBet * lines }
 }
 // 한 판 베팅 = 줄당 × linesOf (연쇄는 unit)
-export const linesOf = m => m.type === 'cascade' ? m.unit : m.lines.length // 크래시·푸셔는 1 (베팅 = 줄당)
+export const linesOf = m => m.type === 'cascade' ? m.unit : m.lines.length // 크래시는 1 (베팅 = 줄당)
 
 // ---------- 한 판 결과 ----------
 // lines·gem → { grid, wins: [{ line, kind, n, mult, pay }], scatter, back, bonus, mreel }
@@ -292,7 +286,7 @@ export const crashTimeFor = (m, mult) => Math.ceil(Math.log(mult) / m.grow) // �
 // 서버도 같은 판단으로 정산을 그만큼 늦춘다
 export const TEASE_MS = 1300
 export function teases(m, stops, lines) {
-  if (m.type === 'cascade' || m.type === 'crash' || m.type === 'pusher') return false
+  if (m.type === 'cascade' || m.type === 'crash') return false
   const g = windowOf(m, stops)
   if (m.type === 'gem') { // 세 칸이 당첨이면 배수 릴이 멈출 때까지 두근두근
     return !!gemWin(m, m.lines[0].map((row, r) => g[r][row]))
@@ -320,7 +314,6 @@ function freqOf(strips) {
 export function exactRtp(m) {
   if (m.type === 'cascade') return { rtp: null, line: null }
   if (m.type === 'crash') return { rtp: 1, line: null } // 언제 내려도 100% (위 crashPoint 참고). 최대 배수에서 터지는 몫은 아주 작다
-  if (m.type === 'pusher') return { rtp: 1, line: null } // 넣은 코인은 결국 앞으로 (test-sim.mjs로 오래 돌려 확인)
   const f = freqOf(m.strips), R = m.reels
   let line = 0, hit = 0
   if (m.type === 'gem') {

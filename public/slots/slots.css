@@ -132,13 +132,11 @@ body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, 
 .sl-fs.bump { animation: sl-fs-bump .4s cubic-bezier(.2,1.8,.4,1); }
 @keyframes sl-fs-bump { 40% { transform: scale(1.06); box-shadow: 0 0 20px rgba(255,224,102,.8); } }
 
-/* ---------- 릴 없는 머신: 크래시 · 코인 푸셔 ---------- */
+/* ---------- 릴 없는 머신: 크래시 ---------- */
 .sl[data-machine="crash"] { --cab-1: #0d1b3d; --cab-2: #08122a; --cab-3: #040a18; --trim-glow: rgba(90,200,255,.45); }
-.sl[data-machine="pusher"] { --cab-1: #4a1a6b; --cab-2: #2e0f45; --cab-3: #1a0628; --trim-glow: rgba(243,207,116,.5); }
-.sl[data-type="crash"] .sl-reels, .sl[data-type="pusher"] .sl-reels, .sl[data-type="crash"] .sl-paylines, .sl[data-type="pusher"] .sl-paylines { display: none; }
-.sl[data-type="crash"] .sl-lever, .sl[data-type="pusher"] .sl-lever { visibility: hidden; }
+.sl[data-type="crash"] .sl-reels, .sl[data-type="crash"] .sl-paylines { display: none; }
+.sl[data-type="crash"] .sl-lever { visibility: hidden; }
 .sl[data-type="crash"] .sl-window { aspect-ratio: 4 / 3; }
-.sl[data-type="pusher"] .sl-window { aspect-ratio: 300 / 380; } /* 판 330 + 받침 50 (app.js TRAY) */
 .sl[data-machine="crash"] .sl-cabinet { border-color: #5ac8ff; }
 .sl[data-machine="crash"] .sl-logo-7 { color: #5ac8ff; -webkit-text-stroke-color: #fff; text-shadow: 0 0 14px rgba(90,200,255,.8); }
 .sl[data-machine="crash"] .sl-marquee { background: linear-gradient(180deg, #050b1c, #12264d); border-color: rgba(90,200,255,.5); }
@@ -164,13 +162,6 @@ body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, 
 .sl-crash-auto { grid-column: 2; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; color: var(--c-muted); }
 .sl-crash-auto select { height: 32px; padding: 0 6px; border-radius: 8px; border: 1px solid var(--c-line); background: #0c0907; color: var(--c-ink); font: 700 13px "Pretendard", sans-serif; }
 
-/* 코인 푸셔 무대 */
-.sl-pusher { position: absolute; inset: 0; border-radius: 8px; overflow: hidden; background: #12081e; box-shadow: inset 0 0 0 2px rgba(255,77,109,.35); }
-.sl-pusher canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.sl-pusher svg { width: 100%; height: 100%; display: block; }
-.sl-pusher-gain { position: absolute; right: 12px; bottom: 8px; font: 900 22px/1 "Pretendard", sans-serif; color: #ffd36b; text-shadow: 0 0 10px rgba(255,190,70,.7); font-variant-numeric: tabular-nums; }
-.sl[data-machine="pusher"] .sl-cabinet { border-color: #f3cf74; }
-.sl[data-machine="pusher"] .sl-logo-7 { color: #ffd36b; }
 
 /* 릴 창 */
 .sl-glass { padding: 8px; border-radius: 14px; background: #0b0807; border: 1px solid rgba(232,194,106,.4); box-shadow: inset 0 0 0 2px #000; }
@@ -372,9 +363,6 @@ body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, 
   .sl-window { --room: calc(100vw - 112px); width: min(var(--room), max(150px, calc(100svh - 580px))); margin-inline: auto; }
   .sl[data-type="gem"] .sl-window { width: min(var(--room), max(180px, calc((100svh - 580px) * 1.2))); }
   .sl[data-type="crash"] .sl-window { width: min(var(--room), max(220px, calc((100svh - 560px) * 1.33))); }
-  /* 코인 푸셔는 세로로 긴 판이라: 폰에선 결과판·안내를 빼고 (떨어진 수는 판 위 +N) 판을 키움 */
-  .sl[data-type="pusher"] .sl-result, .sl[data-type="pusher"] .sl-bet-hint { display: none; }
-  .sl[data-type="pusher"] .sl-window { width: min(var(--room), max(180px, calc((100svh - 470px) * 0.79))); }
   .sl[data-type="cascade"] .sl-window { width: min(var(--room), max(220px, calc((100svh - 585px) * 1.25))); }
   .sl[data-reels="5"]:not([data-type="cascade"]) .sl-window { width: min(var(--room), max(240px, calc((100svh - 580px) * 1.66))); }
   /* 위쪽을 얇게: 모두의 잭팟 한 줄, 간판·결과판 작게 */
@@ -402,7 +390,6 @@ body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, 
   .sl[data-type="cascade"] .sl-glass { width: clamp(300px, calc((100vh - 330px) * 1.25), 440px); }
   .sl[data-type="gem"] .sl-glass { width: clamp(300px, calc((100vh - 330px) * 1.2), 460px); }
   .sl[data-type="crash"] .sl-glass { width: clamp(320px, calc((100vh - 345px) * 1.33), 520px); }
-  .sl[data-type="pusher"] .sl-glass { width: clamp(250px, calc((100vh - 345px) * 0.79), 410px); }
   .sl-console { grid-area: console; display: flex; flex-direction: column; min-width: 0; }
   .sl-console .sl-credit { margin-top: 0; }
   .sl-console .sl-result { flex: 1; display: flex; flex-direction: column; justify-content: center; }
@@ -477,7 +464,6 @@ body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, 
   .sl-result { margin: 8px 0; padding: 8px 12px; }
   .sl-actions { margin-top: 10px; }
   .sl[data-type="crash"] .sl-window { width: min(var(--room), max(170px, calc((100svh - 540px) * 1.33))); }
-  .sl[data-type="pusher"] .sl-window { width: min(var(--room), max(170px, calc((100svh - 410px) * 0.79))); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -487,7 +473,7 @@ body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, 
 }
 
 /* ---------- 휴대폰: 중요한 것 한눈에 ----------
-   머신 6개를 한 줄에 다 보이게, 결과는 창 바로 밑 한 줄, 남은 칩과 베팅은 나란히 한 줄 → 남는 높이만큼 창이 커짐.
+   머신 5개를 한 줄에 다 보이게, 결과는 창 바로 밑 한 줄, 남은 칩과 베팅은 나란히 한 줄 → 남는 높이만큼 창이 커짐.
    창 폭 = (화면 높이 - 나머지 칸 높이 --rest) × 창 가로/세로 비율 */
 @media (max-width: 859px) {
   .sl { --rest: 452px; --extra: 0px; }
@@ -497,15 +483,14 @@ body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, 
   .sl-window { --room: calc(100vw - 72px); width: min(var(--room), max(170px, calc(100svh - var(--rest) - var(--extra)))); }
   .sl[data-type="gem"] .sl-window { width: min(var(--room), max(190px, calc((100svh - var(--rest)) * 1.2))); }
   .sl[data-type="crash"] .sl-window { width: min(var(--room), max(220px, calc((100svh - var(--rest) - var(--extra)) * 1.33))); }
-  .sl[data-type="pusher"] .sl-window { width: min(var(--room), max(190px, calc((100svh - var(--rest) - 10px) * 0.79))); }
   .sl[data-type="cascade"] .sl-window { width: min(var(--room), max(220px, calc((100svh - var(--rest)) * 1.25))); }
   .sl[data-reels="5"]:not([data-type="cascade"]) .sl-window { width: min(var(--room), max(240px, calc((100svh - var(--rest)) * 1.66))); }
 
-  /* 머신 고르기: 6칸 한 줄 (아이콘 위, 이름 아래) — 지금 머신이 늘 보임 */
-  .sl-pick { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; overflow: visible; padding: 0; margin-bottom: 8px; }
+  /* 머신 고르기: 5칸 한 줄 (아이콘 위, 이름 아래) — 지금 머신이 늘 보임 */
+  .sl-pick { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; overflow: visible; padding: 0; margin-bottom: 8px; }
   .sl-pick button { min-height: 0; padding: 5px 2px 4px; grid-template-columns: 1fr; grid-template-rows: auto auto; row-gap: 2px; justify-items: center; border-radius: 10px; }
   .sl-pick .ic { grid-row: auto; width: 22px; height: 22px; }
-  .sl-pick b { font-size: 11px; letter-spacing: -.02em; }
+  .sl-pick b { font-size: 12px; letter-spacing: -.02em; }
   .sl-pick small { display: none; }
 
   /* 조작판: [결과 한 줄] / [남은 칩 | 베팅] / [자동 · SPIN · 배당표] */
@@ -515,7 +500,6 @@ body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, 
   .sl-result-title { font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sl-result-amt { font-size: 24px; }
   .sl-result-sub { display: none; }
-  .sl[data-type="pusher"] .sl-result { display: block; }
   .sl-credit { grid-area: credit; margin: 0; height: 52px; padding: 4px 6px 4px 10px; column-gap: 4px; }
   .sl-credit-label { font-size: 11px; }
   .sl .sl-credit-num { font-size: 20px; overflow: hidden; text-overflow: ellipsis; }

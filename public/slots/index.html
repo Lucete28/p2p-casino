@@ -137,18 +137,12 @@
     <symbol id="sym-x3" viewBox="0 0 100 100"><text x="50" y="64" text-anchor="middle" font-family="Pretendard, sans-serif" font-weight="900" font-size="40" fill="url(#g-gold)" stroke="#5a3c0a" stroke-width="1.5">×3</text></symbol>
     <symbol id="sym-x5" viewBox="0 0 100 100"><text x="50" y="66" text-anchor="middle" font-family="Pretendard, sans-serif" font-weight="900" font-size="44" fill="url(#g-red)" stroke="#f3cf74" stroke-width="2">×5</text></symbol>
     <symbol id="sym-x10" viewBox="0 0 100 100"><text x="50" y="64" text-anchor="middle" font-family="Pretendard, sans-serif" font-weight="900" font-size="38" fill="url(#g-red)" stroke="#fff1b8" stroke-width="2.5">×10</text></symbol>
-    <!-- 크래시·코인 푸셔 고르기 그림 -->
+    <!-- 크래시 고르기 그림 -->
     <symbol id="sym-rocket" viewBox="0 0 100 100">
       <path d="M50 8c14 10 20 28 18 48l-36 0C30 36 36 18 50 8Z" fill="#f2f2f7" stroke="#4a4a68" stroke-width="3"/>
       <circle cx="50" cy="34" r="8" fill="#5ac8ff" stroke="#1d5f8a" stroke-width="3"/>
       <path d="M32 50 18 70l16-4M68 50l14 20-16-4" fill="#ff4d6d" stroke="#8a1030" stroke-width="2.5" stroke-linejoin="round"/>
       <path d="M40 58h20l-4 10h-12Z" fill="#8a8aa8"/><path d="M42 70q8 26 16 0" fill="#ffb02e"/><path d="M46 70q4 14 8 0" fill="#fff1b8"/>
-    </symbol>
-    <symbol id="sym-coins" viewBox="0 0 100 100">
-      <g stroke="#7a5a1a" stroke-width="2.5"><ellipse cx="50" cy="78" rx="30" ry="10" fill="url(#g-gold)"/><path d="M20 70v8a30 10 0 0 0 60 0v-8" fill="#c99a3a"/>
-      <ellipse cx="50" cy="62" rx="30" ry="10" fill="url(#g-gold)"/><path d="M20 54v8a30 10 0 0 0 60 0v-8" fill="#c99a3a"/>
-      <ellipse cx="50" cy="46" rx="30" ry="10" fill="url(#g-gold)"/></g>
-      <circle cx="62" cy="22" r="14" fill="url(#g-gold)" stroke="#7a5a1a" stroke-width="2.5"/><text x="62" y="28" text-anchor="middle" font-family="Pretendard, sans-serif" font-weight="900" font-size="16" fill="#7a5a1a">C</text>
     </symbol>
   </svg>
 
@@ -177,11 +171,6 @@
               <div class="sl-crash-mult" id="crashMult">×1.00</div>
               <div class="sl-crash-note" id="crashNote">시작을 누르면 로켓이 떠요</div>
               <div class="sl-crash-hist" id="crashHist" aria-label="최근 터진 배수"></div>
-            </div>
-            <!-- 코인 푸셔: 위에서 본 판 (진짜 물리, pusher.mjs) -->
-            <div class="sl-pusher" id="pusherStage" hidden>
-              <canvas id="pusherCanvas" aria-label="코인 푸셔 판"></canvas>
-              <div class="sl-pusher-gain" id="pusherGain"></div>
             </div>
             <div class="sl-fs-banner" id="fsBanner" hidden><b>FREE SPINS</b><span id="fsBannerSub">8번 · 별이 뜰 때마다 배수 +1</span></div>
           </div>

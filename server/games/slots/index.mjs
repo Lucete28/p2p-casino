@@ -1,10 +1,8 @@
-// 슬롯머신 (관리 모드, CASINO.md 3·5장): 슬롯 네 대 + 크래시 · 코인 푸셔 + 모두의 잭팟. 규칙은 public/slots/rules.mjs (화면과 같이 씀)
+// 슬롯머신 (관리 모드, CASINO.md 3·5장): 슬롯 네 대 + 크래시 + 모두의 잭팟. 규칙은 public/slots/rules.mjs (화면과 같이 씀)
 //
-//   브라우저 → { t: 'spin', machine, lineBet, lines }    machine = classic·diamond·fruit5·lucky·crash·pusher
+//   브라우저 → { t: 'spin', machine, lineBet, lines }    machine = classic·diamond·fruit5·lucky·crash
 //              { t: 'crashOut' }                         크래시: 지금 배수로 내리기 (서버 시간 기준)
 //              { t: 'spin', machine: 'crash', …, auto }  auto = 이 배수가 되면 서버가 알아서 내림 (선택)
-//              { t: 'spin', machine: 'pusher', lineBet, lines: 1, dropX }  코인 푸셔: 떨어뜨리는 자리
-//              { t: 'pusherBoard', bet }                코인 푸셔 판 (베팅=코인 값마다 따로)
 //              { t: 'skip' }                             긴 연출(프리스핀·연쇄) 건너뛰기 → 정해진 결과로 바로 정산
 //   서버 → { t: 'spun', machine, round, stops, lineBet, lines, total, wins, scatter, mreel, steps, back, base, tease, bonus, jackpot }
 //            back = 이번 판에 돌려받을 칩 전부 (프리스핀·연쇄·잭팟 포함), base = 첫 화면의 당첨
@@ -21,27 +19,16 @@
 import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { MACHINE_IDS, JACKPOT, machineOf, checkBet, evaluate, freeSpins, teases, TEASE_MS, CRASH_U, crashPoint, crashMultAt, crashTimeFor } from '../../../public/slots/rules.mjs'
-import { PB, seedBoard, drop as pushDrop, dropX as cleanDropX, boardHash } from '../../../public/slots/pusher.mjs'
 
 export const SPIN_MS = 2300 // 화면의 릴 연출(마지막 릴 정지 약 2.0초)보다 약간 길게
 export const FS_MS = { intro: 2200, spin: 1800, outro: 800 } // 프리스핀 연출 (public/slots/app.js와 같게)
 export const CASCADE_MS = 1100 // 과일 폭탄 연쇄 한 번
-export const PUSH_MS = Math.round(PB.STEPS / 60 * 1000) + 300 // 코인 푸셔 한 번 (물리 STEPS칸 = 2.5초)
 const MIN_GAP_MS = 800 // 스핀 간격 최소 (CASINO.md 5장)
 // 로컬에서 미스터리 잭팟 연출을 보려고 확률만 바꿀 때 (사이트에는 이 환경 변수가 없음)
 const JP_ODDS = Number(process.env.SLOTS_JP_ODDS) || JACKPOT.odds
 
 const pending = new Map() // 사용자 ID → { timer, round, back, result, jackpot }
 const lastStops = new Map() // 사용자 ID → { 머신: 멈춘 자리 } (다시 들어와도 같은 그림)
-// 코인 푸셔 판: 사용자 ID → Map(코인 값 → 코인들). 서버가 켜져 있는 동안 이어진다 (다시 켜지면 처음 판)
-const boards = new Map(), seeds = new Map()
-function boardOf(uid, bet) {
-  let my = boards.get(uid)
-  if (!my) boards.set(uid, my = new Map())
-  if (!my.has(bet)) { if (!seeds.has(1)) seeds.set(1, seedBoard(1)); my.set(bet, seeds.get(1).map(c => ({ ...c }))) } // 처음 판은 한 번만 만들어 두고 (1초쯤 걸림) 코인 값마다 복사
-  return my
-}
-const boardMsg = (uid, bet) => ({ t: 'pusherBoard', bet, coins: boardOf(uid, bet).get(bet).map(c => [c.x, c.y, c.z]) })
 
 // ---------- 모두의 잭팟 ----------
 // 어느 머신이든 베팅의 1.5%는 잭팟에, 0.5%는 다음 밑돈에. 판마다 베팅 ÷ odds 확률로 잭팟 전부 (미스터리).
@@ -158,7 +145,6 @@ export default {
 
   message(p, d, ctx) {
     if (d.t === 'crashOut') return crashOut(p, ctx, 'click')
-    if (d.t === 'pusherBoard') { const b = Number(d.bet); if (Number.isSafeInteger(b) && b >= 1) ctx.send(p, boardMsg(p.id, b)); return }
     if (d.t === 'skip') { if (!pending.get(p.id)?.crash) finish(p, ctx); return } // 정해진 결과로 바로 정산 (연출만 건너뜀). 크래시는 건너뛰기 없음
     if (d.t !== 'spin') return
     if (pending.has(p.id) || p.inPlay) return ctx.send(p, { t: 'toast', msg: '릴이 아직 돌고 있어요.' })
@@ -182,20 +168,6 @@ export default {
       if (auto && auto < c) k.autoT = setTimeout(() => crashOut(p, ctx, 'auto'), k.autoAt)
       pending.set(p.id, job)
       return ctx.send(p, { t: 'crashStart', machine: m.id, round, total: bet.total, auto, grow: m.grow, jackpot })
-    }
-
-    if (m.type === 'pusher') {
-      // 진짜 물리: 이 사람의 이 코인 값 판에 코인을 떨어뜨려 앞으로 떨어진 수만큼
-      const x = cleanDropX(d.dropX) ?? PB.W / 2
-      const my = boardOf(p.id, bet.total), before = my.get(bet.total)
-      const r = pushDrop(before, x)
-      my.set(bet.total, r.board)
-      const coins = r.fell
-      const back = coins * bet.total + (jackpot?.win || 0)
-      const result = { machine: m.id, total: bet.total, x, coins, left: r.board.length, ...(jackpot ? { jp: jackpot.win } : {}) }
-      const timer = setTimeout(() => finish(p, ctx), PUSH_MS + (jackpot ? 2500 : 0))
-      pending.set(p.id, { timer, round, back, result, jackpot, machine: m.id })
-      return ctx.send(p, { t: 'spun', machine: m.id, round, total: bet.total, lineBet: bet.lineBet, lines: 1, dropX: x, coins, hash: boardHash(r.board), base: coins * bet.total, back, jackpot, wins: [] })
     }
 
     const stops = randStops(m, ctx)
