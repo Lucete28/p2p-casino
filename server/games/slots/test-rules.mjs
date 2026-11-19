@@ -44,12 +44,12 @@ ok('다른 머신의 띠: 그림 수가 릴마다 같고, 별은 릴마다 하�
   for (const st of M.lucky.strips) assert.equal(st.filter(s => s === 'star').length, 1)
 })
 
-ok('환급률: 머신 기본 99.5% ~ 101% (운영자 결정: 기본 약 100% + 모두의 잭팟 2%)', () => {
-  assert.equal(exactRtp(M.crash).rtp, 1)
-  const want = { classic: 1.0009, diamond: 1.0078 }
+ok('환급률: 머신 기본 102.5% ~ 104% (운영자 결정: 기본 약 103% + 모두의 잭팟 2% = 약 105%)', () => {
+  assert.equal(exactRtp(M.crash).rtp, 1.03)
+  const want = { classic: 1.0352, diamond: 1.0367 }
   for (const m of Object.values(M)) {
     const rtp = exactRtp(m).rtp ?? m.rtpRef
-    assert.ok(rtp > 0.995 && rtp <= 1.0101, `${m.id} ${rtp}`)
+    assert.ok(rtp > 1.025 && rtp <= 1.04, `${m.id} ${rtp}`)
     if (want[m.id]) assert.ok(Math.abs(rtp - want[m.id]) < 0.0005, `${m.id} ${rtp} (배당을 바꿨으면 want도 고치기)`)
   }
   assert.ok(M.fruit5.rtpRef && M.lucky.rtpRef, '연쇄·프리스핀은 시뮬레이션 값이 있어야 함')
@@ -72,7 +72,7 @@ ok('정확한 계산이 모든 경우를 직접 센 것과 같다 (클래식 · 
 ok('클래식 배당: 셋 > 체리 둘 > 체리 하나', () => {
   const m = M.classic
   assert.deepEqual(lineWin(m, ['seven', 'seven', 'seven']), { kind: 'seven3', n: 3, mult: 777 })
-  assert.equal(lineWin(m, ['cherry', 'cherry', 'bar']).mult, 6)
+  assert.equal(lineWin(m, ['cherry', 'cherry', 'bar']).mult, 7)
   assert.equal(lineWin(m, ['cherry', 'bar', 'cherry']).mult, 1)
   assert.equal(lineWin(m, ['bar', 'cherry', 'cherry']), null)
 })
@@ -163,15 +163,15 @@ ok('베팅 검사: 클래식 줄 1·3·5, 다이아 1, 과일 폭탄 25, 나머�
   for (const [b, l] of [[0, 5], [1.5, 5], [-1, 1], [1, 2], [NaN, 5], ['x', 3], [MAX_LINE_BET + 1, 1]]) assert.ok(checkBet(M.classic, b, l).error, `${b} ${l}`)
 })
 
-ok('크래시: 터지는 배수 P(≥x) = 1/x (언제 내려도 100%), 시간과 배수', () => {
+ok('크래시: 터지는 배수 P(≥x) = 1.03/x (언제 내려도 103%), 시간과 배수', () => {
   const c = M.crash
-  for (const x of [1.01, 1.5, 2, 3.33, 10, 100]) {
-    const n = Math.ceil(CRASH_U - CRASH_U / x) // 이 n부터 위로는 모두 x 이상
+  for (const x of [1.04, 1.5, 2, 3.33, 10, 100]) {
+    const n = Math.ceil(CRASH_U - CRASH_U * 1.03 / x) // 이 n부터 위로는 모두 x 이상
     assert.ok(crashPoint(c, n) >= x, `${x} ${crashPoint(c, n)}`)
     assert.ok(crashPoint(c, n - 1) < x, `${x} 바로 아래`)
-    assert.ok(Math.abs((CRASH_U - n) / CRASH_U - 1 / x) < 1e-8) // 확률 1/x
+    assert.ok(Math.abs((CRASH_U - n) / CRASH_U - 1.03 / x) < 1e-8) // 확률 1.03/x
   }
-  assert.equal(crashPoint(c, 0), 1) // 1% 쯤은 바로 터짐
+  assert.equal(crashPoint(c, 0), 1.03) // ×1.03 아래로는 안 터짐
   assert.equal(crashPoint(c, CRASH_U - 1), c.max)
   for (const x of [1.01, 2, 7.77, 50]) {
     const t = crashTimeFor(c, x)
@@ -324,11 +324,11 @@ const crashRng = c => ({ ...noMystery, int: nMax => nMax === CRASH_U ? Math.ceil
   assert.equal(p.chips, 100)
   console.log('✓ 크래시: 바로 내리면 ×1.00, 터질 배수는 시작할 때 안 보냄')
 }
-{ // 1.00에서 바로 터짐 → 건 칩 잃음
+{ // 가장 이른 ×1.03에서 터짐 → 건 칩 잃음
   const p = { id: 'u_c2', chips: 100, inPlay: 0, limits: {} }
   const ctx = { ...fakeCtx(p), rng: { ...noMystery, int: nMax => nMax === CRASH_U ? 0 : noMystery.int(nMax) } }
   slots.message(p, { t: 'spin', machine: 'crash', lineBet: 10, lines: 1 }, ctx)
-  later(80, () => { assert.equal(p.chips, 90); assert.equal(p.inPlay, 0); assert.equal(ctx.sent.at(-1).t, 'crashed'); assert.equal(ctx.sent.at(-1).at, 1); console.log('✓ 크래시: 터지면 건 칩을 잃고 터진 배수를 알려 줌') })
+  later(400, () => { assert.equal(p.chips, 90); assert.equal(p.inPlay, 0); assert.equal(ctx.sent.at(-1).t, 'crashed'); assert.equal(ctx.sent.at(-1).at, 1.03); console.log('✓ 크래시: 터지면 건 칩을 잃고 터진 배수를 알려 줌') })
 }
 { // 자동 내리기 ×1.05 (약 0.4초) → 터질 배수 3보다 먼저 서버가 내림
   const p = { id: 'u_c3', chips: 100, inPlay: 0, limits: {} }
