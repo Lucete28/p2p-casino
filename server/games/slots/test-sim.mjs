@@ -50,7 +50,7 @@ for (const m of Object.values(MACHINES)) {
   console.log(`[${m.name}] 판 ${spins.toLocaleString()} · 건 칩 ${staked.toLocaleString()} · ${sec}초`)
   console.log(`  환급률 ${(got * 100).toFixed(3)}% (기준 ${(want * 100).toFixed(3)}%${x.rtp ? '' : ' 시뮬레이션'}, 허용 ±0.3%p, 잭팟 빼고) · 뭐라도 받은 판 ${(wins / spins * 100).toFixed(1)}%`
     + (m.scatter ? ` · 보너스 ${bonuses.toLocaleString()}번 (이론 ${Math.round(N * x.trigger).toLocaleString()})` : '')
-    + ` · 잭팟 ${jpHits}번 (미스터리 ${mystery}, 이론 ${(staked / JACKPOT.odds).toFixed(0)})`
+    + ` · 잭팟 ${jpHits}번 (미스터리 ${mystery}, 이론 ${(staked / JACKPOT.odds).toFixed(2)})`
     + ` · 표준오차 ±${(Math.sqrt(sq / N - got * got) / Math.sqrt(N) * 100).toFixed(3)}%p`)
   assert.equal(spins, N)
   assert.equal(p.inPlay, 0)

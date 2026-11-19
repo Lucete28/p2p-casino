@@ -666,7 +666,7 @@ function paintPaytables() {
   const linesHtml = m.type === 'lines' ? `<p class="sl-lines-title">당첨되는 줄 <small>(${hintOf(m, bet).split(' · ')[0]})</small></p>
     <div class="sl-lines r${m.reels}">${m.lines.map((_, i) => lineMini(m, i, i < lines)).join('')}</div>` : ''
   const html = `<ul class="sl-paylist">${rows}</ul>${linesHtml}
-    <p class="sl-note">${how}<b>모두의 잭팟</b>: 어느 머신이든 베팅의 2%가 쌓이고, 판마다 베팅 ÷ ${fmt(JACKPOT.odds)} 확률로 전부 가져가요 (지금 베팅이면 1/${fmt(Math.round(JACKPOT.odds / bet))}).
+    <p class="sl-note">${how}<b>모두의 잭팟</b>: 어느 머신이든 베팅의 2%가 쌓이고, 판마다 베팅 ÷ ${fmt(JACKPOT.odds)} 확률로 전부 가져가요 (베팅은 ${fmt(JACKPOT.capBet)}칩까지만 셈 · 지금 베팅이면 1/${fmt(Math.round(JACKPOT.odds / Math.min(bet, JACKPOT.capBet)))}).
     이론 환급률(RTP) 약 ${rtp ? (rtp * 100).toFixed(1) : '100'}% + 잭팟 2% · 결과는 서버가 정해요. 코인은 게임용이며 현금이나 상품으로 바꿀 수 없어요.</p>`
   document.querySelectorAll('[data-paytable]').forEach(el => { el.innerHTML = html })
   $('payFor').textContent = $('helpFor').textContent = `${m.name} · 베팅 ${fmt(bet)}칩일 때 받는 칩`

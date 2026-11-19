@@ -18,7 +18,7 @@
 // 결과는 돌리는 순간 모두 정해진다 (프리스핀·연쇄의 새 과일·잭팟 포함). 그사이 나가거나 끊기거나 서버를 꺼도 그 결과대로 바로 정산.
 import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { MACHINE_IDS, JACKPOT, machineOf, checkBet, evaluate, freeSpins, teases, TEASE_MS, CRASH_U, crashPoint, crashMultAt, crashTimeFor } from '../../../public/slots/rules.mjs'
+import { MACHINE_IDS, JACKPOT, jackpotWeight, machineOf, checkBet, evaluate, freeSpins, teases, TEASE_MS, CRASH_U, crashPoint, crashMultAt, crashTimeFor } from '../../../public/slots/rules.mjs'
 
 export const SPIN_MS = 2300 // 화면의 릴 연출(마지막 릴 정지 약 2.0초)보다 약간 길게
 export const FS_MS = { intro: 2200, spin: 1800, outro: 800 } // 프리스핀 연출 (public/slots/app.js와 같게)
@@ -109,12 +109,12 @@ function finishJackpot(p, ctx, j, machine) {
   saveJackpot(); announce(ctx, true)
 }
 
-// 모두의 잭팟: 베팅의 2%를 쌓고, 베팅 ÷ odds 확률로 전부 (미스터리). 터지면 { win, kind }
+// 모두의 잭팟: 베팅의 2%를 쌓고, min(베팅, capBet) ÷ odds 확률로 전부 (미스터리). 터지면 { win, kind }
 function rollJackpot(ctx, total) {
   jp.pool += total * JACKPOT.contribute
   jp.reserve += total * JACKPOT.reserve
   let jackpot = null
-  if (ctx.rng.int(JP_ODDS) < total) {
+  if (ctx.rng.int(JP_ODDS) < jackpotWeight(total)) { // 확률에 넣는 베팅은 JACKPOT.capBet(1만)까지만
     const win = Math.floor(jp.pool)
     jp.pool = Math.max(jp.pool - win + jp.reserve, JACKPOT.floor)
     jp.reserve = 0

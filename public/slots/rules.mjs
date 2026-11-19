@@ -119,9 +119,14 @@ export const MACHINE_IDS = Object.keys(MACHINES)
 export const machineOf = id => MACHINES[id] || MACHINES.classic
 
 // 모두의 잭팟 (미스터리): 어느 머신이든 한 판 베팅의 contribute는 잭팟에, reserve는 다음 밑돈에.
-// 판마다 (베팅 ÷ odds) 확률로 잭팟 전부.
+// 판마다 (베팅 ÷ odds) 확률로 잭팟 전부. 확률에 넣는 베팅은 capBet까지만 (큰 베팅이 매판 터뜨리지 않게).
 // 다 가져가면 밑돈이 새 잭팟 (floor보다 적으면 하우스가 floor까지 채움). 오래 보면 contribute + reserve 만큼이 플레이어에게 돌아감
-export const JACKPOT = { contribute: 0.015, reserve: 0.005, odds: 500000, start: 10000, floor: 1000 }
+// 운영자 결정 2026-11-19 "너무 자주 터진다" → 드물고 크게: odds 50만 → 1억, capBet 1만.
+//   1만 칩 이상 걸면 판마다 1/10,000 (1초에 한 번 돌리는 사람 혼자면 약 3시간에 한 번), 평균 잭팟 약 200만 칩
+//   (모두가 1만씩이면 쌓임 1.5% × 1억 = 150만 + 밑돈 약 50만. 더 크게 걸수록 잭팟도 커짐, 확률은 그대로)
+export const JACKPOT = { contribute: 0.015, reserve: 0.005, odds: 100_000_000, capBet: 10_000, start: 10000, floor: 1000 }
+// 이 판 베팅으로 잭팟이 터질 확률의 분자 (확률 = jackpotWeight(total) / odds)
+export const jackpotWeight = total => Math.min(total, JACKPOT.capBet)
 
 // 한 판 베팅 상한은 없다 (CASINO.md 5장). 다만 돌려줄 칩이 안전한 정수를 넘지 않게 상한만 둔다
 export const MAX_LINE_BET = Math.floor(Number.MAX_SAFE_INTEGER / (20 * 100000))

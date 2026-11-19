@@ -8,7 +8,7 @@ process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'slots-test-'))
 const rng = await import('../../core/rng.mjs')
 const { default: slots, SPIN_MS, FS_MS, jackpotState } = await import('./index.mjs')
 const R = await import('../../../public/slots/rules.mjs')
-const { MACHINES, JACKPOT, windowOf, lineWin, gemWin, waysWins, cascade, freeSpins, checkBet, linesOf, evaluate, exactRtp, teases, TEASE_MS, MAX_LINE_BET, CRASH_U, crashPoint, crashMultAt, crashTimeFor } = R
+const { MACHINES, JACKPOT, jackpotWeight, windowOf, lineWin, gemWin, waysWins, cascade, freeSpins, checkBet, linesOf, evaluate, exactRtp, teases, TEASE_MS, MAX_LINE_BET, CRASH_U, crashPoint, crashMultAt, crashTimeFor } = R
 
 let n = 0
 const ok = (name, fn) => { fn(); n++; console.log('✓', name) }
@@ -287,6 +287,23 @@ ok('모두의 잭팟: 어느 머신이든 2% 쌓이고, 미스터리로 터지�
   assert.ok(jackpotState().pool >= JACKPOT.floor)
   const saved = JSON.parse(readFileSync(join(process.env.DATA_DIR, 'slots-jackpot.json'), 'utf8'))
   assert.equal(saved.last.name, '잭팟테스트')
+})
+
+ok('모두의 잭팟 확률: 드물게 (1억 분의 베팅), 확률에 넣는 베팅은 1만 칩까지만', () => {
+  // 운영자 결정 2026-11-19 "너무 자주 터진다" (만~십만 칩씩 걸면 1분·5스핀마다 터졌음)
+  assert.equal(JACKPOT.odds, 100_000_000)
+  assert.equal(JACKPOT.capBet, 10_000)
+  assert.equal(jackpotWeight(500), 500)
+  assert.equal(jackpotWeight(10_000), 10_000)
+  assert.equal(jackpotWeight(100_000), 10_000) // 십만 칩을 걸어도 1만 칩 확률 (1/10,000)
+  // 서버: 10만 칩 베팅에서 뽑은 수가 1만이면 안 터지고, 9,999면 터짐
+  for (const [n, hit] of [[10_000, false], [9_999, true]]) {
+    const p = { id: 'u_cap' + n, name: '상한', chips: 1e9, inPlay: 0, limits: {} }
+    const ctx = { ...fakeCtx(p), rng: { ...rng, int: nMax => nMax === JACKPOT.odds ? n : noMystery.int(nMax) } }
+    slots.message(p, { t: 'spin', machine: 'classic', lineBet: 20_000, lines: 5 }, ctx) // 한 판 10만 칩
+    assert.equal(!!ctx.sent.at(-1).jackpot, hit, `n=${n}`)
+    slots.message(p, { t: 'skip' }, ctx)
+  }
 })
 
 ok('다시 들어오면 머신별 마지막 그림, 서버 종료 때 정산하고 잭팟 저장', () => {
