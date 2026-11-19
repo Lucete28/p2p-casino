@@ -920,10 +920,20 @@ $('auto').onclick = () => {
   if (!auto && cur.type === 'crash' && !$('crashAuto').value) return game?.toast('크래시 자동 반복은 \'자동 내리기\' 배수를 먼저 골라 주세요.')
   setAuto(!auto); if (auto && !busy) requestSpin()
 }
+// ---------- 단축키 (PC) ----------
+// 스페이스 = SPIN (크래시는 시작·내리기), ↑ → + = 베팅 올리기, ↓ ← - = 베팅 내리기.
+// 방금 누른 버튼(머신·베팅 등)에 포커스가 있어도 스페이스는 늘 SPIN. 입력칸·대화상자가 열려 있으면 안 함
+const typing = t => !!t && (t.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName))
+const KEYS = { Space: 'spin', ArrowUp: 1, ArrowRight: 1, Equal: 1, NumpadAdd: 1, ArrowDown: -1, ArrowLeft: -1, Minus: -1, NumpadSubtract: -1 }
+const keysOff = e => e.ctrlKey || e.metaKey || e.altKey || typing(e.target) || !!document.querySelector('dialog[open]')
 document.addEventListener('keydown', e => {
-  if (e.code !== 'Space' || e.target !== document.body || e.repeat) return
-  e.preventDefault(); $('spin').click()
+  const k = KEYS[e.code]
+  if (k === undefined || keysOff(e)) return
+  e.preventDefault()
+  if (k === 'spin') { if (!e.repeat) { document.activeElement?.blur?.(); $('spin').click() } return }
+  if (!$(k > 0 ? 'betUp' : 'betDown').disabled) changeBet(k)
 })
+document.addEventListener('keyup', e => { if (e.code === 'Space' && !keysOff(e)) e.preventDefault() }, true) // 포커스된 버튼이 스페이스로 눌리지 않게
 
 // ---------- 하는 법 (처음 한 번 자동으로) ----------
 const helpDlg = $('helpDlg')
