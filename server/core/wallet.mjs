@@ -26,6 +26,19 @@ export function openWallet(store) {
   }
   setInterval(flush, 30000).unref()
 
+  // 한 사람의 정산만 바로 보낸다 (칩 바꾸기·코인으로: 다른 사람의 큰 정산이 끝나기를 기다리지 않게)
+  // 전체 flush와 같은 줄을 동시에 보내도 ref가 같아 한 번만 반영된다
+  async function flushUser(user) {
+    for (const p of store.pendingOf(user)) {
+      try {
+        const r = await jmtt.coin('cashout', p.user_id, p.amount, p.reason, p.ref)
+        if (r.status === 200) store.pendingDone(p.ref)
+        else { store.pendingTried(p.ref); console.warn('cashout', p.ref, r.status, r.error); return false }
+      } catch (err) { store.pendingTried(p.ref); console.warn('cashout', p.ref, err.message); return false }
+    }
+    return true
+  }
+
   // ---------- 다시 켜졌을 때: 남아 있는 자리를 모두 정산 ----------
   // 맡기는 도중 꺼진 자리는 같은 ref로 다시 맡겨 보며 실제로 맡긴 양을 알아낸다 (이미 반영된 ref는 auth가 그대로 돌려줌)
   // 하우스 게임의 '진행 중인 판에 건 칩'(in_play)은 그 판을 무효로 하고 돌려준다
@@ -45,7 +58,7 @@ export function openWallet(store) {
       store.seatClose(s.session, amount, '카지노 정산 (서버 재시작)', jmtt.MAX_AMOUNT)
       console.log('recovered seat', s.game, s.session, amount)
     }
-    return flush()
+    flush() // 보내기는 뒤에서: 정산할 금액이 커도 서버가 켜지는 것을 막지 않게 (대기열에 있으니 잃지 않음)
   }
 
   // ---------- 자리 열기: 코인을 맡긴다 ----------
@@ -76,5 +89,5 @@ export function openWallet(store) {
     return r
   }
 
-  return { flush, recover, stakeSeat, closeSeat }
+  return { flush, flushUser, recover, stakeSeat, closeSeat }
 }

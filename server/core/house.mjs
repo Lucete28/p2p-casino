@@ -73,12 +73,13 @@ export function houseKit({ store, wallet, titleOf }) {
       p.busy = true
       try {
         let total = amount
+        if (amount + p.chips > 10 * jmtt.MAX_AMOUNT) toast(p, '금액이 커서 칩으로 바꾸는 데 시간이 걸려요. 잠시만 기다려 주세요…')
         // 이미 칩이 있으면: 지금 칩을 정산하고 합친 만큼 다시 맡긴다 (자리 하나 = 맡긴 기록 하나라 복구가 단순)
         if (p.session) {
           const had = p.chips
           wallet.closeSeat(p.session, had, '카지노 정산 · ' + game.title)
           p.session = null; p.chips = 0
-          await wallet.flush()
+          await wallet.flushUser(p.id)
           total += had
         }
         const coins = await coinsOf(p.id)
@@ -106,9 +107,10 @@ export function houseKit({ store, wallet, titleOf }) {
       if (!p.session) return
       if (p.inPlay) return toast(p, '판이 끝난 뒤에 칩을 코인으로 바꿀 수 있어요.')
       const amount = p.chips
+      if (amount > 10 * jmtt.MAX_AMOUNT) toast(p, '금액이 커서 코인으로 바꾸는 데 시간이 걸려요. 잠시만 기다려 주세요…')
       wallet.closeSeat(p.session, amount, '카지노 정산 · ' + game.title)
       p.session = null; p.chips = 0
-      await wallet.flush()
+      await wallet.flushUser(p.id)
       send(p, { ...chipsMsg(p, await coinsOf(p.id)), cashout: amount, why: why || '' })
     }
 

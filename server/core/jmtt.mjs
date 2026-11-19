@@ -31,7 +31,8 @@ async function coinCall(path, init) {
 export async function balance(user) {
   const { status, body } = await coinCall('balance?user=' + encodeURIComponent(user), { method: 'GET' })
   if (status !== 200) throw new Error('balance ' + status)
-  return body.balance | 0
+  const n = Number(body?.balance)
+  return Number.isSafeInteger(n) && n > 0 ? n : 0 // `| 0`은 21억(2^31)을 넘으면 음수가 됨
 }
 
 // op: 'stake'(앉을 때 맡기기) | 'cashout'(일어날 때 돌려주기). 같은 ref는 auth가 한 번만 반영한다

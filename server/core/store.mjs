@@ -82,6 +82,7 @@ export function openStore(file) {
     },
     openSeats: () => q("SELECT * FROM seats WHERE state IN ('seated', 'staking')").all(),
     pendingAll: () => q('SELECT * FROM pending ORDER BY at').all(),
+    pendingOf: user => q('SELECT * FROM pending WHERE user_id = ? ORDER BY at').all(user),
     pendingDone: ref => q('DELETE FROM pending WHERE ref = ?').run(ref),
     pendingTried: ref => q('UPDATE pending SET tries = tries + 1 WHERE ref = ?').run(ref),
     seatStats: room => q('SELECT staked, stack FROM seats WHERE room = ?').all(room),
