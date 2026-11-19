@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { mock } from 'node:test'
 import bj from './index.mjs'
-import { score, isNatural, settleHand, MIN_BET, CUT, SHOE_SIZE, BET_MS, READY_MS, TURN_MS, SHOW_MS, DEAL_MS } from '../../../public/blackjack/rules.mjs'
+import { score, isNatural, settleHand, MIN_BET, EMOJIS, CUT, SHOE_SIZE, BET_MS, READY_MS, TURN_MS, SHOW_MS, DEAL_MS } from '../../../public/blackjack/rules.mjs'
 
 let n = 0
 const ok = async (name, fn) => { await fn(); n++; console.log('✓', name) }
@@ -29,7 +29,7 @@ function setup(cards, chips = [1000]) {
   const last = p => sent.get(p.id).filter(m => m.t === 'state').at(-1)
   const me = p => { const m = last(p); return m.seats[m.me] }
   return {
-    ps, ctx, log, last, me,
+    ps, ctx, log, last, me, sentAll: p => sent.get(p.id),
     bet: (p, amount) => bj.message(p, { t: 'bet', amount }, ctx),
     act: (p, a) => bj.message(p, { t: 'act', a, seq: last(p).seq }, ctx),
     toasts: p => sent.get(p.id).filter(m => m.t === 'toast').map(m => m.msg),
@@ -311,6 +311,25 @@ await ok('남은 카드 창: 다음 카드 비율 합 1, 이번 판에 보이는
   const soft = nextCard([], ['As', '6d'])
   assert.equal(soft.bust, 0, '소프트 17은 한 장으로 버스트하지 않음')
   assert.equal(nextCard([]).bust, 0, '내 차례가 아니면 비율만')
+})
+
+await ok('이모지: 앉은 사람만, 다섯 개만, 1.2초에 한 번 → 테이블 모두(관전자 포함)에게', () => {
+  const T = setup([], [1000, 1000])
+  const [A, B] = T.ps
+  let last = {}
+  T.ctx.limit = (p, key, ms) => { const now = Date.now(); if (now - (last[p.id + key] || -1e9) < ms) return false; last[p.id + key] = now; return true }
+  const emojis = p => T.sentAll(p).filter(m => m.t === 'emoji')
+  bj.message(A, { t: 'emoji', e: '👍' }, T.ctx) // 관전 중엔 못 보냄
+  bj.message(A, { t: 'sit', seat: 3 }, T.ctx)
+  bj.message(A, { t: 'emoji', e: '안녕' }, T.ctx) // 정해 둔 것만
+  bj.message(A, { t: 'emoji', e: '🔥' }, T.ctx)
+  bj.message(A, { t: 'emoji', e: '😂' }, T.ctx) // 1.2초 안에 또
+  tick(1200)
+  bj.message(A, { t: 'emoji', e: '😭' }, T.ctx)
+  assert.deepEqual(emojis(B).map(m => [m.seat, m.e]), [[3, '🔥'], [3, '😭']], '관전자 B도 받음')
+  assert.deepEqual(emojis(A).map(m => m.e), ['🔥', '😭'])
+  assert.equal(EMOJIS.length, 5)
+  T.close()
 })
 
 mock.timers.reset()

@@ -13,6 +13,7 @@
 //   브라우저 → { t: 'sit', seat } 빈자리에 앉기 · { t: 'stand' } 일어나기
 //              { t: 'bet', amount }   베팅 (0 = 취소). 베팅 시간에만. 관전 중이면 빈자리에 앉으면서 건다
 //              { t: 'act', a: 'hit'|'stand'|'double'|'split', seq }   seq = 받은 state의 seq (두 번 누름 막기)
+//              { t: 'emoji', e }   이모지 (앉은 사람만, EMOJIS 다섯 개만, EMOJI_MS에 한 번) → 테이블 모두에게 { t: 'emoji', seat, e }
 //   서버 → { t: 'state', ev, seat?, table, phase: 'bet'|'play'|'dealer'|'result', phaseMs, dealer, seats, me, watching,
 //            seq, actions, shoe }      me = 내 자리 (관전 중이면 -1)
 //
@@ -21,7 +22,7 @@
 // 연결이 끊기면 자리는 60초 남고, 그사이 행동 시간이 지나 스탠드 → 판이 끝나 정산된다. 딜러 결과가 나온 뒤 나가면 바로 정산.
 // 서버가 판 도중 꺼지면 코어가 그 판을 무효로 하고 건 칩을 돌려준다 (결과가 나온 판은 결과대로 정산).
 import { dealRound, seatActions, seatAct, dealerPlay, settleSeat } from './engine.mjs'
-import { DECKS, SHOE_SIZE, CUT, SEATS, MIN_BET, IDLE_ROUNDS, BET_MS, READY_MS, TURN_MS, SHOW_MS, DEAL_MS, HIT_MS, DEALER_MS, RESULT_MS } from '../../../public/blackjack/rules.mjs'
+import { DECKS, SHOE_SIZE, CUT, SEATS, MIN_BET, IDLE_ROUNDS, EMOJIS, EMOJI_MS, BET_MS, READY_MS, TURN_MS, SHOW_MS, DEAL_MS, HIT_MS, DEALER_MS, RESULT_MS } from '../../../public/blackjack/rules.mjs'
 
 const ACTS = new Set(['hit', 'stand', 'double', 'split'])
 const SEAT_ORDER = [3, 2, 4, 1, 5, 0, 6] // 가운데 자리부터 채움
@@ -279,6 +280,11 @@ export default {
       const i = SEAT_ORDER.find(k => !t.seats[k])
       if (i === undefined) return toast(ctx, p, '빈자리가 없어요. 자리가 나면 앉을 수 있어요.')
       return placeBet(sitAt(p, t, i), amount)
+    }
+    if (d.t === 'emoji') {
+      if (!s || !EMOJIS.includes(d.e) || !ctx.limit(p, 'emoji', EMOJI_MS)) return
+      for (const o of people(s.t)) ctx.send(o, { t: 'emoji', seat: s.i, e: d.e })
+      return
     }
     if (d.t === 'act') {
       if (!s) return

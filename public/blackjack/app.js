@@ -3,7 +3,7 @@
 // 돈은 '보유 칩 · 베팅 · 이번 판' 세 칸으로 보여 준다 (운영자 요청 2026-11-18, 누적 득실은 보여 주지 않음). 처음엔 관전, 빈자리를 누르거나 베팅하면 앉는다
 import { startGame } from '../shared/casino.js'
 import { nextCard } from './odds.mjs'
-import { score, isNatural, SEATS, MIN_BET, DEAL_MS, HIT_MS, DEALER_MS, RESULT_MS, TURN_MS } from './rules.mjs'
+import { score, isNatural, SEATS, MIN_BET, EMOJIS, EMOJI_MS, DEAL_MS, HIT_MS, DEALER_MS, RESULT_MS, TURN_MS } from './rules.mjs'
 
 const $ = id => document.getElementById(id)
 const fmt = n => Number(n || 0).toLocaleString('ko-KR')
@@ -641,6 +641,36 @@ function drawOdds() {
   $('oddsToggle').onclick = () => { oddsOpen = !oddsOpen; store.set(oddsKey(), oddsOpen ? 'open' : 'closed'); drawOdds() }
 }
 
+// ---------- 이모지 (홀덤처럼): 앉은 사람만 보냄, 보낸 사람 자리 위에 말풍선 ----------
+const EMOJI_FX = { '🥱': 'yawn', '👍': 'thumb', '😂': 'laugh', '😭': 'cry', '🔥': 'fire' }
+$('emojiPanel').innerHTML = EMOJIS.map(e => `<button type="button" class="emoji-opt" data-e="${e}" role="menuitem" aria-label="${e} 보내기">${e}</button>`).join('')
+function closeEmoji() { $('emojiPanel').hidden = true; $('emojiBtn').setAttribute('aria-expanded', 'false') }
+$('emojiBtn').onclick = () => {
+  const open = $('emojiPanel').hidden
+  $('emojiPanel').hidden = !open
+  $('emojiBtn').setAttribute('aria-expanded', String(open))
+}
+let lastEmoji = 0
+$('emojiPanel').onclick = ev => {
+  const b = ev.target.closest('[data-e]'); if (!b) return
+  closeEmoji()
+  if (Date.now() - lastEmoji < EMOJI_MS) return game?.toast('이모지는 잠깐 쉬었다 보내 주세요.')
+  lastEmoji = Date.now()
+  game?.send({ t: 'emoji', e: b.dataset.e })
+}
+document.addEventListener('pointerdown', ev => { if (!ev.target.closest('.bj-emoji-wrap')) closeEmoji() })
+// 보낸 사람 자리 위에 잠깐 떠올랐다 사라짐. 같은 자리는 새 것으로 바꿈 (겹치지 않게)
+function showEmoji(i, e) {
+  const seat = seats.get(i)
+  if (!seat || seat.empty || !EMOJIS.includes(e)) return
+  seat.el.querySelector('.emoji-pop')?.remove()
+  const pop = document.createElement('div')
+  pop.className = 'emoji-pop'
+  pop.innerHTML = `<div class="emoji-bubble"><span class="emoji-face fx-${EMOJI_FX[e]}">${e}</span></div>`
+  seat.el.append(pop)
+  setTimeout(() => pop.remove(), 2700)
+}
+
 // ---------- 아래 조작판 ----------
 let bet = Math.max(MIN_BET, Number(store.get('bet')) || 100)
 const busy = () => pending > 0 || !!acting
@@ -671,6 +701,8 @@ function paintPanel() {
   document.querySelectorAll('#chipBtns button, .bj-bet-row button').forEach(b => { b.disabled = lock })
   if (!lock) { $('clearBet').disabled = !bet; $('halfBet').disabled = bet <= MIN_BET; $('dblBet').disabled = !bet || (!!game?.me && bet * 2 > chips); $('allBet').disabled = !!game?.me && !chips }
   $('standUp').hidden = !my || my.inRound
+  $('emojiBtn').hidden = !my // 앉은 사람만 이모지를 보냄
+  if (!my) closeEmoji()
   store.set('bet', String(bet))
   paintMoney(); paintSpot(); drawOdds()
 }
@@ -794,6 +826,7 @@ game = await startGame({
   onReady() { paintPanel() },
   onChips() { paintPanel() },
   onMessage(m) {
+    if (m.t === 'emoji') return showEmoji(m.seat, m.e)
     if (m.t !== 'state' || demoKind === 'full' || demoKind === 'result') return // 미리 보기 중엔 서버 상태를 그리지 않음
     if (m.ev !== 'act' || m.seat === m.me) releaseAct()
     enqueue(m)
