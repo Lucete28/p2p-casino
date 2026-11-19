@@ -49,15 +49,10 @@ function betsOf(m) {
 const split = (m, bet) => m.lineChoices
   ? (bet >= 5 ? { lines: 5, lineBet: bet / 5 } : { lines: bet, lineBet: 1 })
   : { lines: linesOf(m), lineBet: bet / linesOf(m) }
+// 베팅 옆 안내: 클래식만 (베팅에 따라 당첨되는 줄 수가 바뀜). 나머지 머신은 안내 없음
 function hintOf(m, bet) {
-  const { lines } = split(m, bet)
-  const jp = '' // 잭팟 확률은 배당표에 (여기는 짧게)
-  if (m.lineChoices) return { 1: '가운데 줄 1개만', 3: '가로 줄 3개', 5: '줄 5개 모두' }[lines] + jp
-  if (m.type === 'gem') return '가운데 줄 하나 + 배수 릴' + jp
-  if (m.type === 'cascade') return '줄 없음 · 연쇄마다 ×1·×2·×3·×5' + jp
-  if (m.type === 'crash') return '터지기 전에 내리면 베팅 × 그 배수'
-  let h = `줄 ${lines}개 모두`
-  return h + jp
+  if (!m.lineChoices) return ''
+  return { 1: '가운데 줄 1개만', 3: '가로 줄 3개', 5: '줄 5개 모두' }[split(m, bet).lines]
 }
 const savedBet = m => { const b = Number(store.get('bet:' + m.id) ?? (m.id === 'classic' ? store.get('bet2') : null)); return betsOf(m).includes(b) ? b : betsOf(m)[m.lineChoices ? 2 : 0] }
 let bet = savedBet(cur)
@@ -632,7 +627,7 @@ function paintPaytables() {
     rows += `<li><span class="icons">${ic('diamond').repeat(2)}${any}</span><span class="lbl">다이아 둘 (어디든)</span>${amt(lineBet * W[2])}</li>`
     rows += `<li><span class="icons">${ic('diamond')}${any}${any}</span><span class="lbl">다이아 하나 (어디든)</span>${amt(lineBet * W[1])}</li>`
     const mf = {}; for (const x of m.mstrip) mf[x] = (mf[x] || 0) + 1
-    rows += `<li class="row5"><span class="icons">${ic('x5')}</span><span class="lbl">배수 릴</span><span class="n5">${Object.entries(mf).map(([k, n]) => `<em>${Math.round(n / m.mstrip.length * 100)}%</em> ${SYMBOLS[k]}`).join('')}</span></li>`
+    rows += `<li class="row5"><span class="icons">${ic('x5')}</span><span class="lbl">오른쪽 배수 릴</span><span class="n5">${Object.keys(mf).map(k => `<em></em>${SYMBOLS[k]}`).join('')}</span></li>`
   } else if (m.type === 'cascade') {
     for (const [s, p] of Object.entries(m.pays)) {
       const top = s === 'seven'
@@ -657,17 +652,16 @@ function paintPaytables() {
       }
     }
   }
-  const how = m.type === 'crash' ? '시작하면 배수가 ×1.00부터 올라가요. 로켓이 터지기 전에 내리기를 누르면 베팅 × 그 배수를 받고, 터지면 건 칩을 잃어요. 터지는 배수는 시작할 때 서버가 정하고 미리 보내지 않아요. 언제 내려도 기댓값은 같아요(103%). ×1.03 전에는 안 터져요. 자동 내리기를 고르면 그 배수에서 서버가 대신 내려요. '
-    : m.type === 'gem' ? '가운데 줄 하나만 봐요. 다이아는 아무 그림이나 대신하고, 섞일 때마다 ×2. 당첨에 오른쪽 배수 릴의 가운데 값을 곱해요. '
-    : m.type === 'cascade' ? '줄이 없어요. 맨 왼쪽 릴부터 같은 과일이 있는 릴이 3개 이상 이어지면 당첨, 릴마다 그 과일 칸 수를 곱한 만큼(웨이) 받아요. 맞은 과일은 터지고 위에서 새 과일이 떨어져 또 맞으면 연쇄 — 배수 ×1 → ×2 → ×3 → ×5. 위 칩은 웨이 하나 값이에요. '
-    : m.scatter ? '별은 줄과 상관없이 창 어디든 세요. 프리스핀은 공짜이고, 별이 뜰 때마다 배수가 1씩 커져 끝까지 유지돼요. 프리스핀 중 별 셋이면 3번 더. '
-    : '같은 그림이 걸린 줄 위에 <b>왼쪽부터</b> 이어지면 당첨. 여러 줄이 함께 맞으면 모두 더해 받아요. '
-  const rtp = exactRtp(m).rtp ?? m.rtpRef
-  const linesHtml = m.type === 'lines' ? `<p class="sl-lines-title">당첨되는 줄 <small>(${hintOf(m, bet).split(' · ')[0]})</small></p>
+  const how = m.type === 'crash' ? '시작하면 배수가 ×1.00부터 올라가요. 로켓이 터지기 전에 내리기를 누르면 베팅 × 그 배수를 받고, 터지면 건 칩을 잃어요. 자동 내리기를 고르면 그 배수에서 알아서 내려요. '
+    : m.type === 'gem' ? '가운데 줄만 봐요. 다이아는 아무 그림이나 대신하고, 당첨되면 오른쪽 배수만큼 곱해요. '
+    : m.type === 'cascade' ? '맨 왼쪽 릴부터 같은 과일이 3릴 이상 이어지면 당첨 (한 릴에 여러 칸이면 그만큼 곱해요). 터진 자리에 새 과일이 떨어져 또 맞으면 연쇄 ×2 → ×3 → ×5. '
+    : m.scatter ? '별은 창 어디에 떠도 세요. 프리스핀 중엔 별이 뜰 때마다 배수가 1씩 커지고, 별 셋이면 3번 더. '
+    : '같은 그림이 줄 위에 <b>왼쪽부터</b> 이어지면 당첨. 여러 줄이 맞으면 모두 더해요. '
+  const linesHtml = m.type === 'lines' ? `<p class="sl-lines-title">당첨되는 줄${m.lineChoices ? ` <small>(${hintOf(m, bet)})</small>` : ''}</p>
     <div class="sl-lines r${m.reels}">${m.lines.map((_, i) => lineMini(m, i, i < lines)).join('')}</div>` : ''
   const html = `<ul class="sl-paylist">${rows}</ul>${linesHtml}
-    <p class="sl-note">${how}<b>모두의 잭팟</b>: 어느 머신이든 베팅의 2%가 쌓이고, 판마다 베팅 ÷ ${fmt(JACKPOT.odds)} 확률로 전부 가져가요 (지금 베팅이면 1/${fmt(Math.round(JACKPOT.odds / bet))}).
-    이론 환급률(RTP) 약 ${rtp ? (rtp * 100).toFixed(1) : '100'}% + 잭팟 2% · 결과는 서버가 정해요. 코인은 게임용이며 현금이나 상품으로 바꿀 수 없어요.</p>`
+    <p class="sl-note">${how}<b>모두의 잭팟</b>은 모든 머신이 같이 키우고, 아무 판에서나 갑자기 터져요. 많이 걸수록 잘 터져요.</p>
+    <p class="sl-note sl-legal">코인은 게임용이며 현금이나 상품으로 바꿀 수 없어요.</p>`
   document.querySelectorAll('[data-paytable]').forEach(el => { el.innerHTML = html })
   $('payFor').textContent = $('helpFor').textContent = `${m.name} · 베팅 ${fmt(bet)}칩일 때 받는 칩`
 }
@@ -701,8 +695,7 @@ $('creditAdd').onclick = () => game?.openBuyIn()
 function paintPick() {
   $('pick').innerHTML = MACHINE_IDS.map(id => {
     const m = MACHINES[id]
-    const sub = m.type === 'gem' ? '와일드·배수' : m.type === 'cascade' ? '연쇄 폭발' : m.type === 'crash' ? '타이밍 승부' : m.scatter ? '프리스핀' : '3릴 · 5줄'
-    return `<button type="button" data-id="${id}" aria-pressed="${id === cur.id}"><span class="ic">${symSvg(ICON[id])}</span><b>${m.short}</b><small>${sub}</small></button>`
+    return `<button type="button" data-id="${id}" aria-pressed="${id === cur.id}"><span class="ic">${symSvg(ICON[id])}</span><b>${m.short}</b></button>`
   }).join('')
   $('pick').querySelectorAll('button').forEach(b => b.onclick = () => switchMachine(b.dataset.id))
   paintJackpot()
@@ -723,7 +716,7 @@ function switchMachine(id) {
   bet = savedBet(cur)
   showMachine()
   clearHits()
-  say(cur.name, '', cur.desc)
+  say(cur.desc, '', '')
   $('pick').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.id === id)))
   paintBet(); paintJackpot()
   requestAnimationFrame(layoutLever)
@@ -947,7 +940,7 @@ const firstVisit = !store.get('guide')
 
 // ---------- 시작 ----------
 showMachine()
-say(cur.name, '', cur.desc) // 처음 문구도 머신에 맞게 (크래시에 '레버를 당겨 보세요'가 뜨지 않게)
+say(cur.desc, '', '') // 처음 문구도 머신에 맞게 (크래시에 '레버를 당겨 보세요'가 뜨지 않게)
 paintPick(); paintSound(); paintBet(); layoutLever()
 if (firstVisit) helpDlg.showModal()
 

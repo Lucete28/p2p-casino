@@ -63,13 +63,13 @@ const CLASSIC = [
 
 export const MACHINES = {
   classic: {
-    id: 'classic', type: 'lines', name: '클래식 777', short: '클래식', desc: '3릴 · 줄 5개. 자주 작게, 가끔 777',
+    id: 'classic', type: 'lines', name: '클래식 777', short: '클래식', desc: '같은 그림 3개가 줄에 서면 당첨',
     reels: 3, rows: 3, strips: CLASSIC, lines: LINES3, lineChoices: [1, 3, 5],
     pays: { seven: { 3: 777 }, bar: { 3: 80 }, bell: { 3: 30 }, melon: { 3: 13 }, lemon: { 3: 8 }, cherry: { 1: 1, 2: 7, 3: 8 } }, // 체리 둘 ×7: 5줄이면 한 줄만 맞아도 이득
     tease: ['seven', 'bar', 'bell'],
   },
   diamond: {
-    id: 'diamond', type: 'gem', name: '다이아몬드', short: '다이아', desc: '가운데 줄 하나 + 배수 릴. 다이아는 와일드, 섞일 때마다 ×2',
+    id: 'diamond', type: 'gem', name: '다이아몬드', short: '다이아', desc: '다이아는 아무 그림이나 대신해요',
     reels: 3, rows: 3, lines: [[1, 1, 1]],
     strips: reels([['diamond', 1], ['ruby', 3], ['sapphire', 4], ['emerald', 6], ['blank', 18]], 3, [0, 11, 22]),
     // 오른쪽 배수 릴: 가운데 칸의 배수가 줄 당첨에 곱해진다 (평균 ×1.88)
@@ -79,7 +79,7 @@ export const MACHINES = {
     tease: [],
   },
   fruit5: {
-    id: 'fruit5', type: 'cascade', name: '과일 폭탄', short: '과일폭탄', desc: '5×4 칸, 옆 릴끼리 이어지면 터지고 연쇄마다 ×1·×2·×3·×5',
+    id: 'fruit5', type: 'cascade', name: '과일 폭탄', short: '과일폭탄', desc: '같은 과일이 이어지면 펑! 연쇄될수록 커져요',
     reels: 5, rows: 4, unit: 25, // 한 판 베팅 = 25 × 단위 (줄 대신 웨이 1,024개, 배당은 웨이 하나당 단위의 몇 배)
     strips: reels([['melon', 4], ['grape', 4], ['plum', 4], ['orange', 5], ['cherry', 5], ['lemon', 5], ['bell', 4], ['bar', 3], ['seven', 2]], 5, [0, 9, 18, 4, 13]),
     pays: {
@@ -91,7 +91,7 @@ export const MACHINES = {
     tease: [],
   },
   lucky: {
-    id: 'lucky', type: 'lines', name: '럭키 스타', short: '럭키스타', desc: '밤하늘 5릴. 별 3개면 프리스핀, 별이 뜰 때마다 배수 +1',
+    id: 'lucky', type: 'lines', name: '럭키 스타', short: '럭키스타', desc: '별 3개가 뜨면 프리스핀!',
     reels: 5, rows: 3, lines: LINES5,
     strips: reels([['star', 1], ['moon', 1], ['planet', 2], ['comet', 3], ['clover', 5], ['horseshoe', 7], ['blank', 11]], 5, [0, 6, 12, 18, 24]),
     pays: {
@@ -104,7 +104,7 @@ export const MACHINES = {
     tease: ['moon'],
   },
   crash: {
-    id: 'crash', type: 'crash', name: '크래시', short: '크래시', desc: '로켓 배수가 오르다 터져요. 터지기 전에 내리면 그 배수만큼',
+    id: 'crash', type: 'crash', name: '크래시', short: '크래시', desc: '로켓이 터지기 전에 내리면 그 배수만큼',
     lines: [[1]], reels: 0, strips: [], pays: {}, tease: [],
     grow: 0.00012, // 배수 = e^(grow × 경과 ms): ×2 약 5.8초, ×10 약 19초, ×100 약 38초
     max: 1000, // 이 배수까지 가면 그 자리에서 터짐
