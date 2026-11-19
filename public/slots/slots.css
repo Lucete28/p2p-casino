@@ -1,6 +1,10 @@
 /* 슬롯머신 화면. 색은 shared/casino.css 변수 (블랙 & 골드) */
 .sl-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 
+/* 휴대폰: 버튼을 빨리 두 번 눌러도 화면이 확대되지 않게 (두 손가락 확대는 그대로), 눌렀을 때 파란 칸·글자 선택 없음 */
+html, body, .sl, .sl * { touch-action: manipulation; }
+.sl { -webkit-tap-highlight-color: transparent; }
+.sl button, .sl-pick, .sl-actions, .sl-step, .sl-credit { -webkit-user-select: none; user-select: none; }
 body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, var(--c-bg) 100%) fixed; }
 .sl { --lever: 50px; max-width: 540px; margin: 0 auto; padding: 18px 16px 48px; }
 .sl-machine { position: relative; display: flex; align-items: flex-start; }
@@ -480,4 +484,58 @@ body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, 
   .sl-bulbs i, .sl-cell.hit::before, .sl-cell.hit svg, .sl.jackpot .sl-logo-7, .sl-lever-tip, .sl.win .sl-cabinet, .sl-reel.tease, .sl-gjp.hit, .sl[data-machine="lucky"] .sl-cabinet,
   .sl-cele-rays, .sl-cele-kind, .sl-float, .sl-result-title { animation: none !important; }
   .sl-bulbs i { background: #ffe69a; }
+}
+
+/* ---------- 휴대폰: 중요한 것 한눈에 ----------
+   머신 6개를 한 줄에 다 보이게, 결과는 창 바로 밑 한 줄, 남은 칩과 베팅은 나란히 한 줄 → 남는 높이만큼 창이 커짐.
+   창 폭 = (화면 높이 - 나머지 칸 높이 --rest) × 창 가로/세로 비율 */
+@media (max-width: 859px) {
+  .sl { --rest: 452px; --extra: 0px; }
+  .sl[data-type="crash"] { --extra: 40px; } /* 자동 내리기 줄 */
+  /* 레버는 폰에선 빼고 (SPIN 버튼과 같은 일) 그 폭만큼 창을 넓힘 */
+  .sl-lever { display: none; }
+  .sl-window { --room: calc(100vw - 72px); width: min(var(--room), max(170px, calc(100svh - var(--rest) - var(--extra)))); }
+  .sl[data-type="gem"] .sl-window { width: min(var(--room), max(190px, calc((100svh - var(--rest)) * 1.2))); }
+  .sl[data-type="crash"] .sl-window { width: min(var(--room), max(220px, calc((100svh - var(--rest) - var(--extra)) * 1.33))); }
+  .sl[data-type="pusher"] .sl-window { width: min(var(--room), max(190px, calc((100svh - var(--rest) - 10px) * 0.79))); }
+  .sl[data-type="cascade"] .sl-window { width: min(var(--room), max(220px, calc((100svh - var(--rest)) * 1.25))); }
+  .sl[data-reels="5"]:not([data-type="cascade"]) .sl-window { width: min(var(--room), max(240px, calc((100svh - var(--rest)) * 1.66))); }
+
+  /* 머신 고르기: 6칸 한 줄 (아이콘 위, 이름 아래) — 지금 머신이 늘 보임 */
+  .sl-pick { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; overflow: visible; padding: 0; margin-bottom: 8px; }
+  .sl-pick button { min-height: 0; padding: 5px 2px 4px; grid-template-columns: 1fr; grid-template-rows: auto auto; row-gap: 2px; justify-items: center; border-radius: 10px; }
+  .sl-pick .ic { grid-row: auto; width: 22px; height: 22px; }
+  .sl-pick b { font-size: 11px; letter-spacing: -.02em; }
+  .sl-pick small { display: none; }
+
+  /* 조작판: [결과 한 줄] / [남은 칩 | 베팅] / [자동 · SPIN · 배당표] */
+  .sl-console { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "result result" "credit bet" "actions actions"; gap: 8px; margin-top: 8px; }
+  .sl-result { grid-area: result; margin: 0; padding: 6px 12px; }
+  .sl-result-main { min-height: 30px; flex-wrap: nowrap; align-items: center; }
+  .sl-result-title { font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sl-result-amt { font-size: 24px; }
+  .sl-result-sub { display: none; }
+  .sl[data-type="pusher"] .sl-result { display: block; }
+  .sl-credit { grid-area: credit; margin: 0; height: 52px; padding: 4px 6px 4px 10px; column-gap: 4px; }
+  .sl-credit-label { font-size: 11px; }
+  .sl .sl-credit-num { font-size: 20px; overflow: hidden; text-overflow: ellipsis; }
+  .sl .sl-credit-num[data-len="l"] { font-size: 16px; }
+  .sl-credit-add { height: 36px; width: 34px; padding: 0; font-size: 0; }
+  .sl-credit-add::before { content: "+"; font-size: 22px; line-height: 1; }
+  .sl-bet { grid-area: bet; display: flex; flex-direction: column; gap: 6px; }
+  .sl-bet-label, .sl-bet-hint { display: none; }
+  .sl-step { height: 52px; }
+  .sl-step button { width: 44px; }
+  .sl-crash-auto { justify-content: space-between; }
+  .sl[data-type="crash"] .sl-console { grid-template-areas: "result result" "credit bet" "auto auto" "actions actions"; }
+  .sl[data-type="crash"] .sl-bet { display: contents; } /* 베팅 칸은 그대로, 자동 내리기는 아래 한 줄 */
+  .sl[data-type="crash"] .sl-step { grid-area: bet; }
+  .sl[data-type="crash"] .sl-crash-auto { grid-area: auto; height: 32px; }
+  .sl-actions { grid-area: actions; margin: 0; }
+}
+@media (max-width: 859px) and (max-height: 740px) { .sl { --rest: 392px; } }
+@media (max-width: 360px) {
+  .sl-pick b { font-size: 10px; }
+  .sl-credit { padding-left: 8px; }
+  .sl-step button { width: 38px; }
 }
