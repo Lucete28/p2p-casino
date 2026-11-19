@@ -1,6 +1,6 @@
 // 테이블 하나. 서버가 카드를 섞어 나누고 판을 진행한다 (예전에는 방장 브라우저가 하던 일).
 // 사람은 앉을 때 가진 코인을 모두 맡기고(stake), 일어날 때 남은 칩을 돌려받는다(cashout). 봇의 칩은 하우스 몫
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomInt } from 'node:crypto'
 import * as jmtt from '../../core/jmtt.mjs'
 
 const rid = (p, n = 6) => p + randomBytes(n).toString('base64url')
@@ -10,6 +10,9 @@ const AWAY_AFTER = 2             // 시간 초과 자동 행동이 연속 이만
 const EMPTY_CLOSE_MS = 30000     // 사람이 아무도 없으면 이만큼 뒤 방을 닫음
 // 게임 중 이모지 (app.js의 EMOJIS와 같게). 정해 둔 것만 보낼 수 있어서 글자 채팅 같은 내용은 오가지 않음
 export const EMOJIS = new Set(['🥱', '👍', '😂', '😭', '🔥'])
+
+// 봇이 들고 앉는 칩: 1,000~10,000 사이 100 단위로 무작위 (운영자 결정 2026-11-19)
+const botBuyIn = () => 1000 + 100 * randomInt(0, 91)
 
 export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, wallet, titleOf = id => id, onClose }) {
   class Room {
@@ -252,7 +255,7 @@ export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, wallet, 
       if (this.table.seats.filter(s => !s.left).length >= CONFIG.MAX_SEATS) return false
       const used = new Set(this.table.seats.map(p => p.name))
       const name = BOT_NAMES.find(n => !used.has(n)) || '봇'
-      this.table.addPlayer(rid('bot-', 4), name, CONFIG.START_TOKENS, { bot: true })
+      this.table.addPlayer(rid('bot-', 4), name, botBuyIn(), { bot: true })
       return true
     }
     removeBot() {
@@ -314,7 +317,7 @@ export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, wallet, 
 
     startHand() {
       const t = this.table
-      for (const p of t.seats) if (p.bot && p.stack <= 0) p.stack = CONFIG.START_TOKENS // 봇은 하우스가 다시 채움
+      for (const p of t.seats) if (p.bot && p.stack <= 0) p.stack = botBuyIn() // 봇은 하우스가 다시 채움
       // 봇 대신 앉기로 한 사람: 판이 끝났으니 그 봇을 치우고 앉힘
       for (const m of [...this.waiting]) {
         const bot = t.seat(m.botFor)
