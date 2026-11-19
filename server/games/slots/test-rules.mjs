@@ -184,6 +184,7 @@ ok('코인 푸셔 물리: 같은 판·자리면 같은 결과, 코인은 사라�
   const b0 = PU.seedBoard(3)
   assert.equal(PU.boardHash(b0), PU.boardHash(PU.seedBoard(3)))
   assert.ok(b0.length > 60, '처음 판이 차 있음')
+  assert.ok(b0.filter(c => c.z).length > 15, '위층에 얹힌 코인도 있음')
   let b = b0, fell = 0
   for (let i = 0; i < 40; i++) {
     const x = PU.dropX(20 + i * 37 % 260)
@@ -192,6 +193,7 @@ ok('코인 푸셔 물리: 같은 판·자리면 같은 결과, 코인은 사라�
     assert.equal(PU.boardHash(r1.board), PU.boardHash(r2.board)); assert.equal(r1.fell, r2.fell)
     assert.equal(frames.length, PU.PB.STEPS); assert.equal(frames.reduce((a, x) => a + x, 0), r1.fell)
     for (const c of r1.board) assert.ok(c.x >= PU.PB.R - 1e-9 && c.x <= PU.PB.W - PU.PB.R + 1e-9 && c.y <= PU.PB.FRONT)
+    for (const c of r1.board) if (c.z) assert.ok(PU.support(r1.board, c.x, c.y).w >= PU.PB.R * PU.PB.HOLD - 1, '위층 코인은 받쳐져 있음')
     b = r1.board; fell += r1.fell
   }
   assert.equal(fell, 40 - (b.length - b0.length))
@@ -276,7 +278,9 @@ ok('코인 푸셔 서버: 판은 사람·코인 값마다 따로 이어지고, �
   slots.message(p, { t: 'pusherBoard', bet: 2 }, ctx)
   const first = ctx.sent.at(-1)
   assert.equal(first.t, 'pusherBoard'); assert.equal(first.bet, 2)
-  let board = first.coins.map(([x, y]) => ({ x, y, vx: 0, vy: 0 }))
+  const toBoard = cs => cs.map(([x, y, z]) => ({ x, y, vx: 0, vy: 0, z }))
+  let board = toBoard(first.coins)
+  assert.ok(board.some(c => c.z === 1) && board.some(c => c.z === 0), '두 층 다 보냄')
   for (const dx of [40, 150, 260, 'x']) {
     slots.message(p, { t: 'spin', machine: 'pusher', lineBet: 2, lines: 1, dropX: dx }, ctx)
     const s = ctx.sent.at(-1)
@@ -287,9 +291,9 @@ ok('코인 푸셔 서버: 판은 사람·코인 값마다 따로 이어지고, �
     slots.message(p, { t: 'skip' }, ctx)
   }
   slots.message(p, { t: 'pusherBoard', bet: 2 }, ctx)
-  assert.equal(PU.boardHash(ctx.sent.at(-1).coins.map(([x, y]) => ({ x, y }))), PU.boardHash(board), '판이 이어짐')
+  assert.equal(PU.boardHash(toBoard(ctx.sent.at(-1).coins)), PU.boardHash(board), '판이 이어짐')
   slots.message(p, { t: 'pusherBoard', bet: 3 }, ctx)
-  assert.equal(PU.boardHash(ctx.sent.at(-1).coins.map(([x, y]) => ({ x, y }))), PU.boardHash(PU.seedBoard(3)), '코인 값이 다르면 다른 판')
+  assert.equal(PU.boardHash(toBoard(ctx.sent.at(-1).coins)), PU.boardHash(PU.seedBoard(1)), '코인 값이 다르면 따로 (처음 판에서 시작)')
   const n = ctx.sent.length
   slots.message(p, { t: 'pusherBoard', bet: 0.5 }, ctx); slots.message(p, { t: 'pusherBoard', bet: 'a' }, ctx)
   assert.equal(ctx.sent.length, n)

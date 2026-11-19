@@ -38,10 +38,10 @@ const boards = new Map(), seeds = new Map()
 function boardOf(uid, bet) {
   let my = boards.get(uid)
   if (!my) boards.set(uid, my = new Map())
-  if (!my.has(bet)) { if (!seeds.has(bet)) seeds.set(bet, seedBoard(bet)); my.set(bet, seeds.get(bet).map(c => ({ ...c }))) } // 처음 판은 코인 값마다 한 번만 만들어 둠 (0.4초쯤 걸림)
+  if (!my.has(bet)) { if (!seeds.has(1)) seeds.set(1, seedBoard(1)); my.set(bet, seeds.get(1).map(c => ({ ...c }))) } // 처음 판은 한 번만 만들어 두고 (1초쯤 걸림) 코인 값마다 복사
   return my
 }
-const boardMsg = (uid, bet) => ({ t: 'pusherBoard', bet, coins: boardOf(uid, bet).get(bet).map(c => [c.x, c.y]) })
+const boardMsg = (uid, bet) => ({ t: 'pusherBoard', bet, coins: boardOf(uid, bet).get(bet).map(c => [c.x, c.y, c.z]) })
 
 // ---------- 모두의 잭팟 ----------
 // 어느 머신이든 베팅의 1.5%는 잭팟에, 0.5%는 다음 밑돈에. 판마다 베팅 ÷ odds 확률로 잭팟 전부 (미스터리).
