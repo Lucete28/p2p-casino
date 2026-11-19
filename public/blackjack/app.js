@@ -11,6 +11,7 @@ const sign = n => n > 0 ? `+${fmt(n)}` : n < 0 ? `−${fmt(-n)}` : '±0'
 const tone3 = n => n > 0 ? 'plus' : n < 0 ? 'minus' : 'even'
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
+const phone = matchMedia('(max-width: 600px)') // 휴대폰: 테이블 + 바닥 조작판 한 화면
 const store = { // localStorage 키는 casino:blackjack: 로 시작
   get(k) { try { return localStorage.getItem('casino:blackjack:' + k) } catch { return null } },
   set(k, v) { try { localStorage.setItem('casino:blackjack:' + k, v) } catch {} },
@@ -67,7 +68,14 @@ const sfx = {
   },
   sparkle() { [1568, 2093, 2637].forEach((f, i) => tone(f, i * 0.06, 0.1, 'sine', 0.03)) },
 }
-function paintSound() { $('sound').setAttribute('aria-pressed', String(soundOn)); $('sound').textContent = soundOn ? '소리 켬' : '소리 끔' }
+const SPEAKER = on => `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Z" fill="currentColor"/>${on
+  ? '<path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>'
+  : '<path d="M16.5 9.5l5 5m0-5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'}</svg>`
+function paintSound() {
+  $('sound').innerHTML = SPEAKER(soundOn)
+  $('sound').setAttribute('aria-pressed', String(soundOn))
+  $('sound').setAttribute('aria-label', soundOn ? '소리 끄기' : '소리 켜기')
+}
 $('sound').onclick = () => { soundOn = !soundOn; store.set('sound', soundOn ? '1' : '0'); paintSound(); if (soundOn) sfx.chip() }
 
 // ---------- 카드 ----------
@@ -212,9 +220,25 @@ function fitOthers() {
     let cw = parseFloat(getComputedStyle(box).getPropertyValue('--cw-mini')) || 36
     while (need() > box.clientWidth + 1 && cw > 18) { cw -= 2; box.style.setProperty('--cw-mini', cw + 'px') }
     if (need() > box.clientWidth + 1) box.classList.add('wrap')
+    fitTable()
   }, 0)
 }
+// 휴대폰은 테이블 + 아래 조작판이 한 화면 (테이블이 남은 높이를 씀). 카드가 많아 넘치면 내 카드를 단계적으로 줄인다
+function fitTable() {
+  const main = document.querySelector('.bj'), t = $('table')
+  main.style.removeProperty('--cw')
+  if (!phone.matches) return
+  const over = () => t.scrollHeight > t.clientHeight + 2
+  let cw = parseFloat(getComputedStyle(main).getPropertyValue('--cw')) || 50
+  while (over() && cw > 38) { cw -= 2; main.style.setProperty('--cw', cw + 'px') }
+  // 그래도 넘치면 (7자리가 차고 스플릿이 많을 때) 다른 사람 카드를 더 줄이고, 마지막으로 내 카드를 조금 더
+  const box = $('others')
+  let mini = parseFloat(getComputedStyle(box).getPropertyValue('--cw-mini')) || 27
+  while (over() && mini > 18) { mini -= 2; box.style.setProperty('--cw-mini', mini + 'px') }
+  while (over() && cw > 32) { cw -= 2; main.style.setProperty('--cw', cw + 'px') }
+}
 addEventListener('resize', fitOthers)
+phone.addEventListener?.('change', () => { fitOthers(); drawOdds() })
 function paintTotals() {
   fitOthers()
   paintTotal($('dealerTotal'), shown.dealer, shown.dealer.length === 2 && shown.dealer.every(Boolean) && isNatural(shown.dealer))
@@ -586,14 +610,15 @@ function paintMoney() {
 
 // ---------- 남은 카드 창 (운영자 요청 2026-11-18: 자세한 승률 대신 덱에 남은 카드 위주로) ----------
 // 다음 카드가 무엇일지 칸 10개로. 내 차례면 받으면 버스트하는 칸은 빨강, 21이 되는 칸은 금색. 결과를 정해 주지는 않는다
-let oddsOpen = (() => { const v = store.get('odds'); return v ? v === 'open' : innerWidth > 600 })() // 처음엔 넓은 화면만 펼침
+const oddsKey = () => phone.matches ? 'odds-phone' : 'odds' // 휴대폰은 따로 기억 (펼치면 위로 뜨는 창)
+let oddsOpen = (() => { const v = store.get(oddsKey()); return v ? v === 'open' : !phone.matches })() // 처음엔 넓은 화면만 펼침
 const pctTxt = p => !p ? '0%' : p >= 0.9995 ? '100%' : p < 0.005 ? '<1%' : Math.round(p * 100) + '%'
 function drawOdds() {
   const box = $('odds'), S = state, my = mySeat()
   if (busy() && box.innerHTML) return // 카드가 놓이는 중엔 그대로 (새 카드 결과가 미리 보이지 않게)
-  box.hidden = !game?.me || !S
+  const live = S?.phase === 'play' && my?.inRound && !my.done
+  box.hidden = !game?.me || !S || (!live && phone.matches) // 휴대폰은 내 차례에만 (한 화면에 들어오게)
   if (box.hidden) return
-  const live = S.phase === 'play' && my?.inRound && !my.done
   const visible = [...S.dealer, ...S.seats.flatMap(s => s ? s.hands.flatMap(h => h.cards) : [])]
   const n = nextCard(visible, live ? my.hands[my.active].cards : null)
   const left = S.shoe?.left ?? 0
@@ -605,15 +630,15 @@ function drawOdds() {
   let body = ''
   if (oddsOpen) {
     const max = Math.max(...n.buckets.map(b => b.p))
-    body = `<div class="bj-deck" role="img" aria-label="다음 카드 확률">${n.buckets.map(b => `
+    body = `<div class="bj-odds-body"><div class="bj-deck" role="img" aria-label="다음 카드 확률">${n.buckets.map(b => `
         <span class="bj-deck-col${b.bust ? ' bust' : b.is21 ? ' t21' : ''}">
           <em>${pctTxt(b.p)}</em><i style="height:${Math.max(6, b.p / max * 100)}%"></i><b>${b.label}</b>
         </span>`).join('')}
       </div>
-      ${live ? '<p class="bj-odds-note"><span class="k bust"></span>받으면 버스트 <span class="k t21"></span>21이 돼요</p>' : '<div class="bj-odds-pad"></div>'}`
+      ${live ? '<p class="bj-odds-note"><span class="k bust"></span>받으면 버스트 <span class="k t21"></span>21이 돼요</p>' : '<div class="bj-odds-pad"></div>'}</div>`
   }
   box.innerHTML = head + body
-  $('oddsToggle').onclick = () => { oddsOpen = !oddsOpen; store.set('odds', oddsOpen ? 'open' : 'closed'); drawOdds() }
+  $('oddsToggle').onclick = () => { oddsOpen = !oddsOpen; store.set(oddsKey(), oddsOpen ? 'open' : 'closed'); drawOdds() }
 }
 
 // ---------- 아래 조작판 ----------
@@ -623,9 +648,9 @@ function paintPanel() {
   const S = state, my = mySeat()
   const myTurn = S?.phase === 'play' && my?.inRound && !my.done
   // 내 차례가 시작되면 행동 버튼이 화면 안에 오게 (주소창 때문에 화면이 짧은 휴대폰)
-  if (myTurn && $('actBox').hidden && !busy()) requestAnimationFrame(() => $('actBox').scrollIntoView({ block: 'nearest', behavior: reduced ? 'auto' : 'smooth' }))
   $('actBox').hidden = !myTurn
   $('betBox').hidden = !!myTurn
+  if (phone.matches) fitOthers() // 조작판 높이가 바뀌면 테이블 크기도 다시
   if (myTurn) document.querySelectorAll('.bj-btn').forEach(b => { b.disabled = busy() || !S.actions[b.dataset.a] })
   // 베팅 버튼
   const go = $('betGo'), chips = game?.chips ?? 0

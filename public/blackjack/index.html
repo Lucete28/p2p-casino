@@ -20,6 +20,11 @@
   <main class="bj">
     <section class="bj-table" id="table" aria-label="블랙잭 테이블">
       <span class="bj-tableno" id="tableNo"></span>
+      <div class="bj-tools">
+        <button type="button" class="bj-tool" id="help" aria-label="하는 법">?</button>
+        <button type="button" class="bj-tool" id="sound" aria-pressed="true" aria-label="소리 끄기"></button>
+        <button type="button" class="bj-tool text" id="standUp" hidden>일어나기</button>
+      </div>
       <div class="bj-shoe" id="shoe" title="카드 슈 (6덱)">
         <div class="bj-shoe-box"><i></i><i></i><i></i></div>
         <div class="bj-shoe-bar"><span id="shoeFill"></span></div>
@@ -77,12 +82,6 @@
           <button type="button" class="bj-btn double" data-a="double"><b>더블</b><small>2배 걸고 한 장만</small></button>
           <button type="button" class="bj-btn split" data-a="split"><b>스플릿</b><small>두 손으로 나누기</small></button>
         </div>
-      </div>
-
-      <div class="bj-tools">
-        <button type="button" class="bj-tool" id="standUp" hidden>일어나기</button>
-        <button type="button" class="bj-tool" id="help">하는 법</button>
-        <button type="button" class="bj-tool" id="sound" aria-pressed="true">소리</button>
       </div>
     </section>
   </main>

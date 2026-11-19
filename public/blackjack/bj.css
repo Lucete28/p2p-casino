@@ -1,5 +1,8 @@
 /* 블랙잭 화면. 색은 shared/casino.css 변수 (블랙 & 골드 + 초록 펠트) */
 body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, var(--c-bg) 100%) fixed; }
+/* 더블탭 확대 금지 (운영자 요청 2026-11-18). 두 손가락 확대는 그대로. 연타할 때 글자가 선택되지 않게 */
+html { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.bj { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .bj { --cw: 66px; --cw-mini: 36px; max-width: 780px; margin: 0 auto; padding: 16px 16px 48px; }
 :root { --back: repeating-linear-gradient(45deg, #9d1520 0 4px, #b81c28 4px 8px); --plus: #6ee7a0; --minus: #ff8a8a; }
 
@@ -300,9 +303,12 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
 .bj-btn:active:not([disabled]) { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,.55); }
 .bj-btn[disabled] { filter: grayscale(1) brightness(.55); cursor: default; box-shadow: none; }
 
-.bj-tools { display: flex; justify-content: center; gap: 8px; margin-top: 12px; }
-.bj-tool { height: 44px; padding: 0 14px; border-radius: 22px; border: 1px solid var(--c-line); background: transparent; color: var(--c-muted); font: 600 13px "Pretendard", sans-serif; cursor: pointer; }
-.bj-tool[aria-pressed="true"] { color: var(--c-gold); border-color: rgba(232,194,106,.55); background: rgba(232,194,106,.07); }
+.bj-tools { position: absolute; z-index: 4; left: 14px; top: 36px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.bj-tool { display: grid; place-items: center; height: 36px; min-width: 36px; padding: 0 9px; border-radius: 18px; border: 1px solid var(--c-line);
+  background: rgba(0,0,0,.4); color: var(--c-gold); font: 800 15px "Pretendard", sans-serif; cursor: pointer; }
+.bj-tool.text { font-size: 12.5px; font-weight: 700; color: var(--c-ink); }
+.bj-tool[aria-pressed="false"] { color: var(--c-muted); }
+.bj-tool:focus-visible { outline: 2px solid var(--c-gold); outline-offset: 2px; }
 
 /* 하는 법 */
 .bj-help { width: min(440px, calc(100vw - 48px)); }
@@ -326,8 +332,29 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
 
 /* ---------- 휴대폰 ---------- */
 @media (max-width: 600px) {
-  .bj { --cw: 50px; --cw-mini: 27px; padding: 10px 10px 32px; }
-  .bj-table { padding: 12px 6px 16px; border-width: 7px; border-radius: 18px 18px 50% 50% / 18px 18px 14% 14%; }
+  /* 한 화면: 윗줄(약 57px)을 뺀 높이를 테이블(남는 만큼) + 조작판(바닥)으로 나눔. 넘치면 app.js fitTable이 카드를 줄임 */
+  .bj { --cw: 50px; --cw-mini: 27px; display: flex; flex-direction: column; height: calc(100vh - 57px); height: calc(100dvh - 57px); padding: 6px 8px 8px; }
+  .bj-table { flex: 1 1 auto; min-height: 0; justify-content: space-between; padding: 10px 6px 14px; border-width: 6px; border-radius: 18px 18px 50% 50% / 18px 18px 12% 12%; }
+  .bj-panel { flex: none; margin-top: 6px !important; padding: 8px !important; border-radius: 14px; }
+  .bj-money { margin: 0 0 6px !important; padding: 0 !important; background: none; border: 0; box-shadow: none; }
+  .bj-money-head, .bj-money-sub { display: none; }
+  .bj-stats { gap: 4px; }
+  .bj-stat { flex-direction: row; justify-content: space-between; align-items: baseline; gap: 4px; padding: 6px 8px !important; border-radius: 10px; }
+  .bj-stat em { display: none; }
+  .bj-stat small { font-size: 11px !important; } .bj-stat > b { font-size: 16px !important; }
+  .bj-chips { gap: 4px !important; } .bj-chip { max-width: 46px; }
+  .bj-bet-row { gap: 6px; margin: 6px 0; } .bj-small { height: 40px; }
+  .bj-deal { height: 50px; font-size: 19px; border-radius: 14px; }
+  .bj-timer { height: 18px; margin-bottom: 6px !important; } .bj-timer small { line-height: 18px; font-size: 11px; }
+  .bj-btn { height: 58px !important; }
+  .bj-odds { position: relative; margin-bottom: 6px !important; } .bj-odds-head { min-height: 34px !important; padding: 4px 10px !important; }
+  /* 휴대폰: 펼치면 머리글 위로 뜨는 창 (테이블 높이를 빼앗지 않게) */
+  .bj-odds-body { position: absolute; z-index: 30; left: 0; right: 0; bottom: calc(100% + 6px); padding-top: 10px; border-radius: 12px;
+    background: #0b0a08; border: 1px solid var(--c-gold-2); box-shadow: 0 -10px 30px rgba(0,0,0,.6); }
+  .bj-tools { left: 10px; top: 30px; gap: 5px; flex-direction: row; flex-wrap: wrap; width: 90px; } .bj-tool { height: 40px; min-width: 40px; border-radius: 20px; }
+  .bj-mine .bj-seat:not(:has(.bj-hand)) .bj-seat-hands { min-height: 0; } /* 카드가 없을 땐(베팅 중) 카드 자리를 비워 두지 않음 */
+  .bj-mine .bj-spot { width: 62px; height: 62px; margin: 2px 0 4px; } .bj-mine .bj-stack, .bj-mine .bj-stack i { width: 34px; height: 34px; }
+  .bj-watch { margin: 2px 0; padding: 6px 14px; }
   .bj-table::before { border-radius: 12px 12px 50% 50% / 12px 12px 14% 14%; }
   .bj-tableno { left: 12px; top: 10px; }
   .bj-shoe { right: 10px; top: 10px; width: 42px; }
@@ -337,9 +364,10 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
   .bj-dealer #dealerTotal { height: 24px; font-size: 15px; }
   .bj-dealer-say { margin-top: 4px; font-size: 12px; min-height: 22px; }
   .bj-center { min-height: 28px; }
-  .bj-panel:has(#actBox:not([hidden])) .bj-tools { display: none; } /* 내 차례에는 아래 도구를 숨겨 행동 버튼이 화면 안에 */
   .bj-others { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
   .bj-others.all { grid-template-columns: repeat(4, 1fr); }
+  .bj-mine .bj-seat:has(.bj-hand) .bj-seat-info { display: none; } /* 카드를 받으면 '나' 줄은 숨김 (자리 위치·테두리로 충분) */
+  .bj-others:not(.all) .bj-seat.empty { display: none; } /* 앉아 있으면 빈자리 칸은 숨김 (관전 중엔 '앉기'로 보임) — 한 화면에 들어오게 */
   .bj-others .bj-seat { max-width: none; }
   .bj-others .bj-seat.split { --cw: calc(var(--cw-mini) * .72); } /* 휴대폰은 칸 너비가 같아서 카드를 줄임 */
   .bj-others .bj-seat.split .bj-hand .card + .card { margin-left: calc(var(--cw) * -0.62); }
@@ -352,7 +380,6 @@ body { background: radial-gradient(120% 70% at 50% 0%, #0f2a1d 0%, #090c0a 55%, 
   .bj-others .bj-hand { padding: 1px 2px 0; gap: 0; }
   .bj-others .bj-seat-info { margin-top: 1px; line-height: 1.2; }
   .bj-others .bj-seat-status { min-height: 13px; }
-  .bj-panel:has(#actBox:not([hidden])) .bj-money-sub { display: none; } /* 내 차례에는 카드 합이 테이블에 보이니 설명 줄을 숨겨 버튼을 화면 안에 */
   .bj-center { min-height: 24px; }
   .bj-stat b { font-size: 18px; } .bj-stat small { font-size: 11px; } .bj-stat em, .bj-stat em b { font-size: 10.5px; }
   .bj-stat { padding: 6px 4px 5px; }
