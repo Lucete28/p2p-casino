@@ -531,3 +531,7 @@ body { background: radial-gradient(120% 70% at 50% 0%, #2a1d0b 0%, #0d0b08 55%, 
   .sl-keys kbd { display: inline-block; min-width: 20px; margin: 0 2px; padding: 1px 6px; border: 1px solid var(--c-line); border-bottom-width: 2px; border-radius: 5px;
     background: #15100b; color: var(--c-ink); font: 700 11px/1.4 "Pretendard", sans-serif; }
 }
+
+/* 베팅 옆 안내가 없는 머신은 그 줄을 비움 */
+.sl-bet-hint:empty { display: none; }
+.sl-note.sl-legal { margin-top: 4px; font-size: 11px; opacity: .75; }
