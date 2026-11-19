@@ -141,6 +141,39 @@ html { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 .bj-tag.push { background: #23201a; border-color: #bdb39c; color: #efe7d4; }
 @keyframes bj-pop { from { transform: translate(-50%, -50%) scale(.3); opacity: 0; } }
 
+/* ---------- 이모지 (홀덤과 같은 말풍선·움직임) ---------- */
+.bj-emoji-wrap { position: relative; display: inline-flex; }
+.bj-tool.emoji { font-size: 18px; padding: 0; }
+.bj-emoji-panel { position: absolute; z-index: 40; left: calc(100% + 6px); top: 50%; transform: translateY(-50%); display: flex; gap: 2px; padding: 4px;
+  background: #0d0c0a; border: 1px solid var(--c-gold-2); border-radius: 22px; box-shadow: 0 10px 30px rgba(0,0,0,.7); }
+.bj-emoji-panel[hidden] { display: none; }
+.emoji-opt { width: 40px; height: 40px; border: 0; border-radius: 50%; background: transparent; font-size: 22px; cursor: pointer; }
+.emoji-opt:hover, .emoji-opt:focus-visible { background: #ffffff18; outline: none; }
+.emoji-opt:active { transform: scale(.85); }
+.bj-seat > .emoji-pop { position: absolute; z-index: 9; left: 50%; bottom: calc(100% - 8px); transform: translateX(-50%); pointer-events: none; }
+.bj-mine .bj-seat > .emoji-pop { bottom: auto; top: -46px; }
+.bj-mine .bj-seat:not(:has(.bj-hand)) > .emoji-pop { top: auto; bottom: 108px; } /* 카드가 없을 땐(베팅 중) 베팅 동그라미 바로 위 */
+.emoji-bubble { position: relative; display: grid; place-items: center; width: 54px; height: 54px; border-radius: 50%;
+  background: #f4f1e8; box-shadow: 0 6px 18px #0008, inset 0 -3px 0 #0001;
+  transform-origin: 50% 120%; animation: emoji-in .45s cubic-bezier(.34, 1.7, .5, 1) both, emoji-out .35s ease-in 2.25s forwards; }
+.bj-others .emoji-bubble { width: 44px; height: 44px; }
+.emoji-bubble::after { content: ''; position: absolute; left: 50%; bottom: -6px; width: 12px; height: 12px; background: #f4f1e8; transform: translateX(-50%) rotate(45deg); border-radius: 2px; }
+.emoji-face { position: relative; z-index: 1; display: block; font-size: 32px; line-height: 1; }
+.bj-others .emoji-face { font-size: 26px; }
+@keyframes emoji-in { 0% { opacity: 0; transform: scale(.2) translateY(14px); } 100% { opacity: 1; transform: none; } }
+@keyframes emoji-out { to { opacity: 0; transform: scale(.6) translateY(-10px); } }
+.emoji-face.fx-yawn { animation: fx-yawn 1.6s ease-in-out .35s 1 both; }
+.emoji-face.fx-thumb { transform-origin: 50% 90%; animation: fx-thumb .5s ease-out .35s 2; }
+.emoji-face.fx-laugh { animation: fx-laugh .18s ease-in-out .35s 8; }
+.emoji-face.fx-cry { animation: fx-cry .12s linear .35s 12; }
+.emoji-face.fx-fire { transform-origin: 50% 100%; animation: fx-fire .3s ease-in-out .3s 6 alternate; }
+@keyframes fx-yawn { 0%, 100% { transform: none; } 40% { transform: scale(1.18, .9) rotate(-6deg); } 70% { transform: scale(1.05) rotate(4deg); } }
+@keyframes fx-thumb { 0%, 100% { transform: none; } 40% { transform: translateY(-6px) rotate(-14deg) scale(1.15); } }
+@keyframes fx-laugh { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-12deg) translateY(-2px); } 75% { transform: rotate(12deg) translateY(-2px); } }
+@keyframes fx-cry { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(-2px) translateY(1px); } }
+@keyframes fx-fire { from { transform: scale(1, 1); filter: brightness(1); } to { transform: scale(1.12, 1.22); filter: brightness(1.25); } }
+@media (prefers-reduced-motion: reduce) { .emoji-bubble, .emoji-face { animation: none !important; } }
+
 /* ---------- 블랙잭 효과 ---------- */
 .bj-table::after { content: ""; position: absolute; inset: 0; z-index: 15; pointer-events: none; opacity: 0;
   background: radial-gradient(circle at 50% 55%, rgba(255,226,140,.55), rgba(255,200,90,.12) 45%, transparent 70%); }
@@ -351,7 +384,7 @@ html { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
   /* 휴대폰: 펼치면 머리글 위로 뜨는 창 (테이블 높이를 빼앗지 않게) */
   .bj-odds-body { position: absolute; z-index: 30; left: 0; right: 0; bottom: calc(100% + 6px); padding-top: 10px; border-radius: 12px;
     background: #0b0a08; border: 1px solid var(--c-gold-2); box-shadow: 0 -10px 30px rgba(0,0,0,.6); }
-  .bj-tools { left: 10px; top: 30px; gap: 5px; flex-direction: row; flex-wrap: wrap; width: 90px; } .bj-tool { height: 40px; min-width: 40px; border-radius: 20px; }
+  .bj-tools { left: 10px; top: 30px; gap: 5px; flex-direction: row; flex-wrap: wrap; width: 135px; } .bj-tool { height: 40px; min-width: 40px; border-radius: 20px; }
   .bj-mine .bj-seat:not(:has(.bj-hand)) .bj-seat-hands { min-height: 0; } /* 카드가 없을 땐(베팅 중) 카드 자리를 비워 두지 않음 */
   .bj-mine .bj-spot { width: 62px; height: 62px; margin: 2px 0 4px; } .bj-mine .bj-stack, .bj-mine .bj-stack i { width: 34px; height: 34px; }
   .bj-watch { margin: 2px 0; padding: 6px 14px; }
@@ -369,7 +402,8 @@ html { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
   .bj-mine .bj-seat:has(.bj-hand) .bj-seat-info { display: none; } /* 카드를 받으면 '나' 줄은 숨김 (자리 위치·테두리로 충분) */
   .bj-others:not(.all) .bj-seat.empty { display: none; } /* 앉아 있으면 빈자리 칸은 숨김 (관전 중엔 '앉기'로 보임) — 한 화면에 들어오게 */
   .bj-others .bj-seat { max-width: none; }
-  .bj-others .bj-seat.split { --cw: calc(var(--cw-mini) * .72); } /* 휴대폰은 칸 너비가 같아서 카드를 줄임 */
+  .bj-others .bj-seat.split { --cw: calc(var(--cw-mini) * .72); }
+  .bj-emoji-panel { left: 0; top: calc(100% + 6px); transform: none; } /* 휴대폰은 버튼 아래로 */ /* 휴대폰은 칸 너비가 같아서 카드를 줄임 */
   .bj-others .bj-seat.split .bj-hand .card + .card { margin-left: calc(var(--cw) * -0.62); }
   .bj-others .bj-hand-bet { display: none; }
   .bj-others .bj-hand { position: relative; }
