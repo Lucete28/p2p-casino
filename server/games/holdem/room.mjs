@@ -11,8 +11,8 @@ const EMPTY_CLOSE_MS = 30000     // 사람이 아무도 없으면 이만큼 뒤 
 // 게임 중 이모지 (app.js의 EMOJIS와 같게). 정해 둔 것만 보낼 수 있어서 글자 채팅 같은 내용은 오가지 않음
 export const EMOJIS = new Set(['🥱', '👍', '😂', '😭', '🔥'])
 
-// 봇이 들고 앉는 칩: 1,000~10,000 사이 100 단위로 무작위 (운영자 결정 2026-11-19)
-const botBuyIn = () => 1000 + 100 * randomInt(0, 91)
+// 봇이 들고 앉는 칩: 1,000~50,000 사이 100 단위로 무작위 (운영자 결정 2026-11-19, 상한 5만 2026-11-20)
+const botBuyIn = () => 1000 + 100 * randomInt(0, 491)
 
 export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, wallet, titleOf = id => id, onClose }) {
   class Room {
@@ -191,12 +191,21 @@ export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, wallet, 
       if (m === by) return this.sendTo(by, { t: 'kickResult', ok: false, msg: '나 자신은 내보낼 수 없어요.' })
       const name = s.name
       this.kicked.add(m.user)
+      // 판에 남아 있는 사람(폴드 안 함)은 이 판을 끝까지 하고 나감: 방장이 좋은 패를 쥔 사람을 내보내 강제로 폴드시키지 못하게
+      if (this.table.isBetting() && s.inHand && !s.folded) {
+        if (m.kickPending) return this.sendTo(by, { t: 'kickResult', ok: true, msg: `${name} 님은 이번 판이 끝나면 나가요.` })
+        m.kickPending = true
+        m.pendingLeave = '방장이 이 방에서 내보냈어요'
+        m.leaving = true
+        this.table.addLog(`방장이 ${name} 님을 내보내기로 했어요. 이번 판이 끝나면 나가요.`)
+        this.tell(m, '방장이 내보내기로 했어요. 이번 판은 끝까지 할 수 있고, 판이 끝나면 남은 칩을 코인으로 돌려받아요.')
+        this.sendTo(by, { t: 'kickResult', ok: true, msg: `${name} 님은 판에 남아 있어서 이번 판이 끝나면 나가요.` })
+        return this.broadcast()
+      }
       this.sendTo(m, { t: 'kicked' })
-      const later = this.standUpLater(m)
       this.leave(m, '방장이 이 방에서 내보냈어요')
-      this.sendTo(by, { t: 'kickResult', ok: true, msg: later ? `${name} 님은 올인 중이라 이번 판이 끝나면 나가요.` : `${name} 님을 내보냈어요.` })
+      this.sendTo(by, { t: 'kickResult', ok: true, msg: `${name} 님을 내보냈어요.` })
     }
-    standUpLater(m) { const s = this.seatOf(m); return !!(s && this.table.isBetting() && s.inHand && !s.folded && s.allIn) }
 
     // ---------- 이모지 (앉은 사람만, 정해 둔 것만, 1.2초에 한 번) ----------
     emoji(m, e) {
@@ -372,7 +381,7 @@ export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, wallet, 
       for (const m of [...this.members.values()]) {
         const s = this.seatOf(m)
         if (!s || !m.session) continue
-        if (m.pendingLeave) { const why = m.pendingLeave; m.pendingLeave = null; m.leaving ? this.leave(m, why) : this.standUp(m, why); continue }
+        if (m.pendingLeave) { const why = m.pendingLeave; m.pendingLeave = null; if (m.kickPending) this.sendTo(m, { t: 'kicked' }); m.leaving ? this.leave(m, why) : this.standUp(m, why); continue }
         if (s.stack <= 0) { this.standUp(m, '칩을 모두 잃었어요'); continue }
         if (s.sitOut && m.awaySince && Date.now() - m.awaySince > AWAY_STAND_MS) this.standUp(m, '자리를 오래 비워서 일어났어요')
       }
