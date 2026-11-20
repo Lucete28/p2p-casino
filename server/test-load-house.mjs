@@ -1,5 +1,5 @@
 // 동시 접속 부하 시험 (#부하, 로컬 전용 — 실제 사이트에 하지 않는다)
-//   mock-auth + 카지노 서버를 띄우고:  SERVER_PID=<카지노 node PID> N=500 SECS=40 node test-load.mjs
+//   mock-auth + 카지노 서버를 띄우고:  SERVER_PID=<카지노 node PID> N=500 SECS=40 node test-load-house.mjs
 // N명이 슬롯에 붙어 2초마다 한 번씩 돌린다 (기념 칩 5,000으로). 서버 CPU·메모리, 받은 메시지 크기·횟수, 스핀 응답 시간을 잰다.
 // 끝에 재시작 흉내: 모두 끊었다가 화면처럼 무작위 지연으로 다시 붙는 데 걸린 시간
 import WebSocket from 'ws'

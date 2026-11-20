@@ -206,7 +206,7 @@ PORT=3200 JMTT_AUTH_URL=http://127.0.0.1:3100 JMTT_COIN_KEY=test CASINO_ADMINS=u
 |---|---|
 | `test-routes.mjs` | 주소·옛 주소·wip 막기·내보내면 안 되는 파일·로비 API |
 | `test-stats.mjs` | 통계 요약 API는 앱 열쇠만(401), 통계 페이지는 운영자만, 판을 하면 숫자가 오름 |
-| `test-load.mjs` | 동시 접속 부하 (**로컬 전용**): `SERVER_PID=<카지노 PID> N=500 node test-load.mjs` — 슬롯 N명이 2초마다 스핀, CPU·메모리·메시지·응답 시간·재접속 |
+| `test-load-house.mjs` | 동시 접속 부하 (**로컬 전용**): `SERVER_PID=<카지노 PID> N=500 node test-load-house.mjs` — 슬롯 N명이 2초마다 스핀, CPU·메모리·메시지·응답 시간·재접속 |
 | `test-house.mjs` | 관리 모드·칩 지갑 (테스트 게임). `CRASH=1`이면 판 도중 멈춤 → 서버 강제 종료·재시작 후 건 칩까지 돌아왔는지 장부 확인 |
 | `test-big.mjs` | 큰 금액: 21억이 넘는 코인 읽기, 큰 금액을 한 번에 맡기고 돌려받기, 한 사람의 정산이 다른 사람의 '코인으로'를 붙잡지 않음, 잔액이 MAX_SAFE_INTEGER를 넘게 되는 정산(`too_large`)에 안내·코인 그대로 |
 | `test-refill.mjs` | 파산 지원금: 코인 501이면 거절·500이면 됨, 칩이 있으면 거절(칩 0 자리는 괜찮음), 하루 10번, 동시에 눌러도 한 번. mock을 `MOCK_NO_EARN=1`로 띄우고 `EXPECT_NO_EARN=1`이면 메인 권한 없을 때(`not_ready`) |
