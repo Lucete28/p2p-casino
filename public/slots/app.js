@@ -950,6 +950,7 @@ if (firstVisit) helpDlg.showModal()
 game = await startGame({
   autoBuyIn: !firstVisit, // 처음이면 안내를 먼저 보고 '시작하기'에서 칩 바꾸기
   bustDelay: 1500, // 칩을 다 잃었을 때 파산 안내는 릴이 멈추고 결과를 본 뒤에
+  leaveMessage: () => null, // 공통 '← 로비' 확인은 끔: 슬롯은 아래 '로비로 · JMTT 홈으로'에서 직접 (돌던 판도 정산, 크래시 비행 중만 물음)
   onToast(d) { refused(d.msg) }, // 알림 자체는 기본대로 띄움
   onLoggedOut() { $('creditBar').hidden = true; say('로그인하면 할 수 있어요', '', '로그인 버튼을 눌러 시작해요'); paintSpin() },
   onReady() { paintBet(); paintCredit(game?.chips ?? 0) },
