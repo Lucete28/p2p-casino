@@ -30,7 +30,7 @@ html { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 .bj-dealer-plate > b:first-of-type { padding-right: 2px; font-size: 14px; font-weight: 800; letter-spacing: .1em; color: var(--c-ink); }
 .bj-dealer-icon { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; color: #1a1205;
   background: radial-gradient(circle at 35% 30%, #fff1b8, var(--c-gold) 55%, var(--c-gold-2)); }
-.bj-dealer #dealerTotal { height: 26px; min-width: 38px; font-size: 17px; }
+.bj-dealer #dealerTotal { flex: none; height: 26px; min-width: 38px; font-size: 17px; }
 .bj-dealer-say { margin: 6px 0 0; min-height: 24px; padding: 3px 12px; border-radius: 12px; font-size: 13px; font-weight: 700; line-height: 18px;
   color: rgba(245,239,224,.88); background: rgba(0,0,0,.3); transition: background .2s, color .2s; }
 .bj-dealer-say:empty { visibility: hidden; }
@@ -140,6 +140,9 @@ html { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 .bj-tag.lose, .bj-tag.bust { background: #3a0a0e; border-color: #ff6b6b; color: #ffd0d0; }
 .bj-tag.push { background: #23201a; border-color: #bdb39c; color: #efe7d4; }
 @keyframes bj-pop { from { transform: translate(-50%, -50%) scale(.3); opacity: 0; } }
+
+/* 윗줄 JMTT 메인 링크 (← 로비 옆) */
+.casino-top .bj-jmtt { margin-left: -4px; font-weight: 800; color: var(--c-gold); }
 
 /* ---------- 이모지 (홀덤과 같은 말풍선·움직임) ---------- */
 .bj-emoji-wrap { position: relative; display: inline-flex; }
@@ -372,9 +375,9 @@ html { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
   .bj-money { margin: 0 0 6px !important; padding: 0 !important; background: none; border: 0; box-shadow: none; }
   .bj-money-head, .bj-money-sub { display: none; }
   .bj-stats { gap: 4px; }
-  .bj-stat { flex-direction: row; justify-content: space-between; align-items: baseline; gap: 4px; padding: 6px 8px !important; border-radius: 10px; }
+  .bj-stat { flex-direction: column; justify-content: center; align-items: center; gap: 0; padding: 3px 4px !important; border-radius: 10px; } /* 이름 작게 위, 숫자 아래 (12.3억도 잘리지 않게) */
   .bj-stat em { display: none; }
-  .bj-stat small { font-size: 11px !important; } .bj-stat > b { font-size: 16px !important; }
+  .bj-stat small { font-size: 10px !important; line-height: 1.1; } .bj-stat > b { font-size: 16px !important; line-height: 1.2; }
   .bj-chips { gap: 4px !important; } .bj-chip { max-width: 46px; }
   .bj-bet-row { gap: 6px; margin: 6px 0; } .bj-small { height: 40px; }
   .bj-deal { height: 50px; font-size: 19px; border-radius: 14px; }

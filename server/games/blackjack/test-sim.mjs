@@ -16,6 +16,7 @@ const count = { blackjack: 0, win: 0, push: 0, lose: 0, bust: 0, dealerBust: 0, 
 const ctx = {
   rng,
   send(p, m) { if (m.t === 'state') last.set(p.id, m); else if (m.t === 'toast') throw new Error('거절됨: ' + m.msg) },
+  broadcast(list, m) { for (const p of list) this.send(p, m) },
   players: () => players,
   limit: () => true,
   bet(pl, amount) {

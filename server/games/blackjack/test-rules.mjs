@@ -20,6 +20,7 @@ function setup(cards, chips = [1000]) {
   const ctx = {
     rng: { deck: () => [...cards, ...filler], int: () => 0 },
     send(p, m) { sent.get(p.id)?.push(m) },
+    broadcast(list, m) { for (const p of list) sent.get(p.id)?.push(JSON.parse(JSON.stringify(m))) }, // 코어처럼 한 번 만든 걸 같이
     players: () => ps,
     limit: () => true,
     bet(pl, a) { if (!Number.isSafeInteger(a) || a < 1 || a > pl.chips) return false; pl.chips -= a; pl.inPlay += a; return true },
@@ -62,6 +63,7 @@ await ok('블랙잭 3:2 (홀수 베팅의 반 칩은 버림), 스플릿 뒤 21�
 await ok('들어오면 관전 (자리를 차지하지 않음), 베팅하면 가운데부터 앉고, 일곱 자리가 차면 새 테이블에서 관전', () => {
   const T = setup([], Array(8).fill(100))
   const A = T.ps[0]
+  tick(2000) // '관전 N'은 모아서 2초에 한 번 (#부하)
   assert.equal(T.last(A).me, -1); assert.equal(T.last(A).seats.filter(Boolean).length, 0); assert.equal(T.last(A).watching, 8)
   for (const p of T.ps.slice(0, 7)) T.bet(p, 10)
   assert.deepEqual(T.ps.slice(0, 7).map(p => T.last(p).me), [3, 2, 4, 1, 5, 0, 6])
@@ -330,6 +332,28 @@ await ok('이모지: 앉은 사람만, 다섯 개만, 1.2초에 한 번 → 테�
   assert.deepEqual(emojis(A).map(m => m.e), ['🔥', '😭'])
   assert.equal(EMOJIS.length, 5)
   T.close()
+})
+
+await ok('큰 칩 (#규모): 스플릿·더블 둘 다 이겨도 정확한 정수, 너무 큰 베팅은 거절', async () => {
+  const { MAX_BET } = await import('../../../public/blackjack/rules.mjs')
+  // 8 8 vs 6(T): 스플릿 → 첫 손 8+3 더블 T = 21, 둘째 손 8+3 더블 T = 21, 딜러 16 + T 버스트
+  const T = setup(['8s', '6d', '8c', 'Th', '3d', 'Ts', '3h', 'Tc', 'Td'], [4e15])
+  const [A] = T.ps
+  dealAll(T, [1e15])
+  assert.equal(A.chips, 3e15)
+  T.act(A, 'split'); T.act(A, 'double'); T.act(A, 'double')
+  assert.equal(A.inPlay, 4e15); assert.equal(A.chips, 0)
+  tick(1000); toResult()
+  assert.equal(A.chips, 8e15); assert.ok(Number.isSafeInteger(A.chips))
+  T.close()
+  const U = setup([], [Number.MAX_SAFE_INTEGER, 1e15])
+  const [B, C] = U.ps
+  U.bet(B, MAX_BET + 1) // 최대 베팅 넘음
+  U.bet(C, 1e15) // 보유 1,000조 + 4배 = 5,000조 → 괜찮음
+  U.bet(B, 1e15) // 보유 9,007조 + 4배 > 9,007조 → 거절
+  assert.equal(U.toasts(B).filter(m => m.includes('너무 커요')).length, 2)
+  assert.equal(U.last(C).seats[U.last(C).me].ready, true)
+  U.close()
 })
 
 mock.timers.reset()
