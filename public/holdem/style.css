@@ -600,3 +600,14 @@ label.public-check { flex-direction: row; align-items: center; gap: 6px; font-si
   .act-fx.allin { font-size: 17px; }
   .act-ring { width: 80px; height: 40px; margin: -20px 0 0 -40px; }
 }
+
+/* #닉네임: 이름은 JMTT 닉네임. 내 이름을 누르면 배지의 닉네임 칸, 다른 사람 이름은 신고 */
+.user-name { background: none; border: 0; padding: 0; color: inherit; font: inherit; font-weight: 700; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.name-btn { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.name-btn:hover { text-decoration: underline dotted; }
+.name-report { margin-left: 6px; padding: 1px 6px; border-radius: 8px; border: 1px solid var(--line); background: none; color: var(--muted, #8b949e); font-size: 11px; cursor: pointer; opacity: .6; }
+.name-report:hover, .name-report:focus-visible { opacity: 1; }
+h1 .home-link { color: inherit; text-decoration: none; }
+.gift-chip { border-color: #d4a72c; color: #f2cc60; animation: gift-in .4s ease-out; }
+.gift-chip[hidden] { display: none; }
+@keyframes gift-in { from { transform: scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }

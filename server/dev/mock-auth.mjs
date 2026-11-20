@@ -7,6 +7,8 @@
 import http from 'node:http'
 import net from 'node:net'
 
+const nicks = new Map(), reports = []
+const nameOf = u => nicks.get(u) || u.slice(2)
 const PORT = +process.env.MOCK_PORT || 3100
 const CASINO = +process.env.CASINO_PORT || 3200
 const ledger = new Map()   // user → balance
@@ -31,13 +33,27 @@ const server = http.createServer((req, res) => {
       res.writeHead(302, { Location: next, 'Set-Cookie': `jmtt_session=${id}; Path=/` }); return res.end()
     }
     if (p === '/auth/logout') return json(res, 200, { ok: true }, { 'Set-Cookie': 'jmtt_session=; Path=/; Max-Age=0' })
-    if (p === '/auth/me') return u ? json(res, 200, { id: u, name: u.slice(2), picture: null, coins: bal(u), checkedIn: false })
+    if (p === '/auth/me') return u ? json(res, 200, { id: u, name: nameOf(u), picture: null, coins: bal(u), checkedIn: false })
       : url.searchParams.get('optional') === '1' ? json(res, 200, null) : json(res, 401, { error: 'not_logged_in' })
     if (p === '/auth/coin/attendance' && req.method === 'POST') {
       if (!u) return json(res, 401, { error: 'not_logged_in' })
       ledger.set(u, bal(u) + 100); return json(res, 200, { ok: true, balance: bal(u), gained: 100, already: false })
     }
-    if (p === '/auth/internal/me') return u ? json(res, 200, { id: u, sub: 'sub-' + u, name: u.slice(2), picture: null }) : json(res, 401, {})
+    if (p === '/auth/internal/me') return u ? json(res, 200, { id: u, sub: 'sub-' + u, name: nameOf(u), picture: null }) : json(res, 401, {})
+    // 닉네임 (LOGIN_GUIDE 3장): /auth/_nick?user=u_x&name=새이름 으로 바꿔 보기, names·nickname-report 흉내
+    if (p === '/auth/_nick') { nicks.set(url.searchParams.get('user'), url.searchParams.get('name')); return json(res, 200, { ok: true }) }
+    if (p === '/auth/_reports') return json(res, 200, { reports })
+    if ((p === '/auth/internal/names' || p === '/auth/internal/nickname-report') && req.method === 'POST') {
+      if (req.headers.authorization !== 'Bearer test') return json(res, 403, { error: 'forbidden' })
+      let body = ''
+      req.on('data', c => body += c)
+      req.on('end', () => {
+        const b = JSON.parse(body || '{}')
+        if (p.endsWith('/names')) return json(res, 200, { names: Object.fromEntries((b.ids || []).map(id => [id, nameOf(id)])) })
+        reports.push(b); json(res, 200, { ok: true })
+      })
+      return
+    }
     if (p === '/auth/_ledger') return json(res, 200, { ledger: Object.fromEntries(ledger), log })
     if (p.startsWith('/auth/internal/coin/')) {
       if (req.headers.authorization !== 'Bearer test') return json(res, 403, { error: 'forbidden' })
