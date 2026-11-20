@@ -1,8 +1,8 @@
 // 화면 + 카지노 서버 연결. 카드 섞기·판 진행·봇·코인 정산은 서버가 하고, 브라우저는 행동만 보내고 상태만 받는다 (v1.8.0~)
-import { connect } from './net.js?v=1.9.4'
-import { CONFIG } from './poker.js?v=1.9.4'
-import * as cloud from './cloud.js?v=1.9.4'
-import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.9.4'
+import { connect } from './net.js?v=1.9.5'
+import { CONFIG } from './poker.js?v=1.9.5'
+import * as cloud from './cloud.js?v=1.9.5'
+import { analyze, currentHand, HAND_RANKS, HAND_EXAMPLES, HAND_DESC } from './odds.js?v=1.9.5'
 
 // 카카오톡·라인 같은 앱 안 브라우저는 외부 브라우저로 (Google 로그인이 막혀 있음. 로그인 화면도 따로 안내함)
 const UA = navigator.userAgent
@@ -15,17 +15,14 @@ else if (/\bLine\//i.test(UA) && !new URLSearchParams(location.search).has('open
   location.replace(u)
 }
 
-const VERSION = '1.9.4' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
+const VERSION = '1.9.5' // 배포할 때마다 올리기 (README의 버전 기록도 함께)
 
-// 연습 토큰 시절의 브라우저 저장값 정리 (토큰은 코인으로 바뀜. 닉네임만 이어 씀)
-const NAME_KEY = 'casino:name'
+// 예전 브라우저 저장값 정리: 연습 토큰, 카지노 닉네임 (이름은 이제 JMTT 닉네임만, #닉네임 2026-11-20)
 ;(function cleanupOldKeys() {
   try {
-    const oldWallet = JSON.parse(localStorage.getItem('casino:wallet') || 'null')
-    if (oldWallet?.name && !localStorage.getItem(NAME_KEY)) localStorage.setItem(NAME_KEY, oldWallet.name)
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i)
-      if (k === 'casino:wallet' || k?.startsWith('casino:visit.') || k?.startsWith('p2pcasino.')) localStorage.removeItem(k)
+      if (k === 'casino:wallet' || k === 'casino:name' || k?.startsWith('casino:visit.') || k?.startsWith('p2pcasino.')) localStorage.removeItem(k)
     }
   } catch {}
 })()
@@ -38,6 +35,15 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
 
 const $ = s => document.querySelector(s)
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`)
+// 큰 코인 숫자는 줄여서 (칸을 넘치지 않게, #규모). 1억 미만은 그대로, 그 위는 억·조·경
+function fmtCoin(n) {
+  n = Number(n) || 0
+  const a = Math.abs(n)
+  if (a < 1e8) return n.toLocaleString()
+  const [u, v] = a >= 1e16 ? ['경', 1e16] : a >= 1e12 ? ['조', 1e12] : ['억', 1e8]
+  const x = n / v
+  return (Math.abs(x) >= 100 ? Math.trunc(x).toLocaleString() : (Math.trunc(x * 10) / 10).toLocaleString()) + u
+}
 
 // ---------- 상태 ----------
 let account = null        // JMTT 계정 { id, name, picture } (로그인 안 했으면 null)
@@ -54,8 +60,7 @@ let connectStage = ''
 let loginDown = false
 
 // ---------- 로비 ----------
-const nameInput = $('#name'), codeInput = $('#code')
-try { nameInput.value = localStorage.getItem(NAME_KEY) || '' } catch {}
+const codeInput = $('#code')
 codeInput.value = location.hash.slice(1).toUpperCase()
 $('#version').textContent = $('#version-game').textContent = 'v' + VERSION
 const inviteCode = location.hash.slice(1).toUpperCase()
@@ -73,10 +78,9 @@ if (IN_APP) {
 }
 
 let autoJoined = false
-// 초대 링크(#방코드)로 들어오면 로그인·닉네임이 준비되는 대로 바로 그 방에 입장
+// 초대 링크(#방코드)로 들어오면 로그인이 되는 대로 바로 그 방에 입장
 function tryAutoJoin() {
   if (!inviteCode || autoJoined || roomCode || !net?.ready) return
-  if (!nameInput.value.trim()) { nameInput.focus(); return }
   autoJoined = true
   $('#join').click()
 }
@@ -86,7 +90,6 @@ function showInvite() {
   box.hidden = !inviteCode
   if (!inviteCode) return
   const next = !account ? (loginDown ? '로그인 서버 점검 중이라 지금은 들어갈 수 없어요.' : 'Google로 로그인하면 바로 들어가요.')
-    : !nameInput.value.trim() ? '닉네임을 입력하고 <b>참가하기</b>를 눌러 주세요.'
     : '방에 들어가는 중…'
   box.innerHTML = `🎟 <b>${esc(inviteCode)}</b> 방에 초대받았어요<br><small>${next}</small>`
 }
@@ -97,32 +100,20 @@ function updateLobbyWallet() {
   $('#create').disabled = $('#join').disabled = $('#quick').disabled = !ready
   if (account) {
     $('#lobby-wallet').innerHTML = coins == null ? '코인 불러오는 중…'
-      : `보유 코인 <b>${coins.toLocaleString()}</b><br><small>방에 앉으면 가진 코인을 모두 맡기고, 일어나면 남은 칩을 돌려받아요.</small>`
-      + (coins === 0 ? '<br><span class="out">코인이 없어요. 오른쪽 아래 JMTT 배지에서 출석하면 코인을 받을 수 있어요.</span>' : '')
+      : `보유 코인 <b title="${coins.toLocaleString()}">${fmtCoin(coins)}</b><br><small>앉으면 가진 코인을 모두 칩으로 바꾸고, 일어나면 남은 칩을 돌려받아요.</small>`
+      + (coins === 0 ? '<br><span class="out">코인이 없어요. <a href="../?cashier">카지노 로비 캐셔</a>에서 파산 지원금을 받을 수 있어요.</span>' : '')
   }
   showInvite()
 }
 
-function takeName() {
-  const n = nameInput.value.trim().slice(0, 12)
-  if (!n) { nameInput.focus(); toast('닉네임을 입력하세요.'); return null }
-  try { localStorage.setItem(NAME_KEY, n) } catch {}
-  return n
-}
-
-$('#create').onclick = () => {
-  const name = takeName()
-  if (name) net.send({ t: 'create', name, public: $('#public-check').checked })
-}
+// 게임 안 이름은 JMTT 닉네임 (서버가 메인에게 받음). 바꾸기는 JMTT 배지에서만
+$('#create').onclick = () => net.send({ t: 'create', public: $('#public-check').checked })
 $('#join').onclick = () => {
-  const name = takeName()
-  if (!name) return
   const code = codeInput.value.trim().toUpperCase()
   if (!code) { codeInput.focus(); toast('방 코드를 입력하세요.'); return }
-  net.send({ t: 'join', code, name })
+  net.send({ t: 'join', code })
 }
 codeInput.onkeydown = e => { if (e.key === 'Enter') $('#join').click() }
-nameInput.onkeydown = e => { if (e.key === 'Enter' && inviteCode) $('#join').click() } // 초대받았으면 닉네임 입력 후 Enter로 바로 입장
 
 // ---------- 공개 방 목록 · 빠른 시작 ----------
 let roomsTimer = null
@@ -142,14 +133,10 @@ async function refreshRooms() {
 }
 $('#room-list').onclick = e => {
   const b = e.target.closest('[data-room]')
-  const name = b && takeName()
-  if (name) net.send({ t: 'join', code: b.dataset.room, name })
+  if (b) net.send({ t: 'join', code: b.dataset.room })
 }
 // 빈자리 있는 공개 방에 서버가 자리를 정해 줌 (없으면 봇과 새 공개 방)
-$('#quick').onclick = () => {
-  const name = takeName()
-  if (name) net.send({ t: 'quick', name })
-}
+$('#quick').onclick = () => net.send({ t: 'quick' })
 
 // ---------- 로그인: JMTT 계정 (DEV_REFERENCE 2-1) ----------
 // 로그인은 JMTT 공통 화면에서. 로비에서는 그 화면으로 갔다가 돌아오고, 방 안·초대 링크처럼 떠나면 안 될 때는 작은 창으로
@@ -159,7 +146,14 @@ $('#login').onclick = async () => {
   try { await cloud.loginPopup(); location.reload() }
   catch { toast('로그인 창이 막혔어요. 팝업을 허용하고 다시 눌러 주세요.') }
 }
-$('#logout').onclick = () => cloud.logout()
+// 내 이름을 누르면 JMTT 배지의 닉네임 칸이 열림. 바뀌면 화면과 방 안 이름을 바로 고침
+$('#user-name').onclick = () => window.JMTT?.badge?.editNickname?.()
+addEventListener('jmtt:nickname', e => {
+  if (!account || !e.detail?.name) return
+  account.name = e.detail.name
+  $('#user-name').textContent = account.name
+  net?.send({ t: 'rename' })
+})
 updateLobbyWallet()
 
 ;(async function start() {
@@ -170,14 +164,11 @@ updateLobbyWallet()
   $('#login').disabled = loginDown
   $('#login span').textContent = loginDown ? '로그인 서버 점검 중' : 'Google로 로그인'
   $('#user-line').hidden = !account
-  document.querySelector('.login-note').hidden = !!account || loginDown
   if (loginDown) toast('로그인 서버를 점검하고 있어요. 잠시 뒤 다시 들어와 주세요.')
   if (!account) return updateLobbyWallet()
-  // 이름은 JMTT 계정 것, 게임 닉네임은 따로 (처음이면 JMTT 이름으로)
   $('#user-name').textContent = account.name || '플레이어'
   $('#user-pic').hidden = !account.picture
   if (account.picture) $('#user-pic').src = account.picture
-  if (!nameInput.value) nameInput.value = (account.name || '').slice(0, 12)
   coins = r.coins ?? null
   updateLobbyWallet()
   openNet()
@@ -192,7 +183,7 @@ function openNet() {
     onOpen() {
       connectStage = ''
       updateLobbyWallet()
-      if (roomCode) net.send({ t: 'join', code: roomCode, name: nameInput.value.trim() || account?.name }) // 다시 연결되면 같은 자리로
+      if (roomCode) net.send({ t: 'join', code: roomCode }) // 다시 연결되면 같은 자리로
       else tryAutoJoin()
     },
     onClose(info) {
@@ -229,6 +220,7 @@ function onServer(d) {
     case 'kickResult': clearTimeout(kickTimer); if (d.msg) toast(d.msg); return
     case 'kicked': clearInvite(); return showOverlay('방에서 나가게 됐어요', '방장이 이 방에서 내보냈어요. 맡긴 코인은 남은 칩만큼 돌려받았어요.')
     case 'left': return backToLobby()
+    case 'busy': toast(d.msg); return
     case 'restart': connectStage = '서버를 다시 시작하는 중… 잠시 뒤 자동으로 다시 들어가요.'; return render()
   }
 }
@@ -238,10 +230,15 @@ function enterRoom(d) {
   selfId = d.seatId
   myHole = null
   clearInterval(roomsTimer)
-  history.replaceState(null, '', location.pathname + location.search + '#' + d.code) // 새로고침해도 같은 방·같은 자리로
+  // 주소에 방 코드 (새로고침해도 같은 방·같은 자리로). 뒤로 가기는 홀덤 처음 화면으로 (popstate에서 나가기)
+  if (!history.state?.room) {
+    history.replaceState(null, '', location.pathname + location.search)
+    history.pushState({ room: d.code }, '', location.pathname + location.search + '#' + d.code)
+  }
   $('#lobby').hidden = true
   $('#game').hidden = false
-  window.JMTT?.badge?.hide() // 게임 중에는 JMTT 배지를 숨김
+  window.JMTT?.badge?.hide() // 게임 중에는 JMTT 배지를 숨김 (선물은 위쪽 🎁로 작게 알림)
+  showGift(window.JMTT?.gift?.count)
   $('#room-code').textContent = d.code
   render()
 }
@@ -278,6 +275,15 @@ $('#seats').addEventListener('click', e => {
   kickTimer = setTimeout(() => toast('서버 응답이 없어요. 다시 연결하는 중이니 잠시 뒤 한 번 더 눌러 주세요.'), 5000)
 })
 let kickTimer = 0
+// 이름 신고: 방 참가자 이름이나 랭킹의 "신고"를 누르면 (상대 ID는 서버가 찾음)
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-report], [data-rank]')
+  if (!b) return
+  const name = b.dataset.report ? b.textContent : b.closest('li')?.querySelector('.nm')?.firstChild?.textContent
+  if (!confirm(`${name} 님의 이름을 신고할까요? (욕설·사칭 등 부적절한 이름이면 운영자가 바꿔요)`)) return
+  if (!net?.ready) return toast('서버와 연결된 뒤에 다시 눌러 주세요.')
+  net.send(b.dataset.report ? { t: 'report', seat: b.dataset.report } : { t: 'report', rank: +b.dataset.rank })
+})
 $('#bot-add').onclick = () => net?.send({ t: 'bot' })
 $('#sit-btn').onclick = () => { $('#sit-btn').hidden = true; net?.send({ t: 'sit' }) }
 // 탭이 뒤로 갔는지 서버에 알림 (자리 비움을 더 빨리 판단)
@@ -318,7 +324,7 @@ function cardHtml(c, cls = '') {
 
 function render() {
   const me = state?.seats.find(p => p.id === selfId)
-  $('#my-tokens').textContent = (me ? me.stack + me.bet : 0).toLocaleString() // 테이블에 맡긴 칩
+  $('#my-tokens').textContent = fmtCoin(me ? me.stack + me.bet : 0) // 테이블에 맡긴 칩
 
   if (!state) {
     $('#status').innerHTML = connectStage === 'fail'
@@ -365,12 +371,12 @@ function render() {
       <div class="plate">
         ${p.id === state.dealerId ? '<b class="dealer">D</b>' : ''}
         ${isHost && p.id !== selfId && !p.left ? `<button class="kick-btn" data-kick="${esc(p.id)}" title="${p.bot ? '봇 빼기' : '내보내기'}" aria-label="${esc(p.name)} ${p.bot ? '빼기' : '내보내기'}">✕</button>` : ''}
-        <div class="pname">${esc(p.name)}${tags}</div>
-        <div class="stack">🪙 ${p.stack.toLocaleString()}</div>
+        <div class="pname">${!p.bot && p.id !== selfId ? `<button class="name-btn" data-report="${esc(p.id)}" title="이름 신고 (욕설·사칭 등)">${esc(p.name)}</button>` : esc(p.name)}${tags}</div>
+        <div class="stack" title="${p.stack.toLocaleString()}">🪙 ${fmtCoin(p.stack)}</div>
         ${turn ? '<div class="timer"><i></i></div>' : ''}
       </div>
       ${p.last ? `<div class="last">${esc(p.last)}</div>` : ''}
-      ${p.bet ? `<div class="bet">${chipStack(p.bet)}<span>${p.bet.toLocaleString()}</span></div>` : ''}
+      ${p.bet ? `<div class="bet">${chipStack(p.bet)}<span>${fmtCoin(p.bet)}</span></div>` : ''}
     </div>`
   }).join('')
 
@@ -387,7 +393,7 @@ function render() {
     ? cardHtml(state.board[i], `${i >= fresh ? 'deal' : ''} ${mark(state.board[i])}`)
     : '<div class="card slot"></div>').join('')
   const potTotal = state.pot + seats.reduce((a, p) => a + p.bet, 0)
-  $('#pot').innerHTML = potTotal ? `<span class="pot-chips">${chipColumns(potTotal)}</span><span>팟 ${potTotal.toLocaleString()}</span>` : ''
+  $('#pot').innerHTML = potTotal ? `<span class="pot-chips">${chipColumns(potTotal)}</span><span title="${potTotal.toLocaleString()}">팟 ${fmtCoin(potTotal)}</span>` : ''
   renderWaiting(seats)
 
   // 결과 배너 (내용이 바뀔 때만 다시 그려서 애니메이션이 한 번만 나오게)
@@ -399,7 +405,7 @@ function render() {
     $('#result').className = 'result' + (showResult ? ' big' : '') + (iWon ? ' mine' : '')
     $('#result').innerHTML = showResult
       ? (iWon ? '<div class="win-title">승리!</div>' : '') +
-        r.winners.map(w => `🏆 <b>${esc(w.name)}</b> <span class="amt">+${w.amount.toLocaleString()}</span>${w.hand ? ` <small>${esc(w.hand)}</small>` : ''}`).join('<br>')
+        r.winners.map(w => `🏆 <b>${esc(w.name)}</b> <span class="amt">+${fmtCoin(w.amount)}</span>${w.hand ? ` <small>${esc(w.hand)}</small>` : ''}`).join('<br>')
       : ''
     if (showResult && state.handNo !== celebrated) { celebrated = state.handNo; celebrate(r) }
   }
@@ -533,7 +539,7 @@ function celebrate(r) {
     // +금액 떠오르기
     const amt = document.createElement('div')
     amt.className = 'float-amt'
-    amt.textContent = '+' + w.amount.toLocaleString()
+    amt.textContent = '+' + fmtCoin(w.amount)
     amt.style.left = x
     amt.style.top = y
     fx.appendChild(amt)
@@ -692,14 +698,14 @@ function seasonLeft() {
   const d = Math.floor(ms / 86400e3), h = Math.floor((ms % 86400e3) / 3600e3)
   return d ? `${d}일 ${h}시간` : `${h}시간`
 }
-const signed = n => (n > 0 ? '+' : '') + n.toLocaleString()
+const signed = n => (n > 0 ? '+' : '') + fmtCoin(n)
 const MEDAL = ['🥇', '🥈', '🥉']
 
 function seasonList(rows) {
   return `<ol class="season-list">${rows.map((r, i) => `
     <li class="${r.me ? 'me' : ''}">
       <span class="rk">${MEDAL[i] || i + 1}</span>
-      <span class="nm">${esc(r.name || '이름 없음')}${r.me ? ' <i>나</i>' : ''}</span>
+      <span class="nm">${esc(r.name || '이름 없음')}${r.me ? ' <i>나</i>' : `<button class="name-report" data-rank="${i + 1}" title="이름 신고 (욕설·사칭 등)" aria-label="${esc(r.name)} 이름 신고">신고</button>`}</span>
       <span class="net ${r.net > 0 ? 'up' : r.net < 0 ? 'down' : ''}">${signed(r.net || 0)}</span>
       <span class="hd">${(r.hands || 0).toLocaleString()}판</span>
     </li>`).join('')}</ol>`
@@ -723,7 +729,7 @@ async function loadSeasonInto(el, n, withPrev) {
         html += `<div class="season-prev"><b>지난달(${seasonMonth(prev.season)}) TOP 3</b><br>${prev.rows.map((r, i) =>
           `${MEDAL[i]} ${esc(r.name || '이름 없음')} ${signed(r.net)}`).join(' · ')}</div>`
       }
-      html += '<p class="season-note">이번 달 카지노에서 딴 코인에서 잃은 코인을 뺀 순수익으로 순위를 매겨요. 출석·가입 코인은 들어가지 않아요. 매달 1일 0시(한국 시간)에 새 시즌이 시작돼요.</p>'
+      html += '<p class="season-note">홀덤에서 딴 코인 − 잃은 코인으로 순위를 매겨요. 매달 1일 0시에 새로 시작해요. 이름은 JMTT 닉네임이에요.</p>'
     }
     el.innerHTML = html
   } catch (err) {
@@ -807,7 +813,7 @@ function renderPre(me, bar) {
     <div class="row slots">
       ${btn('checkfold', toCall <= 0 ? '체크/폴드' : '폴드')}
       <div class="slot-split">
-        ${toCall <= 0 ? btn('check', '체크') : btn('call', `콜 ${toCall.toLocaleString()}`)}
+        ${toCall <= 0 ? btn('check', '체크') : btn('call', `콜 ${fmtCoin(toCall)}`)}
         ${btn('callany', '아무거나 콜')}
       </div>
       <div class="slot-blank" aria-hidden="true">레이즈 · 올인은 내 차례에</div>
@@ -887,18 +893,18 @@ function renderActions(me) {
       <button class="btn fold" data-a="fold">폴드</button>
       ${toCall <= 0
         ? '<button class="btn check" data-a="check">체크</button>'
-        : `<button class="btn call" data-a="call">콜 ${Math.min(toCall, me.stack).toLocaleString()}</button>`}
+        : `<button class="btn call" data-a="call">콜 ${fmtCoin(Math.min(toCall, me.stack))}</button>`}
       ${canRaise ? `
       <div class="raise-wrap">
         <div class="raise-menu" role="menu" hidden>
-          ${presets.map(p => `<button class="rm-opt ${!custom && p.name === def.name ? 'def' : ''}" data-p="${p.to}" data-name="${p.name}" title="${p.tip}" role="menuitem"><b>${p.name}</b><small>${p.to.toLocaleString()}</small></button>`).join('')}
+          ${presets.map(p => `<button class="rm-opt ${!custom && p.name === def.name ? 'def' : ''}" data-p="${p.to}" data-name="${p.name}" title="${p.tip}" role="menuitem"><b>${p.name}</b><small>${fmtCoin(p.to)}</small></button>`).join('')}
           <button class="rm-opt rm-custom" data-custom role="menuitem"><b>직접</b><small>입력</small></button>
         </div>
         <button class="btn raise" data-a="raise" aria-haspopup="menu"><span class="rv"><em class="rn" id="raise-name"></em> <span id="raise-verb">${verb}</span> <b id="raise-val"></b></span><small class="rhint"><span class="h-mouse">▴ 마우스를 올리면 다른 금액</span><span class="h-touch">▴ 길게 누르면 다른 금액</span></small></button>
       </div>` : `<div class="slot-blank" aria-hidden="true">${locked ? '콜·폴드만 가능' : '레이즈 불가'}</div>`}
       ${locked && maxTo > state.currentBet
         ? '<div class="slot-blank" title="앞 사람의 올인이 최소 레이즈보다 적어서 다시 올릴 수 없어요">올인 불가</div>'
-        : `<button class="btn allin" data-a="allin">올인 ${maxTo.toLocaleString()}</button>`}
+        : `<button class="btn allin" data-a="allin">올인 ${fmtCoin(maxTo)}</button>`}
     </div>
     ${canRaise && custom ? `
     <div class="bet-box">
@@ -909,7 +915,7 @@ function renderActions(me) {
         <span class="extra" id="raise-extra"></span>
       </div>
       <input type="range" id="raise" min="${minTo}" max="${maxTo}" step="1" aria-label="${verb} 금액 슬라이더">
-      <div class="range-labels"><span>최소 ${minTo.toLocaleString()}</span><span>최대 ${maxTo.toLocaleString()}</span></div>
+      <div class="range-labels"><span>최소 ${fmtCoin(minTo)}</span><span>최대 ${fmtCoin(maxTo)}</span></div>
     </div>` : ''}`
 
   let sent = false // 한 차례에 두 번 보내지 않게
@@ -1023,6 +1029,29 @@ function leaveTable(dest = '') {
   setTimeout(backToLobby, 3000) // 서버 답이 늦어도 이동
 }
 $('#leave').onclick = () => leaveTable()
+// 브라우저 뒤로 가기: 방에서 홀덤 처음 화면으로 (판에 칩이 걸려 있으면 한 번 묻고, 취소하면 그대로 방에)
+addEventListener('popstate', () => {
+  if (!roomCode || exitTo !== '') return
+  const meSeat = state?.seats.find(p => p.id === selfId)
+  const risky = meSeat?.inHand && !meSeat.folded && BETTING.includes(state.phase)
+  if (risky && !confirm('게임 중에 나가면 이번 판에 건 칩은 잃어요. 남은 칩은 코인으로 돌려받아요. 나갈까요?')) {
+    history.pushState({ room: roomCode }, '', location.pathname + location.search + '#' + roomCode)
+    return
+  }
+  exitTo = ''
+  if (!net?.ready) return backToLobby()
+  net.send({ t: 'leave' })
+  setTimeout(backToLobby, 3000)
+})
+
+// #선물알림: 게임 중(배지 숨김)에는 팝업 대신 위쪽에 작은 🎁. 누르면 선물 창
+function showGift(n) {
+  n = Number(n) || 0
+  $('#gift-btn').hidden = !n || !roomCode
+  $('#gift-n').textContent = n > 1 ? n : ''
+}
+addEventListener('jmtt:gift', e => showGift(e.detail?.count))
+$('#gift-btn').onclick = () => window.JMTT?.gift?.open?.()
 // 게임 화면에서 JMTT 홈으로: 먼저 자리에서 일어나 정산하고 이동 (배지는 게임 중에 숨겨서 대신 위쪽 버튼으로)
 $('#to-jmtt').onclick = e => { e.preventDefault(); leaveTable('/') }
 

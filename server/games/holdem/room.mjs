@@ -12,6 +12,7 @@ const EMPTY_CLOSE_MS = 30000     // 사람이 아무도 없으면 이만큼 뒤 
 export const EMOJIS = new Set(['🥱', '👍', '😂', '😭', '🔥'])
 
 // 봇이 들고 앉는 칩: 1,000~50,000 사이 100 단위로 무작위 (운영자 결정 2026-11-19, 상한 5만 2026-11-20)
+const SEAT_MAX = Math.floor(Number.MAX_SAFE_INTEGER / 8) // 약 1,125조
 const botBuyIn = () => 1000 + 100 * randomInt(0, 491)
 
 export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, wallet, titleOf = id => id, onClose }) {
@@ -92,7 +93,9 @@ export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, wallet, 
         try { bal = await jmtt.balance(m.user) } catch { return this.tell(m, '코인 서버에 연결하지 못했어요. 잠시 뒤 다시 앉아 주세요.') }
         if (bal <= 0) { this.sendTo(m, { t: 'nocoins' }); return }
         // 코인 맡기기는 공통 칩 지갑이 한다 (한 번에 한 게임: 다른 게임에 앉아 있으면 거절)
-        const st = await wallet.stakeSeat({ game: 'holdem', table: this.id, user: m.user, name: m.name, amount: bal })
+        // #규모: 한 자리 최대 SEAT_MAX. 6자리 칩을 다 더해도(팟·합계) Number.MAX_SAFE_INTEGER 안에 들게. 넘는 코인은 계정에 그대로 남음
+        const amount = Math.min(bal, SEAT_MAX)
+        const st = await wallet.stakeSeat({ game: 'holdem', table: this.id, user: m.user, name: m.name, amount })
         if (st.error === 'busy') return this.tell(m, `${titleOf(st.game)}에 앉아 있어요. 그 게임에서 일어난 뒤 앉을 수 있어요.`)
         if (st.error) return this.tell(m, '코인을 맡기지 못했어요. 잠시 뒤 다시 앉아 주세요.')
         const { session, staked } = st
@@ -108,6 +111,8 @@ export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, wallet, 
 
     // 앉은 사람 수 (봇 빼고, 봇 대신 앉으려고 기다리는 사람 포함)
     humanSeats() { return this.table.seats.filter(p => !p.bot && !p.left).length + this.waiting.length }
+    // 빠른 시작이 몰릴 때: 코인을 맡기는 중(아직 자리 전)인 사람까지 세어 한 방에 몰리지 않게
+    seatsTaken() { return this.humanSeats() + this.humans().filter(m => m.sitting).length }
 
     // 맡긴 칩으로 자리에 앉힌다. 빈자리가 없으면 봇을 치우고, 봇이 모두 판 중이면 그 판이 끝날 때 앉힘(대기)
     placeHuman(m) {
@@ -342,7 +347,7 @@ export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, wallet, 
       this.startStack = {}
       for (const s of t.seats) if (s.inHand) this.startStack[s.id] = s.stack + s.total
       this.handLog = { room: this.id, hand: t.handNo, at: Date.now(), dealer: t.dealerId,
-        seats: t.seats.filter(s => s.inHand).map(s => ({ id: s.id, name: s.name, bot: !!s.bot, user: this.userOfSeat(s.id), stack: this.startStack[s.id] })),
+        seats: t.seats.filter(s => s.inHand).map(s => ({ id: s.id, name: s.bot ? s.name : null, bot: !!s.bot, user: this.userOfSeat(s.id), stack: this.startStack[s.id] })),
         holes, actions: [] }
       for (const m of this.members.values()) {
         if (holes[m.seatId]) this.sendTo(m, { t: 'hole', handNo: t.handNo, cards: holes[m.seatId] })
@@ -351,6 +356,15 @@ export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, wallet, 
       this.after()
     }
 
+    // JMTT 닉네임이 바뀌었을 때: 화면의 이름을 바로 고친다 (판 기록에는 이름을 저장하지 않음)
+    rename(user, name) {
+      const m = this.members.get(user)
+      if (!m || !name || m.name === name) return
+      m.name = name
+      const s = this.seatOf(m)
+      if (s) s.name = name
+      this.broadcast()
+    }
     userOfSeat(seatId) { return this.humans().find(m => m.seatId === seatId)?.user || null }
 
     logAction(id, type, amount) {
@@ -368,7 +382,7 @@ export function roomKit({ Table, CONFIG, botDecision, BOT_NAMES, store, wallet, 
         if (!s || !m.session) continue
         if (s.id in this.startStack) {
           const delta = s.stack - this.startStack[s.id]
-          store.seasonAdd(m.user, m.name, delta, delta > 0)
+          store.seasonAdd(m.user, null, delta, delta > 0) // 이름은 저장하지 않음: 랭킹을 보여 줄 때 지금 JMTT 닉네임으로
         }
         store.seatStack(m.session, s.stack)
       }

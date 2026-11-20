@@ -27,7 +27,7 @@ export function connect({ onOpen, onClose, onMessage }) {
     try { old.close() } catch {}
     closed()
   }
-  async function closed() {
+  async function closed(ev) {
     api.ready = false
     probeAt = 0
     if (stopped) return
@@ -38,7 +38,9 @@ export function connect({ onOpen, onClose, onMessage }) {
     }
     onClose?.({ auth })
     if (auth) return
-    setTimeout(open, opened ? 300 : wait)
+    // 서버를 다시 시작하면 모두가 한꺼번에 다시 붙지 않게 무작위로 조금씩 늦춤 (#부하)
+    // 서버가 꽉 찼다고(1013) 하면 한참 뒤에 다시
+    setTimeout(open, ev?.code === 1013 ? 10000 + Math.random() * 20000 : opened ? 300 + Math.random() * 3000 : wait * (0.5 + Math.random()))
     if (!opened) wait = Math.min(wait * 2, 15000)
     opened = false
   }

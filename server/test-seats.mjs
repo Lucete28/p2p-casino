@@ -62,7 +62,8 @@ const seated = (c, s = c.state) => !!s?.seats.find(p => p.id === c.seatId && !p.
   await sleep(1500)
   const led = await (await fetch(BASE + '/auth/_ledger')).json()
   const net = ['u_owner', 'u_joiner', 'u_late'].map(u => `${u.slice(2)} ${led.ledger[u] - 1000}`).join(', ')
-  check('나가면 모두 정산', ['u_owner', 'u_joiner', 'u_late'].every(u => led.log.some(x => x.op === 'cashout' && x.user === u)), net)
+  // 봇에게 칩을 모두 잃은 사람은 돌려받을 것이 없어 cashout 줄이 없다 (잔액 0)
+  check('나가면 모두 정산', ['u_owner', 'u_joiner', 'u_late'].every(u => led.log.some(x => x.op === 'cashout' && x.user === u) || led.ledger[u] === 0), net)
   for (const c of [O, J, K]) c.ws.close()
 }
 console.log(out.join('\n'))
