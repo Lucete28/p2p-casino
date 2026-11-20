@@ -3,12 +3,16 @@
 // 돈은 '보유 칩 · 베팅 · 이번 판' 세 칸으로 보여 준다 (운영자 요청 2026-11-18, 누적 득실은 보여 주지 않음). 처음엔 관전, 빈자리를 누르거나 베팅하면 앉는다
 import { startGame } from '../shared/casino.js'
 import { nextCard } from './odds.mjs'
-import { score, isNatural, SEATS, MIN_BET, EMOJIS, EMOJI_MS, DEAL_MS, HIT_MS, DEALER_MS, RESULT_MS, TURN_MS } from './rules.mjs'
+import { score, isNatural, SEATS, MIN_BET, MAX_BET, EMOJIS, EMOJI_MS, DEAL_MS, HIT_MS, DEALER_MS, RESULT_MS, TURN_MS } from './rules.mjs'
 
 const $ = id => document.getElementById(id)
 const fmt = n => Number(n || 0).toLocaleString('ko-KR')
 const sign = n => n > 0 ? `+${fmt(n)}` : n < 0 ? `−${fmt(-n)}` : '±0'
 const tone3 = n => n > 0 ? 'plus' : n < 0 ? 'minus' : 'even'
+// 좁은 칸용 짧은 숫자 (슬롯의 fmtShort처럼): 99,999 · 12.3만 · 4,567만 · 12.3억 · 9,007.1조. 정확한 값은 title로
+const cut1 = (n, unit) => fmt(Math.floor(n / unit * 10) / 10)
+const fmtS = n => { const a = Math.abs(n); return a < 1e5 ? fmt(n) : a < 1e6 ? cut1(a, 1e4) + '만' : a < 1e8 ? fmt(Math.floor(a / 1e4)) + '만' : a < 1e12 ? cut1(a, 1e8) + '억' : cut1(a, 1e12) + '조' }
+const signS = n => n > 0 ? `+${fmtS(n)}` : n < 0 ? `−${fmtS(-n)}` : '±0'
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
 const phone = matchMedia('(max-width: 600px)') // 휴대폰: 테이블 + 바닥 조작판 한 화면
@@ -171,7 +175,7 @@ function syncSeats(S) {
   let w = $('mine').querySelector('.bj-watch')
   if (watching && !w) { w = document.createElement('div'); w.className = 'bj-watch'; $('mine').append(w) }
   if (!watching && w) w.remove()
-  if (w) w.innerHTML = `<b>관전 중</b><span>${S.seats.some(x => !x) ? '빈자리를 누르거나 베팅하면 앉아요' : '자리가 다 찼어요. 빈자리가 나면 앉을 수 있어요'}</span>`
+  if (w) w.innerHTML = `<b>관전 중</b><span>${S.seats.some(x => !x) ? '빈자리를 누르거나 베팅하면 앉아요' : '자리가 다 찼어요'}</span>`
   $('tableNo').textContent = `테이블 ${S.table}${S.watching ? ` · 관전 ${S.watching}` : ''}`
 }
 function addHand(e) {
@@ -262,18 +266,19 @@ function paintMeta() {
     e.el.classList.toggle('split', s.hands.length > 1) // 스플릿한 자리는 칸을 넓히거나(PC) 카드를 줄여(휴대폰) 옆 칸을 넘지 않게
     s.hands.forEach((h, k) => {
       const hb = e.hands[k]; if (!hb) return
-      hb.bet.innerHTML = `${chipHtml(stackOf(h.bet, 1)[0])}${fmt(h.bet)}${h.doubled ? ' <small>더블</small>' : ''}`
+      hb.bet.innerHTML = `${chipHtml(stackOf(h.bet, 1)[0])}${fmtS(h.bet)}${h.doubled ? ' <small>더블</small>' : ''}`
+      hb.bet.title = fmt(h.bet) + '칩'
       hb.el.classList.toggle('active', S.phase === 'play' && s.hands.length > 1 && !s.done && k === s.active)
       hb.el.classList.toggle('waiting', S.phase === 'play' && s.hands.length > 1 && !s.done && k !== s.active)
     })
     let text = '', cls = ''
     if (S.phase === 'bet') {
-      if (s.ready) { text = `✓ ${fmt(s.bet)} 베팅`; cls = 'ready' } else text = s.me ? '칩을 골라 베팅해요' : '고르는 중'
+      if (s.ready) { text = `✓ ${fmtS(s.bet)} 베팅`; cls = 'ready' } else text = s.me ? '칩을 골라 베팅해요' : '고르는 중'
     } else if (!s.inRound) text = '이번 판 쉬어요'
     else if (S.phase === 'play') {
-      if (s.done) text = s.me ? '딜러 차례를 기다려요' : `${fmt(s.staked)} · 다 골랐어요`
-      else { const left = Math.max(0, Math.ceil(((turnEnd[i] ?? now) - now) / 1000)); text = s.me ? '' : `${fmt(s.staked)} · 고르는 중 ${left}`; cls = 'think' }
-    } else if (revealed) { const n = s.back - s.staked; text = sign(n); cls = 'res ' + tone3(n) }
+      if (s.done) text = s.me ? '딜러 차례를 기다려요' : `${fmtS(s.staked)} · 다 골랐어요`
+      else { const left = Math.max(0, Math.ceil(((turnEnd[i] ?? now) - now) / 1000)); text = s.me ? '' : `${fmtS(s.staked)} · 고르는 중 ${left}`; cls = 'think' }
+    } else if (revealed) { const n = s.back - s.staked; text = signS(n); cls = 'res ' + tone3(n) }
     e.status.textContent = text; e.status.className = 'bj-seat-status' + (cls ? ' ' + cls : '')
   }
   paintSpot()
@@ -288,7 +293,8 @@ function paintSpot() {
   const amount = my?.ready ? my.bet : bet
   e.spot.classList.toggle('ready', !!my?.ready)
   e.spotStack.innerHTML = stackOf(amount).map((c, k) => `<i style="bottom:${k * 4}px">${chipHtml(c)}</i>`).join('')
-  e.spotAmt.textContent = amount ? (my?.ready ? `✓ ${fmt(amount)}` : fmt(amount)) : ''
+  e.spotAmt.textContent = amount ? (my?.ready ? `✓ ${fmtS(amount)}` : fmtS(amount)) : ''
+  e.spotAmt.title = amount ? fmt(amount) + '칩' : ''
 }
 
 // ---------- 결과 ----------
@@ -309,7 +315,7 @@ function showResults(S, quiet) {
       hb.cards.querySelectorAll('.card').forEach(c => { c.classList.toggle('win', good); c.classList.toggle('lost', bad) })
     })
     const net = s.back - s.staked
-    e.float.textContent = sign(net)
+    e.float.textContent = signS(net)
     e.float.className = 'bj-float show ' + tone3(net)
     if (s.me) {
       lastRound = { net, staked: s.staked, back: s.back }
@@ -534,9 +540,10 @@ function centerMsg(text, ms) {
 let chipsShown = null, chipsAnim = 0
 function countChips(n) {
   const el = $('sChips')
-  if (chipsShown === null || reduced || document.hidden) { chipsShown = n; chipsAnim++; el.textContent = fmt(n); return }
+  el.title = fmt(n) + '칩'
+  if (chipsShown === null || reduced || document.hidden) { chipsShown = n; chipsAnim++; el.textContent = fmtS(n); return }
   if (n === chipsShown) return
-  setTimeout(() => { if (chipsShown === n) el.textContent = fmt(n) }, 700) // 탭이 가려져 애니메이션이 멈춰도 마지막 숫자는 맞게
+  setTimeout(() => { if (chipsShown === n) el.textContent = fmtS(n) }, 700) // 탭이 가려져 애니메이션이 멈춰도 마지막 숫자는 맞게
   const from = chipsShown, t0 = performance.now(), id = ++chipsAnim
   $('stChips').classList.remove('up', 'down'); void $('stChips').offsetWidth
   $('stChips').classList.add(n > from ? 'up' : 'down')
@@ -544,7 +551,7 @@ function countChips(n) {
   const step = now => {
     if (id !== chipsAnim) return
     const k = Math.min(1, (now - t0) / 600)
-    el.textContent = fmt(Math.round(from + (n - from) * (1 - Math.pow(1 - k, 3))))
+    el.textContent = fmtS(Math.round(from + (n - from) * (1 - Math.pow(1 - k, 3))))
     if (k < 1) requestAnimationFrame(step)
   }
   requestAnimationFrame(step)
@@ -553,31 +560,31 @@ function paintMoney() {
   const S = state, my = mySeat()
   // 보유 칩
   countChips(game?.me ? game.chips : 0)
-  $('sChipsSub').textContent = !game?.me ? '로그인 필요' : game.inPlay ? `판에 ${fmt(game.inPlay)} 걸림` : game.coins !== null && game.coins !== undefined ? `코인 ${fmt(game.coins)}` : ''
+  $('sChipsSub').textContent = !game?.me ? '로그인 필요' : game.inPlay ? `판에 ${fmtS(game.inPlay)} 걸림` : game.coins !== null && game.coins !== undefined ? `코인 ${fmt(game.coins)}` : ''
   // 베팅
   let betV = bet, betSub = '걸 칩'
   if (my?.inRound) { betV = my.staked; betSub = my.hands.some(h => h.doubled) ? '더블 포함' : my.hands.length > 1 ? '스플릿 포함' : '이번 판' }
   else if (my?.ready) { betV = my.bet; betSub = '✓ 걸었어요' }
   else if (S && S.phase !== 'bet') betSub = '다음 판에 걸 칩'
-  $('sBet').textContent = fmt(betV); $('sBetSub').textContent = betSub
+  $('sBet').textContent = fmtS(betV); $('sBet').title = fmt(betV) + '칩'; $('sBetSub').textContent = betSub
   // 이번 판 결과만 (누적은 보여 주지 않음). 카드를 받는 중엔 ?, 기다리는 동안엔 지난 판
   const net = my?.inRound && revealed ? my.back - my.staked : null
   if (net !== null) {
-    $('sNetL').textContent = '이번 판'; $('sNet').textContent = sign(net)
+    $('sNetL').textContent = '이번 판'; $('sNet').textContent = signS(net); $('sNet').title = sign(net)
     $('stNet').className = 'bj-stat net pop ' + tone3(net)
     $('sNetSub').textContent = net > 0 ? '이득' : net < 0 ? '손해' : '본전'
   } else if (my?.inRound) {
     $('sNetL').textContent = '이번 판'; $('sNet').textContent = '?'
     $('stNet').className = 'bj-stat net'; $('sNetSub').textContent = '결과를 기다려요'
   } else {
-    $('sNetL').textContent = '지난 판'; $('sNet').textContent = lastRound ? sign(lastRound.net) : '—'
+    $('sNetL').textContent = '지난 판'; $('sNet').textContent = lastRound ? signS(lastRound.net) : '—'; $('sNet').title = lastRound ? sign(lastRound.net) : ''
     $('stNet').className = 'bj-stat net' + (lastRound ? ' ' + tone3(lastRound.net) : '')
     $('sNetSub').textContent = lastRound ? (lastRound.net > 0 ? '이득' : lastRound.net < 0 ? '손해' : '본전') : '아직 없어요'
   }
   // 한 줄 안내
   let title = '', sub = ''
   $('money').classList.remove('big')
-  if (!game?.me) { title = '로그인하면 할 수 있어요'; sub = '로그인하고 코인을 칩으로 바꿔 시작해요' }
+  if (!game?.me) { title = '로그인하고 시작해요'; sub = '' }
   else if (S && S.me < 0) { title = '관전 중'; sub = S.phase === 'bet' ? '' : '이 판이 끝나면 앉아서 걸 수 있어요' }
   else if (my?.inRound && revealed) {
     const dl = score(S.dealer).total, me = my.hands.map(h => score(h.cards).total)
@@ -594,7 +601,7 @@ function paintMoney() {
         : h.dealerBust ? `딜러가 ${dl}로 버스트!`
         : `나 ${me[0]} · 딜러 ${dl}`
     }
-    sub += ` · 건 칩 ${fmt(my.staked)} → 받은 칩 ${fmt(my.back)}`
+    sub += ` · 건 칩 ${fmtS(my.staked)} → 받은 칩 ${fmtS(my.back)}`
     $('money').classList.toggle('big', my.hands.some(h => h.result === 'blackjack'))
   } else if (my?.inRound) {
     const h = my.hands[my.active] || my.hands[0]
@@ -672,7 +679,7 @@ function showEmoji(i, e) {
 }
 
 // ---------- 아래 조작판 ----------
-let bet = Math.max(MIN_BET, Number(store.get('bet')) || 100)
+let bet = Math.min(MAX_BET, Math.max(MIN_BET, Math.floor(Number(store.get('bet'))) || 100))
 const busy = () => pending > 0 || !!acting
 function paintPanel() {
   const S = state, my = mySeat()
@@ -684,7 +691,8 @@ function paintPanel() {
   if (myTurn) document.querySelectorAll('.bj-btn').forEach(b => { b.disabled = busy() || !S.actions[b.dataset.a] })
   // 베팅 버튼
   const go = $('betGo'), chips = game?.chips ?? 0
-  let text = '베팅하기', amt = bet ? fmt(bet) : '', dis = false, kind = ''
+  let text = '베팅하기', amt = bet ? fmtS(bet) : '', dis = false, kind = ''
+  $('betGo').title = bet ? fmt(bet) + '칩' : ''
   if (!game?.me) { text = '로그인하고 시작'; amt = '' }
   else if (!chips && !game.inPlay && !my?.ready && !my?.inRound) { text = '칩 바꾸기'; amt = '' }
   else if (S?.phase === 'bet' && S.me < 0 && S.seats.every(Boolean)) { text = '빈자리가 없어요'; dis = true }
@@ -708,7 +716,12 @@ function paintPanel() {
 }
 $('standUp').onclick = () => game?.send({ t: 'stand' })
 // 베팅은 0(비움) 또는 최소 베팅 이상. ½·올인도 최소 아래로 내려가지 않음
-function setBet(v) { v = Math.floor(v); bet = v <= 0 ? 0 : Math.max(MIN_BET, v); paintPanel() }
+function setBet(v) {
+  v = Math.floor(v)
+  if (v > MAX_BET) { v = MAX_BET; game?.toast('한 판 최대 베팅까지만 걸 수 있어요.') }
+  bet = v <= 0 ? 0 : Math.max(MIN_BET, v)
+  paintPanel()
+}
 $('chipBtns').innerHTML = CHIPS.map(c => `<button type="button" class="bj-chip" data-v="${c.v}" aria-label="${fmt(c.v)}칩 더하기" style="--chip:${c.c}">${chipHtml(c.c)}<b>${c.l}</b></button>`).join('')
 $('chipBtns').querySelectorAll('button').forEach(b => b.onclick = () => { sfx.chip(); setBet(bet + Number(b.dataset.v)) })
 $('clearBet').onclick = () => setBet(0)
@@ -834,3 +847,28 @@ game = await startGame({
 })
 paintPanel()
 if (demoKind === 'full' || demoKind === 'result') showDemo()
+
+// ---------- 길찾기: 윗줄 '← 로비' 옆에 JMTT 메인으로 (윗줄은 공통 부품이라 여기서 링크만 덧붙임, 슬롯과 같음) ----------
+// 카드를 받는 중(행동 시간)에 나가면 건 칩을 잃으니 한 번 묻는다. 그 밖엔 나가기(남은 칩 → 코인)를 보낸 뒤 이동
+const losing = () => state?.phase === 'play' && !!mySeat()?.inRound
+let leaving = false // 우리가 직접 옮기는 중이면 아래 '페이지 떠나기' 확인을 다시 띄우지 않음
+{
+  const a = document.createElement('a')
+  a.className = 'casino-back bj-jmtt'
+  a.href = '/'
+  a.textContent = 'JMTT'
+  a.title = 'JMTT 메인으로 (남은 칩은 코인으로 돌려받아요)'
+  document.querySelector('.casino-top [data-back]')?.after(a)
+  a.onclick = ev => {
+    if (!game?.me) return
+    ev.preventDefault()
+    if (losing() && !confirm('카드를 받는 중이에요. 지금 나가면 건 칩을 잃어요. 나갈까요?')) return
+    leaving = true
+    game.send({ t: 'leave' })
+    setTimeout(() => { location.href = '/' }, 200)
+  }
+  // '← 로비'는 공통 부품이 판 중이면 묻고 옮긴다 → 그때는 아래 확인을 건너뜀 (취소했으면 1.5초 뒤 되돌림)
+  document.querySelector('.casino-top [data-back]')?.addEventListener('click', () => { leaving = true; setTimeout(() => { leaving = false }, 1500) }, true)
+}
+// 브라우저 뒤로 가기·탭 닫기: 카드를 받는 중이면 한 번 묻기
+addEventListener('beforeunload', ev => { if (!leaving && losing()) { ev.preventDefault(); ev.returnValue = '' } })

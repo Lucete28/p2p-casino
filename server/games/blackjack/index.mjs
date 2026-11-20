@@ -22,10 +22,14 @@
 // 연결이 끊기면 자리는 60초 남고, 그사이 행동 시간이 지나 스탠드 → 판이 끝나 정산된다. 딜러 결과가 나온 뒤 나가면 바로 정산.
 // 서버가 판 도중 꺼지면 코어가 그 판을 무효로 하고 건 칩을 돌려준다 (결과가 나온 판은 결과대로 정산).
 import { dealRound, seatActions, seatAct, dealerPlay, settleSeat } from './engine.mjs'
-import { DECKS, SHOE_SIZE, CUT, SEATS, MIN_BET, IDLE_ROUNDS, EMOJIS, EMOJI_MS, BET_MS, READY_MS, TURN_MS, SHOW_MS, DEAL_MS, HIT_MS, DEALER_MS, RESULT_MS } from '../../../public/blackjack/rules.mjs'
+import { DECKS, SHOE_SIZE, CUT, SEATS, MIN_BET, MAX_BET, IDLE_ROUNDS, EMOJIS, EMOJI_MS, BET_MS, READY_MS, TURN_MS, SHOW_MS, DEAL_MS, HIT_MS, DEALER_MS, RESULT_MS } from '../../../public/blackjack/rules.mjs'
 
 const ACTS = new Set(['hit', 'stand', 'double', 'split'])
 const SEAT_ORDER = [3, 2, 4, 1, 5, 0, 6] // 가운데 자리부터 채움
+// 한 테이블에 들어오는 사람(앉은 사람 + 관전자) 상한 (#부하 2026-11-20): 한 번의 상태 변경이 퍼지는 크기를 묶어 둠
+// 500명이 한 테이블을 보던 것 → 50명씩 나뉨 (test-load.mjs)
+const PEOPLE_CAP = 50
+const WATCH_NOTE_MS = 2000 // 관전자가 들고 날 때 '관전 N' 숫자는 테이블 모두에게 이 간격으로 한 번만 (들어온 사람에게는 바로)
 const tables = new Map() // 테이블 번호 → 테이블
 const seatOf = new Map() // 사용자 ID → 자리 (앉은 사람)
 const watchOf = new Map() // 사용자 ID → 테이블 (관전자)
@@ -45,16 +49,26 @@ function newTable(ctx) {
   return t
 }
 // 빈자리가 있는 테이블 중 앉은 사람이 가장 많은 곳 (없으면 새 테이블)
+// 빈자리가 있고 사람이 상한 밑인 테이블 중 앉은 사람이 가장 많은 곳 (없으면 새 테이블)
 function pickTable(ctx) {
   let t = null
-  for (const x of tables.values()) if (seated(x).length < SEATS && (!t || seated(x).length > seated(t).length)) t = x
+  for (const x of tables.values()) {
+    if (seated(x).length >= SEATS || seated(x).length + x.watchers.size >= PEOPLE_CAP) continue
+    if (!t || seated(x).length > seated(t).length) t = x
+  }
   return t || newTable(ctx)
+}
+// '관전 N' 숫자만 바뀐 것: 모아서 WATCH_NOTE_MS에 한 번 (관전자가 몰려 들어올 때 사람 수 × 사람 수로 보내지 않게)
+function noteWatchers(t) {
+  if (t.watchNote) return
+  t.watchNote = setTimeout(() => { t.watchNote = null; if (tables.get(t.no) === t) broadcast(t, 'watch') }, WATCH_NOTE_MS)
 }
 function watch(p, t) { watchOf.set(p.id, t); t.watchers.add(p) }
 function unwatch(p) { const t = watchOf.get(p.id); if (t) { t.watchers.delete(p); watchOf.delete(p.id) } return t }
 function dropIfEmpty(t) {
   if (seated(t).length || t.watchers.size) return false
   unschedule(t)
+  clearTimeout(t.watchNote)
   tables.delete(t.no)
   return true
 }
@@ -95,7 +109,7 @@ function drawer(t) {
 function view(t, viewer, ev, extra) {
   const now = Date.now()
   const open = t.phase === 'dealer' || t.phase === 'result' // 딜러 카드·결과 공개
-  const my = seatOf.get(viewer.id)
+  const my = viewer && seatOf.get(viewer.id) // viewer가 없으면 관전자 화면 (관전자는 모두 같은 화면)
   const mine = my?.t === t ? my : null
   return {
     t: 'state', ev, ...extra,
@@ -117,8 +131,10 @@ function view(t, viewer, ev, extra) {
     shoe: { left: t.shoe.length - t.pos, size: SHOE_SIZE, cut: SHOE_SIZE - CUT, shuffled: t.shuffled },
   }
 }
+// 앉은 사람은 각자 화면(내 자리·행동), 관전자는 모두 같은 화면이라 한 번 만들어 같이 보냄 (ctx.broadcast는 JSON을 한 번만 만듦)
 function broadcast(t, ev, extra) {
-  for (const p of people(t)) t.ctx.send(p, view(t, p, ev, extra))
+  for (const s of seated(t)) t.ctx.send(s.p, view(t, s.p, ev, extra))
+  if (t.watchers.size) t.ctx.broadcast([...t.watchers], view(t, null, ev, extra))
 }
 
 // ---------- 베팅 ----------
@@ -128,6 +144,7 @@ function placeBet(s, amount) {
   if (amount === 0) { s.ready = false; return broadcast(t, 'bet', { seat: s.i }) }
   if (!Number.isSafeInteger(amount) || amount < MIN_BET) return toast(ctx, p, `베팅은 ${MIN_BET}칩 이상 정수로 해 주세요.`)
   if (amount > p.chips) return toast(ctx, p, p.chips ? '칩이 모자라요.' : '먼저 칩을 바꿔 주세요.')
+  if (tooBig(p, amount)) return toast(ctx, p, '베팅이 너무 커요. 조금 줄여 주세요.')
   s.bet = amount
   s.ready = true
   s.idle = 0
@@ -135,6 +152,8 @@ function placeBet(s, amount) {
   allReady(t)
   broadcast(t, 'bet', { seat: s.i })
 }
+// 너무 큰 베팅: 스플릿·더블로 이겨도 칩이 정확한 정수(MAX_SAFE_INTEGER 이하)로 남게 (rules.mjs MAX_BET)
+const tooBig = (p, amount) => amount > MAX_BET || p.chips + p.inPlay + 4 * amount > Number.MAX_SAFE_INTEGER
 // 앉아 있고(연결됨) 칩이 있는 사람이 모두 걸었으면 곧 마감
 function allReady(t) {
   if (t.phase !== 'bet' || !t.endsAt) return
@@ -248,7 +267,8 @@ export default {
     if (t) return ctx.send(p, view(t, p, 'join'))
     const nt = pickTable(ctx)
     watch(p, nt)
-    broadcast(nt, 'watch')
+    ctx.send(p, view(nt, p, 'join')) // 들어온 사람에게만 바로, 나머지에게는 '관전 N'만 모아서
+    noteWatchers(nt)
   },
 
   message(p, d, ctx) {
@@ -277,6 +297,7 @@ export default {
       if (!t || amount === 0) return
       if (t.phase !== 'bet') return toast(ctx, p, '지금은 베팅할 수 없어요. 이번 판이 끝나면 걸 수 있어요.')
       if (!Number.isSafeInteger(amount) || amount < MIN_BET || amount > p.chips) return toast(ctx, p, !p.chips ? '먼저 칩을 바꿔 주세요.' : amount > p.chips ? '칩이 모자라요.' : `베팅은 ${MIN_BET}칩 이상 정수로 해 주세요.`)
+      if (tooBig(p, amount)) return toast(ctx, p, '베팅이 너무 커요. 조금 줄여 주세요.')
       const i = SEAT_ORDER.find(k => !t.seats[k])
       if (i === undefined) return toast(ctx, p, '빈자리가 없어요. 자리가 나면 앉을 수 있어요.')
       return placeBet(sitAt(p, t, i), amount)
@@ -308,7 +329,7 @@ export default {
     const s = seatOf.get(p.id)
     if (!s) {
       const t = unwatch(p)
-      if (t && !dropIfEmpty(t)) broadcast(t, 'watch')
+      if (t && !dropIfEmpty(t)) noteWatchers(t)
       return
     }
     const t = s.t
