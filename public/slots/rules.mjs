@@ -128,8 +128,27 @@ export const JACKPOT = { contribute: 0.015, reserve: 0.005, odds: 100_000_000, c
 // 이 판 베팅으로 잭팟이 터질 확률의 분자 (확률 = jackpotWeight(total) / odds)
 export const jackpotWeight = total => Math.min(total, JACKPOT.capBet)
 
-// 한 판 베팅 상한은 없다 (CASINO.md 5장). 다만 돌려줄 칩이 안전한 정수를 넘지 않게 상한만 둔다
-export const MAX_LINE_BET = Math.floor(Number.MAX_SAFE_INTEGER / (20 * 100000))
+// 한 판 베팅 상한은 없다 (CASINO.md 5장). 다만 돌려줄 칩이 안전한 정수(약 9천조)를 넘지 않게, 머신마다
+// '이론상 한 판에 돌려줄 수 있는 최대'로 줄당 베팅 상한을 둔다 (#규모 2026-11-20).
+// 안전한 정수의 절반은 머신 당첨 몫, 나머지 절반은 모두의 잭팟 몫 (잭팟 지급도 SAFE_HALF까지)
+export const SAFE_HALF = Math.floor(Number.MAX_SAFE_INTEGER / 2)
+export const CASCADE_MAX_STEPS = 40 // 과일 폭탄 연쇄 최대 횟수 (cascade)
+const maxPay = pays => Math.max(0, ...Object.values(pays).flatMap(p => Object.values(p)))
+// 줄당 베팅 1일 때 한 판(프리스핀·연쇄 포함, 잭팟 빼고)에 돌려줄 수 있는 칩의 위쪽 경계 (실제로는 못 나오는 넉넉한 값)
+export function maxBackPerLineBet(m) {
+  if (m.type === 'crash') return m.max
+  if (m.type === 'gem') {
+    const mr = Math.max(...m.mstrip.map(x => Number(String(x).slice(1))))
+    return Math.max(m.wildPays[3], maxPay(m.pays) * 4, m.anyGem * 4) * mr // 다이아 섞임은 ×2·×4까지
+  }
+  if (m.type === 'cascade') return ((m.rows || 3) ** m.reels) * maxPay(m.pays) * Math.max(...m.chain) * CASCADE_MAX_STEPS
+  const L = m.lines.length, spin = L * maxPay(m.pays) + (m.scatter ? L * maxPay({ s: m.scatter.pays }) : 0)
+  if (!m.scatter?.freeSpins) return spin
+  const sc = m.scatter, maxMult = 1 + m.reels * sc.maxSpins // 프리스핀 한 번에 별은 릴마다 하나까지
+  return spin + sc.maxSpins * spin * maxMult
+}
+export const maxLineBet = m => Math.max(1, Math.floor(SAFE_HALF / maxBackPerLineBet(m)))
+export const MAX_LINE_BET = Math.min(...Object.values(MACHINES).map(maxLineBet)) // 모든 머신에서 되는 줄당 베팅
 
 const modLen = (n, len) => ((n % len) + len) % len
 const rowsOf = m => m.rows || 3
@@ -177,7 +196,7 @@ export function checkBet(m, lineBet, lines) {
   const choices = m.lineChoices || [linesOf(m)]
   if (!choices.includes(lines)) return { error: `줄은 ${choices.join('·')}개 중에서 골라 주세요.` }
   if (!Number.isSafeInteger(lineBet) || lineBet < 1) return { error: '줄당 베팅은 1 이상 정수로 해 주세요.' }
-  if (lineBet > MAX_LINE_BET) return { error: '베팅이 너무 커요.' }
+  if (lineBet > maxLineBet(m)) return { error: `이 머신은 한 판에 ${(maxLineBet(m) * lines).toLocaleString('ko-KR')}칩까지 걸 수 있어요.` }
   return { lineBet, lines, total: lineBet * lines }
 }
 // 한 판 베팅 = 줄당 × linesOf (연쇄는 unit)
@@ -225,7 +244,7 @@ export function cascade(m, stops, unit, draw) {
   const first = grid.map(c => [...c])
   const steps = []
   let back = 0
-  for (let step = 0; step < 40; step++) {
+  for (let step = 0; step < CASCADE_MAX_STEPS; step++) {
     const wins = waysWins(m, grid)
     if (!wins.length) break
     const chain = m.chain[Math.min(step, m.chain.length - 1)]
