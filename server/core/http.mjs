@@ -50,9 +50,10 @@ export async function resolveStatic(publicDir, rel) {
 }
 
 // 파일은 메모리에 한 번 읽어 두고(바뀌면 다시) ETag로 304. 캐시 머리말 (#부하, 2026-11-20):
-//   html = no-cache (매번 확인) · js·css·json = 60초 (배포 뒤 1분 안에 새 파일) · 그림·소리·글꼴 = 하루
+//   html·js·css·json = no-cache (매번 확인, 안 바뀌었으면 304) · 그림·소리·글꼴 = 하루
+//   js·css를 max-age=60으로 했더니 Cloudflare(브라우저 캐시 TTL 설정)가 4시간으로 늘려, 배포 뒤 새 html과 옛 js가 섞일 수 있었다 (2026-11-20)
 const files = new Map() // 경로 → { mtimeMs, body, etag }
-const cacheOf = ext => ext === '.html' ? 'no-cache' : /^\.(js|mjs|css|json)$/.test(ext) ? 'public, max-age=60' : 'public, max-age=86400'
+const cacheOf = ext => /^\.(html|js|mjs|css|json)$/.test(ext) ? 'no-cache' : 'public, max-age=86400'
 export async function sendFile(req, res, file) {
   const st = await stat(file)
   let f = files.get(file)
