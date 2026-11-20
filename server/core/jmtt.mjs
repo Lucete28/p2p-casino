@@ -1,7 +1,9 @@
 // JMTT 계정 서비스(/auth)와 이야기하는 부분: 누구인지 확인, 코인 맡기기·돌려주기 (DEV_REFERENCE 2-1, 2-2, LOGIN_GUIDE 5장)
 const AUTH = process.env.JMTT_AUTH_URL || 'http://auth:3000'
 const KEY = process.env.JMTT_COIN_KEY || ''
-export const MAX_AMOUNT = 100000 // auth가 한 번에 받는 최대 금액
+// auth가 한 번에 받는 최대 금액. 2026-11-20 메인이 Number.MAX_SAFE_INTEGER로 풀었다 (잔액이 그보다 커지는 요청은 400 too_large)
+// 예전에 열린 자리는 seats.chunk(그때 값 100,000)로 복구하므로 바꿔도 괜찮다
+export const MAX_AMOUNT = Number.MAX_SAFE_INTEGER
 
 // 브라우저가 보낸 사용자 ID는 믿지 않고, 받은 Cookie로 auth에 물어본다. 같은 쿠키는 30초 동안 캐시
 const cache = new Map()

@@ -113,7 +113,7 @@ export default {
 | `{ t: 'cashout' }` 칩 → 코인 (판 도중엔 거절) | `{ t: 'chips', chips, inPlay, coins?, cashout? }` 바뀔 때마다 |
 | `{ t: 'leave' }` 나가기 (칩은 코인으로) | `{ t: 'toast', msg }` · `{ t: 'restart' }` |
 
-화면 쪽은 `public/shared/casino.js`의 `startGame()`이 위 메시지를 다 처리한다 (윗줄 ← 로비 · 코인 · 칩, 칩 바꾸기 창, 코인으로, 다시 연결). 서버의 알림·거절(`toast`)을 게임 화면이 알아야 하면 `onToast(msg)` — `false`를 돌려주면 기본 알림을 띄우지 않는다. 예시: `public/coinflip/index.html`.
+화면 쪽은 `public/shared/casino.js`의 `startGame()`이 위 메시지를 다 처리한다 (윗줄 ← 로비 · 코인 · 칩, 칩 바꾸기 창, 코인으로, 다시 연결). JMTT 배지가 없는 하우스 게임 화면에는 메인의 `/jmtt-presence.js`(지금 접속 `#접속`)·`/jmtt-gift.js`(선물)도 불러온다. 게임 중에는 선물 팝업을 저절로 띄우지 않고 윗줄의 작은 🎁(받을 선물 수)만 — 누르면 `JMTT.gift.open()` (`#선물알림`). 게임이 따로 넣지 않는다. 서버의 알림·거절(`toast`)을 게임 화면이 알아야 하면 `onToast(msg)` — `false`를 돌려주면 기본 알림을 띄우지 않는다. 예시: `public/coinflip/index.html`.
 
 ### 소켓 모드 (홀덤처럼 방·자리를 직접 관리하는 게임)
 
@@ -150,7 +150,7 @@ export default {
 
 ## 5. 게임별 기본값 (운영자 결정 2026-11-17: 한도 없음)
 
-- **칩 바꾸기·한 판 베팅에 상한이 없다.** 최소 1 (정수). 게임이 따로 정하면 그 값 (블랙잭: 칩 바꾸기·베팅 최소 10, 운영자 결정). `/auth`의 한 번 최대 금액(100,000)은 칩 지갑이 나눠 보낸다 (1억 = 1,000번, 실측 약 1.4초 · 10억 약 14초 — 금액이 크면 시간이 걸린다는 안내를 먼저 보냄). 칩 바꾸기·코인으로는 그 사람 정산만 기다리고(`flushUser`), 재시작 때 남은 정산은 서버가 켜진 뒤 뒤에서 보낸다.
+- **칩 바꾸기·한 판 베팅에 상한이 없다.** 최소 1 (정수). 게임이 따로 정하면 그 값 (블랙잭: 칩 바꾸기·베팅 최소 10, 운영자 결정). `/auth`의 한 번 최대 금액은 `Number.MAX_SAFE_INTEGER` (2026-11-20 메인 반영, 예전 100,000) — 칩 지갑은 한 번에 보낸다. 잔액이 그보다 커지는 정산은 메인이 `400 too_large` → 대기열에 남겨 30초마다 다시 보내고 "코인이 너무 많아…" 안내 (칩은 사라지지 않음). 칩이 상한을 넘을 만큼 받으면 상한에서 멈춘다(서버가 죽지 않게). 칩 바꾸기·코인으로는 그 사람 정산만 기다리고(`flushUser`), 재시작 때 남은 정산은 서버가 켜진 뒤 뒤에서 보낸다. 윗줄 코인·칩은 1억부터 줄여 쓴다 (12.3억 · 9,007.1조, 정확한 숫자는 title).
 
 | 게임 | 규칙 (1단계) | 하우스 몫 | 판 속도 |
 |---|---|---|---|
@@ -192,6 +192,7 @@ export default {
 ```bash
 cd server && npm ci
 node dev/mock-auth.mjs                       # 3100: 가짜 /auth + 나머지는 3200 카지노로 (MOCK_PORT·CASINO_PORT로 바꿀 수 있음)
+                                             # 선물: /auth/_gift?amount=500 로 만들기. MOCK_JMTT_DIR=<home-server>/home 이면 진짜 /jmtt-presence.js·/jmtt-gift.js
 PORT=3200 JMTT_AUTH_URL=http://127.0.0.1:3100 JMTT_COIN_KEY=test CASINO_ADMINS=u_alice CASINO_TEST_GAMES=1 DATA_DIR=../data-dev node index.mjs
 # 브라우저: http://127.0.0.1:3100/auth/login?as=alice&next=/casino/   (u_alice = 관리자, 코인 1,000으로 시작)
 ```
@@ -200,7 +201,7 @@ PORT=3200 JMTT_AUTH_URL=http://127.0.0.1:3100 JMTT_COIN_KEY=test CASINO_ADMINS=u
 |---|---|
 | `test-routes.mjs` | 주소·옛 주소·wip 막기·내보내면 안 되는 파일·로비 API |
 | `test-house.mjs` | 관리 모드·칩 지갑 (테스트 게임). `CRASH=1`이면 판 도중 멈춤 → 서버 강제 종료·재시작 후 건 칩까지 돌아왔는지 장부 확인 |
-| `test-big.mjs` | 큰 금액: 21억이 넘는 코인 읽기, 10만씩 나눠 맡기고 돌려받은 합, 한 사람의 큰 정산이 다른 사람의 '코인으로'를 붙잡지 않음 (약 40초) |
+| `test-big.mjs` | 큰 금액: 21억이 넘는 코인 읽기, 큰 금액을 한 번에 맡기고 돌려받기, 한 사람의 정산이 다른 사람의 '코인으로'를 붙잡지 않음, 잔액이 MAX_SAFE_INTEGER를 넘게 되는 정산(`too_large`)에 안내·코인 그대로 |
 | `test-refill.mjs` | 파산 지원금: 코인 501이면 거절·500이면 됨, 칩이 있으면 거절(칩 0 자리는 괜찮음), 하루 10번, 동시에 눌러도 한 번. mock을 `MOCK_NO_EARN=1`로 띄우고 `EXPECT_NO_EARN=1`이면 메인 권한 없을 때(`not_ready`) |
 | `test-e2e.mjs` · `test-seats.mjs` · `test-crash.mjs` | 홀덤 (홀덤 세션) |
 

@@ -20,6 +20,8 @@
 
 import { earnHtml } from './earn.js'
 const fmt = n => Number(n || 0).toLocaleString('ko-KR')
+// 윗줄처럼 좁은 칸: 1억 이상은 줄여 쓴다 (12.3억 · 9,007.1조). 정확한 숫자는 title로 (#규모: 최대 9,007,199,254,740,991)
+const fmtShort = n => { n = Number(n || 0); return n < 1e8 ? fmt(n) : n < 1e12 ? fmt(Math.floor(n / 1e7) / 10) + '억' : fmt(Math.floor(n / 1e11) / 10) + '조' }
 const el = (tag, attrs = {}, html = '') => { const e = document.createElement(tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); e.innerHTML = html; return e }
 const store = {
   get(k) { try { return localStorage.getItem(k) } catch { return null } },
@@ -35,6 +37,7 @@ export async function startGame(opts = {}) {
   const top = el('header', { class: 'casino-top' }, `
     <a class="casino-back" href="../" data-back>← 로비</a>
     <span class="casino-title" data-title></span>
+    <button class="casino-jgift" type="button" data-jgift hidden aria-label="받을 선물" title="받을 선물">🎁<b data-jgift-n></b></button>
     <span class="casino-pill" title="JMTT 코인" data-coins-pill hidden><i class="casino-coin"></i><small>코인</small> <b data-coins>0</b></span>
     <span class="casino-pill" title="이 게임의 칩" data-chips-pill hidden><i class="casino-chip"></i><small>칩</small> <b data-chips>0</b></span>
     <button class="casino-btn" type="button" data-buyin hidden>칩 바꾸기</button>
@@ -137,9 +140,26 @@ export async function startGame(opts = {}) {
     opts.onGift?.(d)
   }
 
+  // ---------- JMTT 접속 신호·선물 (#접속 #선물알림) ----------
+  // 배지가 없는 하우스 게임 화면에서 메인의 /jmtt-presence.js·/jmtt-gift.js를 불러온다.
+  // 게임 중에는 팝업을 저절로 띄우지 않는다: 숨긴 배지 자리를 두면 jmtt-gift.js가 '게임 중'으로 보고 기다린다.
+  // 대신 윗줄에 작은 🎁(받을 선물 수)를 두고, 누르면 JMTT.gift.open()
+  if (!document.querySelector('script[src*="jmtt-badge"]')) {
+    if (!document.querySelector('jmtt-badge')) { const hold = document.createElement('jmtt-badge'); hold.hidden = true; document.body.append(hold) }
+    for (const src of ['/jmtt-presence.js', '/jmtt-gift.js']) if (!document.querySelector(`script[src="${src}"]`)) document.head.append(el('script', { src, defer: '' }))
+  }
+  const jgift = q('[data-jgift]')
+  const paintGift = n => { jgift.hidden = !(n > 0); q('[data-jgift-n]').textContent = n > 1 ? n : '' }
+  addEventListener('jmtt:gift', e => paintGift(e.detail?.count || 0))
+  addEventListener('jmtt:coins', e => { if (e.detail?.balance != null) { state.coins = e.detail.balance; paint() } }) // 선물 코인을 받으면
+  jgift.onclick = () => window.JMTT?.gift?.open()
+  if (window.JMTT?.gift?.count) paintGift(window.JMTT.gift.count)
+
   function paint() {
-    q('[data-coins]').textContent = fmt(state.coins)
-    q('[data-chips]').textContent = fmt(state.chips)
+    q('[data-coins]').textContent = fmtShort(state.coins)
+    q('[data-coins-pill]').title = `JMTT 코인 ${fmt(state.coins)}`
+    q('[data-chips]').textContent = fmtShort(state.chips)
+    q('[data-chips-pill]').title = `이 게임의 칩 ${fmt(state.chips)}`
     q('[data-coins-pill]').hidden = !state.me
     q('[data-chips-pill]').hidden = !state.me
     q('[data-buyin]').hidden = !state.me

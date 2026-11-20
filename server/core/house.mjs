@@ -42,6 +42,7 @@ export function houseKit({ store, wallet, titleOf }) {
         if (!isInt(amount) || amount < 0) throw new Error(`${game.id}: payout은 0 이상 정수여야 해요 (${amount})`)
         const bet = p.inPlay
         p.chips += amount
+        if (!isInt(p.chips)) { console.warn(`[${game.id}] chips over MAX_SAFE_INTEGER`, p.id, p.chips); p.chips = Number.MAX_SAFE_INTEGER } // 정확히 셀 수 없는 크기는 상한에서 멈춤 (서버가 죽지 않게)
         p.inPlay = 0
         persist(p)
         try { store.logRound(game.id, p.id, String(roundId ?? p.round ?? ''), bet, amount, detail) } catch (err) { console.warn('round log', err.message) }
@@ -73,7 +74,6 @@ export function houseKit({ store, wallet, titleOf }) {
       p.busy = true
       try {
         let total = amount
-        if (amount + p.chips > 10 * jmtt.MAX_AMOUNT) toast(p, '금액이 커서 칩으로 바꾸는 데 시간이 걸려요. 잠시만 기다려 주세요…')
         // 이미 칩이 있으면: 지금 칩을 정산하고 합친 만큼 다시 맡긴다 (자리 하나 = 맡긴 기록 하나라 복구가 단순)
         if (p.session) {
           const had = p.chips
@@ -107,11 +107,13 @@ export function houseKit({ store, wallet, titleOf }) {
       if (!p.session) return
       if (p.inPlay) return toast(p, '판이 끝난 뒤에 칩을 코인으로 바꿀 수 있어요.')
       const amount = p.chips
-      if (amount > 10 * jmtt.MAX_AMOUNT) toast(p, '금액이 커서 코인으로 바꾸는 데 시간이 걸려요. 잠시만 기다려 주세요…')
       wallet.closeSeat(p.session, amount, '카지노 정산 · ' + game.title)
       p.session = null; p.chips = 0
-      await wallet.flushUser(p.id)
+      const err = await wallet.flushUser(p.id)
       send(p, { ...chipsMsg(p, await coinsOf(p.id)), cashout: amount, why: why || '' })
+      // 보내지 못한 정산은 대기열에 남아 30초마다 다시 보낸다 (칩이 사라지지 않음)
+      if (err === 'too_large') toast(p, '코인이 너무 많아 지금은 더 받을 수 없어요. 코인을 쓰면 자동으로 들어가요.')
+      else if (err) toast(p, '코인 서버가 바빠서 잠시 뒤 자동으로 들어가요.')
     }
 
     // 나가기 (나가기 버튼·연결 끊김 60초): 게임이 진행 중인 판을 마무리할 기회를 준다 (예: 블랙잭은 스탠드 처리 후 payout).

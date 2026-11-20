@@ -1,6 +1,6 @@
-// 큰 금액 (node test-big.mjs, 서버는 CASINO_TEST_GAMES=1 → 테스트 게임 coinflip · 약 40초)
-// 21억(2^31)이 넘는 코인을 제대로 읽는지, 한 번에 10만씩 나눠 맡기고 돌려받는 합이 맞는지,
-// 한 사람의 큰 정산이 다른 사람의 '코인으로'를 붙잡지 않는지
+// 큰 금액 (node test-big.mjs, 서버는 CASINO_TEST_GAMES=1 → 테스트 게임 coinflip)
+// 21억(2^31)이 넘는 코인을 제대로 읽는지, 큰 금액을 한 번에 맡기고 돌려받는지 (메인 한 번 최대 = MAX_SAFE_INTEGER, 2026-11-20),
+// 한 사람의 정산이 다른 사람의 '코인으로'를 붙잡지 않는지, 잔액이 MAX_SAFE_INTEGER를 넘게 되면(too_large) 칩이 사라지지 않는지
 import WebSocket from 'ws'
 const BASE = process.env.BASE || 'http://127.0.0.1:3100'
 const sleep = ms => new Promise(r => setTimeout(r, ms))
@@ -31,15 +31,15 @@ const b = client(B); await b.open
 const me = await b.wait(m => m.t === 'me')
 check('21억이 넘는 코인도 그대로 읽음', me?.coins === want, `${me?.coins} vs ${want}`)
 
-// 2) 큰 칩 바꾸기: 10만씩 나눠 맡김 · 시간이 걸린다는 안내 · 합이 맞음
+// 2) 큰 칩 바꾸기: 한 번에 맡김 · 합이 맞음
 const BIG = 1_234_567_891
+const t1 = Date.now()
 b.send({ t: 'buyin', amount: BIG })
-const note = await b.wait(m => m.t === 'toast' && /시간이 걸려요/.test(m.msg), 3000)
-check('큰 금액은 시간이 걸린다고 먼저 알림', !!note)
 const got = await b.wait(m => m.t === 'chips' && m.chips === BIG, 120000)
+check('큰 금액도 바로 (1초 안)', Date.now() - t1 < 1000, `${Date.now() - t1}ms`)
 check('큰 금액 칩 바꾸기', !!got && got.coins === want - BIG, `coins ${got?.coins}`)
 const parts = (await ledger()).log.filter(x => x.user === B && x.op === 'stake')
-check('10만씩 나눠 맡김', parts.length === Math.ceil(BIG / 100000) && parts.every(x => x.amount <= 100000) && parts.reduce((a, x) => a + x.amount, 0) === BIG, `${parts.length}번`)
+check('한 번에 맡김', parts.length === 1 && parts[0].amount === BIG, `${parts.length}번`)
 
 // 3) 큰 정산이 도는 동안 다른 사람의 '코인으로'는 바로 끝남
 const C = 'u_small_' + tag
@@ -56,6 +56,20 @@ check('다른 사람의 큰 정산을 기다리지 않음', !!cOut && ms < 3000 
 const bOut = await b.wait(m => m.t === 'chips' && m.cashout === BIG, 180000)
 check('큰 금액 코인으로: 전부 돌아옴', !!bOut && (await coins(B)) === want, `${await coins(B)} vs ${want}`)
 
-b.ws.close(); c.ws.close()
+
+// 4) 잔액이 MAX_SAFE_INTEGER를 넘게 되는 정산: 메인이 400 too_large → 안내, 칩은 대기열에 남음
+const D = 'u_huge_' + tag
+await coins(D); await earn(D, 9_000_000_000_000_000 - 1000)
+const d = client(D); await d.open; await d.wait(m => m.t === 'me')
+d.send({ t: 'buyin', amount: 10_000 }); await d.wait(m => m.t === 'chips' && m.chips === 10_000)
+await earn(D, 7_199_254_741_000) // 잔액을 상한 바로 밑으로 → 칩 1만을 돌려받으면 넘침
+const before = await coins(D)
+d.send({ t: 'cashout' })
+const warn = await d.wait(m => m.t === 'toast' && /너무 많아/.test(m.msg), 5000)
+check('too_large면 안내하고 코인은 그대로', !!warn && (await coins(D)) === before, warn?.msg)
+const pend = (await (await fetch(BASE + '/casino/api/lobby')).json()) && true
+check('서버는 계속 응답', pend)
+
+b.ws.close(); c.ws.close(); d.ws.close()
 console.log(out.join('\n'))
 process.exit(out.some(l => l.startsWith('FAIL')) ? 1 : 0)

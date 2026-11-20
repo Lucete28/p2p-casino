@@ -28,15 +28,16 @@ export function openWallet(store) {
 
   // 한 사람의 정산만 바로 보낸다 (칩 바꾸기·코인으로: 다른 사람의 큰 정산이 끝나기를 기다리지 않게)
   // 전체 flush와 같은 줄을 동시에 보내도 ref가 같아 한 번만 반영된다
+  // 반환: null(다 보냄) | 'too_large'(잔액이 MAX_SAFE_INTEGER를 넘게 됨 — 대기열에 남겨 두고 30초마다 다시) | 'failed'
   async function flushUser(user) {
     for (const p of store.pendingOf(user)) {
       try {
         const r = await jmtt.coin('cashout', p.user_id, p.amount, p.reason, p.ref)
         if (r.status === 200) store.pendingDone(p.ref)
-        else { store.pendingTried(p.ref); console.warn('cashout', p.ref, r.status, r.error); return false }
-      } catch (err) { store.pendingTried(p.ref); console.warn('cashout', p.ref, err.message); return false }
+        else { store.pendingTried(p.ref); console.warn('cashout', p.ref, r.status, r.error); return r.error === 'too_large' ? 'too_large' : 'failed' }
+      } catch (err) { store.pendingTried(p.ref); console.warn('cashout', p.ref, err.message); return 'failed' }
     }
-    return true
+    return null
   }
 
   // ---------- 다시 켜졌을 때: 남아 있는 자리를 모두 정산 ----------

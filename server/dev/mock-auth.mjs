@@ -6,12 +6,15 @@
 // 사이트 이미지에는 들어가지 않는다 (.dockerignore)
 import http from 'node:http'
 import net from 'node:net'
+import fs from 'node:fs'
 
 const PORT = +process.env.MOCK_PORT || 3100
 const CASINO = +process.env.CASINO_PORT || 3200
 const ledger = new Map()   // user → balance
 const refs = new Map()     // ref → result
 const log = []
+// JMTT 선물 흉내 (/auth/gift, /auth/presence). 만들기: GET /auth/_gift?amount=500&title=...
+const gifts = []           // { id, title, message, amount, claimedBy: Set }
 const bal = u => ledger.has(u) ? ledger.get(u) : (ledger.set(u, 1000), 1000)
 const cookieUser = req => (req.headers.cookie || '').match(/(?:^|;\s*)jmtt_session=([^;]+)/)?.[1] || null
 const json = (res, code, body, h = {}) => { res.writeHead(code, { 'Content-Type': 'application/json', ...h }); res.end(JSON.stringify(body)) }
@@ -39,6 +42,17 @@ const server = http.createServer((req, res) => {
     }
     if (p === '/auth/internal/me') return u ? json(res, 200, { id: u, sub: 'sub-' + u, name: u.slice(2), picture: null }) : json(res, 401, {})
     if (p === '/auth/_ledger') return json(res, 200, { ledger: Object.fromEntries(ledger), log })
+    if (p === '/auth/_gift') { const g = { id: 'g' + (gifts.length + 1), title: url.searchParams.get('title') || '운영자 선물', message: '', amount: +url.searchParams.get('amount') || 500, claimedBy: new Set() }; gifts.push(g); return json(res, 200, { id: g.id }) }
+    const giftsFor = who => gifts.filter(g => !g.claimedBy.has(who)).map(({ claimedBy, ...g }) => g)
+    if (p === '/auth/presence') return json(res, 200, { gifts: giftsFor(u).map(g => g.id) })
+    if (p === '/auth/gift') return json(res, 200, { gifts: giftsFor(u), gift: giftsFor(u)[0] || null, loggedIn: !!u })
+    if (p === '/auth/gift/claim' && req.method === 'POST') {
+      if (!u) return json(res, 401, { error: 'not_logged_in' })
+      let body = ''; req.on('data', c => body += c)
+      req.on('end', () => { const g = gifts.find(x => x.id === JSON.parse(body || '{}').id); if (!g || g.claimedBy.has(u)) return json(res, 409, { error: 'claimed' })
+        g.claimedBy.add(u); ledger.set(u, bal(u) + g.amount); json(res, 200, { ok: true, amount: g.amount, balance: bal(u) }) })
+      return
+    }
     if (p.startsWith('/auth/internal/coin/')) {
       if (req.headers.authorization !== 'Bearer test') return json(res, 403, { error: 'forbidden' })
       const op = p.slice('/auth/internal/coin/'.length)
@@ -52,6 +66,8 @@ const server = http.createServer((req, res) => {
         if (refs.has(b.ref)) return json(res, 200, { ...refs.get(b.ref), duplicate: true })
         const delta = op === 'stake' ? -b.amount : b.amount
         const next = bal(b.user) + delta
+        if (!Number.isSafeInteger(b.amount) || b.amount <= 0) return json(res, 400, { error: 'bad_amount' })
+        if (!Number.isSafeInteger(next)) return json(res, 400, { error: 'too_large', balance: bal(b.user) }) // 실제 auth와 같음 (2026-11-20)
         if (next < 0) return json(res, 409, { error: 'insufficient', balance: bal(b.user) })
         ledger.set(b.user, next)
         const r = { ok: true, balance: next, delta }
@@ -64,6 +80,11 @@ const server = http.createServer((req, res) => {
     return json(res, 404, {})
   }
   // 로컬에서 JMTT 배지·구글 G 로고 (실제 사이트에서는 JMTT 메인이 줌)
+  // 메인의 접속 신호·선물 팝업: MOCK_JMTT_DIR(home-server의 home 폴더)가 있으면 진짜 파일, 없으면 빈 스크립트
+  if (p === '/jmtt-presence.js' || p === '/jmtt-gift.js') {
+    res.writeHead(200, { 'Content-Type': 'text/javascript' })
+    try { return res.end(process.env.MOCK_JMTT_DIR ? fs.readFileSync(process.env.MOCK_JMTT_DIR + p) : '') } catch { return res.end('') }
+  }
   if (p === '/jmtt-badge.js') { res.writeHead(200, { 'Content-Type': 'text/javascript' }); return res.end('window.JMTT={badge:{hide(){},show(){},refresh(){},setPosition(){}}}') }
   // 나머지는 카지노 서버로
   const up = http.request({ host: '127.0.0.1', port: CASINO, path: req.url, method: req.method, headers: req.headers }, r => {
