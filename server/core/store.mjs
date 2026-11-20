@@ -39,6 +39,8 @@ export function openStore(file) {
   const cols = new Set(db.prepare('PRAGMA table_info(seats)').all().map(c => c.name))
   if (!cols.has('game')) db.exec("ALTER TABLE seats ADD COLUMN game TEXT NOT NULL DEFAULT 'holdem'")
   if (!cols.has('in_play')) db.exec('ALTER TABLE seats ADD COLUMN in_play INTEGER NOT NULL DEFAULT 0')
+  // #닉네임 (2026-11-20): 이름은 저장하지 않는다 (JMTT ID만, 보여 줄 때 메인 /auth/internal/names로 지금 닉네임). 예전에 적어 둔 이름은 지움
+  db.exec('UPDATE users SET name = NULL WHERE name IS NOT NULL; UPDATE seats SET name = NULL WHERE name IS NOT NULL; UPDATE season SET name = NULL WHERE name IS NOT NULL')
   const q = sql => db.prepare(sql)
 
   return {
@@ -47,7 +49,7 @@ export function openStore(file) {
     // 맡기기 전에 먼저 적어 둔다: 맡기는 도중 꺼지면 다시 켜질 때 같은 ref로 다시 물어 실제 맡긴 양을 알아낸다
     seatOpen(session, room, user, name, intended, chunk, game = 'holdem') {
       q('INSERT INTO seats (session, room, user_id, name, intended, chunk, staked, stack, state, at, game) VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)')
-        .run(session, room, user, name, intended, chunk, 'staking', Date.now(), game)
+        .run(session, room, user, null, intended, chunk, 'staking', Date.now(), game) // 이름은 저장하지 않음 (#닉네임)
     },
     // 하우스 게임: 판마다 칩과 '진행 중인 판에 건 칩'을 함께 적는다 (판 도중 꺼지면 건 칩은 돌려줌)
     seatPlay(session, stack, inPlay) { q("UPDATE seats SET stack = ?, in_play = ?, at = ? WHERE session = ? AND state = 'seated'").run(stack, inPlay, Date.now(), session) },
@@ -57,7 +59,7 @@ export function openStore(file) {
     // 기념 칩만으로 자리를 연다 (맡긴 코인 0, 칩 = 기념 칩). 나갈 때 칩은 다른 칩처럼 코인으로 정산
     seatOpenGift(session, table, user, name, chips, game) {
       q('INSERT INTO seats (session, room, user_id, name, intended, chunk, staked, stack, state, at, game) VALUES (?, ?, ?, ?, 0, 100000, 0, ?, ?, ?, ?)')
-        .run(session, table, user, name, chips, 'seated', Date.now(), game)
+        .run(session, table, user, null, chips, 'seated', Date.now(), game)
     },
     // 이 사람이 지금 앉아 있는 자리 (한 번에 한 게임만). 칩을 모두 잃은 하우스 게임 자리(칩 0, 진행 중 0)는 빈 자리로 본다
     openSeatOf: user => q(`SELECT * FROM seats WHERE user_id = ? AND (state = 'staking' OR (state = 'seated' AND (stack > 0 OR in_play > 0)))
@@ -120,8 +122,7 @@ export function openStore(file) {
     visit(user, name) {
       const day = kstDay()
       const known = q('SELECT 1 FROM users WHERE user_id = ?').get(user)
-      if (!known) q('INSERT INTO users (user_id, name, first_day) VALUES (?, ?, ?)').run(user, name, day)
-      else q('UPDATE users SET name = ? WHERE user_id = ?').run(name, user)
+      if (!known) q('INSERT INTO users (user_id, name, first_day) VALUES (?, NULL, ?)').run(user, day) // 이름은 저장하지 않음 (#닉네임)
       q('INSERT OR IGNORE INTO visits (day, user_id, fresh) VALUES (?, ?, ?)').run(day, user, known ? 0 : 1)
     },
     roomOpened(room) { q('INSERT OR IGNORE INTO rooms (room, day) VALUES (?, ?)').run(room, kstDay()) },
