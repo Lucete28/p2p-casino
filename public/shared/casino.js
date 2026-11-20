@@ -11,6 +11,7 @@
 //       bustDelay: 1200,                   // 칩을 모두 잃은 뒤 파산 안내(→ 로비 캐셔)를 띄우기까지 ms (결과 연출 길이에 맞추기)
 //       onGift({ chips, title }) {},       // 첫 방문 기념 칩을 받았을 때 (팝업은 이 파일이 띄움. 게임 연출을 더하고 싶을 때만)
 //       onLoggedOut() {},                  // 로그인 안 한 사람 (화면은 보여 주고, 칩 바꾸기 때 로그인 안내)
+//       leaveMessage(state) {},            // '← 로비'·탭 닫기 때 물을 말 (null이면 묻지 않음). 없으면 판 진행 중(inPlay > 0)일 때 기본 문구
 //     })
 //     game.send({ t: 'spin', bet: 10 })    // 서버(server/games/<id>)로
 //   </script>
@@ -169,11 +170,12 @@ export async function startGame(opts = {}) {
   }
   q('[data-buyin]').onclick = openBuyIn
 
-  // 판 도중 나가기는 한 번 묻는다 (#길찾기). 판이 없으면 바로
+  // 판 도중 나가기는 한 번 묻는다 (#길찾기). 판이 없으면 바로. 게임이 opts.leaveMessage로 문구·때를 정할 수 있다 (null = 묻지 않음)
   let leaving = false
-  const askLeave = () => leaving || state.inPlay <= 0 || (leaving = confirm('이번 판이 아직 끝나지 않았어요. 지금 나가면 남은 판은 자동으로 마무리돼요. 나갈까요?'))
-  q('[data-back]').addEventListener('click', e => { if (!askLeave()) e.preventDefault() })
-  addEventListener('beforeunload', e => { if (!leaving && state.inPlay > 0) { e.preventDefault(); e.returnValue = '' } })
+  const leaveMsg = () => opts.leaveMessage ? opts.leaveMessage(state) : state.inPlay > 0 ? '이번 판이 아직 끝나지 않았어요. 지금 나가면 남은 판은 자동으로 마무리돼요. 나갈까요?' : null
+  const askLeave = () => { if (leaving) return true; const m = leaveMsg(); return !m || (leaving = confirm(m)) }
+  q('[data-back]').addEventListener('click', e => { if (!askLeave()) { e.preventDefault(); e.stopImmediatePropagation() } })
+  addEventListener('beforeunload', e => { if (!leaving && leaveMsg()) { e.preventDefault(); e.returnValue = '' } })
   q('[data-cashout]').onclick = () => api.send({ t: 'cashout' })
   // 로비로: 판이 진행 중이면 확인 (나가면 건 칩을 잃는다), 아니면 칩을 코인으로 돌려받고 이동
   q('[data-back]').onclick = e => {
