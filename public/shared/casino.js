@@ -168,6 +168,12 @@ export async function startGame(opts = {}) {
     q('[data-login]').hidden = !!state.me
   }
   q('[data-buyin]').onclick = openBuyIn
+
+  // 판 도중 나가기는 한 번 묻는다 (#길찾기). 판이 없으면 바로
+  let leaving = false
+  const askLeave = () => leaving || state.inPlay <= 0 || (leaving = confirm('이번 판이 아직 끝나지 않았어요. 지금 나가면 남은 판은 자동으로 마무리돼요. 나갈까요?'))
+  q('[data-back]').addEventListener('click', e => { if (!askLeave()) e.preventDefault() })
+  addEventListener('beforeunload', e => { if (!leaving && state.inPlay > 0) { e.preventDefault(); e.returnValue = '' } })
   q('[data-cashout]').onclick = () => api.send({ t: 'cashout' })
   // 로비로: 판이 진행 중이면 확인 (나가면 건 칩을 잃는다), 아니면 칩을 코인으로 돌려받고 이동
   q('[data-back]').onclick = e => {
@@ -224,7 +230,8 @@ export async function startGame(opts = {}) {
       }
       // 서버의 알림·거절: 게임이 알 수 있게 onToast로 먼저 넘기고, false를 돌려주지 않으면 기본 알림을 띄운다
       if (d.t === 'toast' || d.t === 'error') { if (opts.onToast?.(d) === false) return; return toast(d.msg) }
-      if (d.t === 'restart') return toast('서버가 다시 시작돼요. 진행 중이던 판은 무효, 칩은 코인으로 돌아갔어요.')
+      if (d.t === 'restart') { wait = 2000 + Math.random() * 8000; return toast('서버가 다시 시작돼요. 진행 중이던 판은 무효, 칩은 코인으로 돌아갔어요.') } // 모두 한꺼번에 다시 붙지 않게 (#부하)
+      if (d.t === 'full') { wait = 20000 + Math.random() * 20000; return toast(d.msg || '지금 사람이 많아요. 잠시 뒤 다시 연결할게요.') }
       if (d.t === 'gift') return showGift(d)
       opts.onMessage?.(d)
     }
@@ -234,8 +241,8 @@ export async function startGame(opts = {}) {
         try { const r = await fetch('/auth/me?optional=1', { cache: 'no-store' }); if (r.ok && (await r.json()) === null) { state.me = null; paint(); opts.onLoggedOut?.(); return } } catch {}
       }
       everOpened = false
-      setTimeout(connect, wait)
-      wait = Math.min(wait * 2, 15000)
+      setTimeout(connect, wait * (0.5 + Math.random())) // 무작위로 흩어서 다시 붙기 (#부하)
+      wait = Math.min(wait * 2, 30000)
     }
   }
   connect()

@@ -1,7 +1,7 @@
 // HTTP 도우미: 응답 보내기, 정적 파일, 기기 쿠키 (CASINO.md 2장 정적 파일 규칙)
 import { readFile, stat } from 'node:fs/promises'
 import { join, extname, resolve, sep } from 'node:path'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, createHash } from 'node:crypto'
 
 export const BASE = '/casino'
 
@@ -49,10 +49,32 @@ export async function resolveStatic(publicDir, rel) {
   return file
 }
 
+// 파일은 메모리에 한 번 읽어 두고(바뀌면 다시) ETag로 304. 캐시 머리말 (#부하, 2026-11-20):
+//   html = no-cache (매번 확인) · js·css·json = 60초 (배포 뒤 1분 안에 새 파일) · 그림·소리·글꼴 = 하루
+const files = new Map() // 경로 → { mtimeMs, body, etag }
+const cacheOf = ext => ext === '.html' ? 'no-cache' : /^\.(js|mjs|css|json)$/.test(ext) ? 'public, max-age=60' : 'public, max-age=86400'
 export async function sendFile(req, res, file) {
-  const body = await readFile(file)
+  const st = await stat(file)
+  let f = files.get(file)
+  if (!f || f.mtimeMs !== st.mtimeMs) {
+    const body = await readFile(file)
+    f = { mtimeMs: st.mtimeMs, body, etag: '"' + createHash('sha1').update(body).digest('base64url').slice(0, 20) + '"' }
+    files.set(file, f)
+  }
+  const ext = extname(file).toLowerCase()
   // 페이지를 처음 여는 기기에는 기기 쿠키를 준다
-  const extra = file.endsWith('.html') && !deviceOf(req) ? { 'Set-Cookie': deviceCookie(newDevice(), req) } : {}
-  res.writeHead(200, { 'Content-Type': TYPES[extname(file).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-store', ...extra })
-  res.end(body)
+  const extra = ext === '.html' && !deviceOf(req) ? { 'Set-Cookie': deviceCookie(newDevice(), req) } : {}
+  const head = { 'Content-Type': TYPES[ext] || 'application/octet-stream', 'Cache-Control': cacheOf(ext), ETag: f.etag, ...extra }
+  if (req.headers['if-none-match'] === f.etag) { res.writeHead(304, head); return res.end() }
+  res.writeHead(200, head)
+  res.end(req.method === 'HEAD' ? undefined : f.body)
+}
+
+// 없는 주소·아직 열리지 않은 게임: 브라우저면 돌아갈 길이 있는 작은 화면 (#길찾기), 아니면 글자만
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+export function notFound(req, res, msg = '찾는 페이지가 없어요') {
+  if (!/text\/html/.test(req.headers.accept || '')) return send(res, 404, 'not found')
+  send(res, 404, `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${esc(msg)} · JMTT 카지노</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#070706;color:#f3ead7;font:16px/1.6 Pretendard,system-ui,sans-serif;text-align:center;padding:24px;box-sizing:border-box}h1{color:#e8c26a;font-size:22px;margin:0 0 20px}a{display:inline-block;margin:6px;padding:10px 18px;border-radius:12px;border:1px solid rgba(232,194,106,.4);color:#e8c26a;text-decoration:none;font-weight:700}a.main{background:#e8c26a;color:#1a1408}</style></head>
+<body><main><h1>${esc(msg)}</h1><a class="main" href="${BASE}/">카지노 로비로</a><a href="/">JMTT 메인으로</a></main></body></html>`, { 'Content-Type': 'text/html; charset=utf-8' })
 }

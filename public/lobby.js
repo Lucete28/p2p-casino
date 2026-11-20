@@ -344,13 +344,18 @@ function paintRefill() {
 async function openCashier() {
   $('cashier-bal').hidden = !me
   $('cashier-login').hidden = !!me
-  $('cashier-note').textContent = me ? '모든 게임이 같은 JMTT 코인을 써요' : '로그인하면 게임에 앉을 수 있어요'
+  $('cashier-note').hidden = !!me
+  $('cashier-note').textContent = me ? '' : '로그인하면 게임에 앉을 수 있어요'
   if (me) { $('refill').disabled = true; $('refill-note').hidden = false; $('refill-note').textContent = '확인하는 중…' }
   $('cashier').showModal()
+  // 뒤로 가기 = 캐셔 닫기 (로비를 벗어나지 않게)
+  if (!history.state?.cashier) history.pushState({ cashier: 1 }, '')
   if (me) { await loadRefill(); paintRefill() } else paintRefill()
 }
 $('coins').onclick = openCashier
 $('close-cashier').onclick = () => $('cashier').close()
+$('cashier').addEventListener('close', () => { if (history.state?.cashier) history.back() })
+addEventListener('popstate', () => { if ($('cashier').open) $('cashier').close() })
 $('refill').onclick = async e => {
   e.target.disabled = true
   let d = null, r = null

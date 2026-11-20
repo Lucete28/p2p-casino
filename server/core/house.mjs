@@ -8,7 +8,7 @@ import * as jmtt from './jmtt.mjs'
 const DISCONNECT_MS = 60000 // 연결이 모두 끊긴 뒤 이만큼 지나면 칩을 코인으로 돌려주고 나감
 const isInt = n => Number.isSafeInteger(n)
 
-export function houseKit({ store, wallet, titleOf }) {
+export function houseKit({ store, wallet, titleOf, stats }) {
   // game = 게임 모듈 (export default 객체), meta = registry.mjs의 줄 (welcome 등). 반환: { attach(ws), summary(), shutdown() }
   return function host(game, meta = {}) {
     const players = new Map() // 사용자 ID → 플레이어
@@ -46,6 +46,7 @@ export function houseKit({ store, wallet, titleOf }) {
         p.inPlay = 0
         persist(p)
         try { store.logRound(game.id, p.id, String(roundId ?? p.round ?? ''), bet, amount, detail) } catch (err) { console.warn('round log', err.message) }
+        stats?.round(game.id, p.id, bet, amount) // 관리 통계: 메모리에만 (1분마다 저장)
         p.round = null
         send(p, chipsMsg(p))
         return true
@@ -169,6 +170,11 @@ export function houseKit({ store, wallet, titleOf }) {
         p.dropTimer = setTimeout(() => { if (!p.sockets.size && players.get(p.id) === p) leave(p) }, DISCONNECT_MS)
       })
       ws.on('message', raw => {
+        // 한 연결이 메시지를 쏟아도 다른 사람이 느려지지 않게: 초당 15개(한 번에 30개까지), 넘으면 버림 (#부하)
+        const now = Date.now()
+        ws.budget = Math.min(30, (ws.budget ?? 30) + (now - (ws.budgetAt ?? now)) * 0.015); ws.budgetAt = now
+        if (ws.budget < 1) return
+        ws.budget--
         let d
         try { d = JSON.parse(raw) } catch { return }
         if (!d || typeof d.t !== 'string') return

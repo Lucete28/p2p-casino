@@ -12,13 +12,15 @@ import { openWallet } from './core/wallet.mjs'
 import { houseKit } from './core/house.mjs'
 import { GAMES } from './core/registry.mjs'
 import { refillKit } from './core/refill.mjs'
-import { BASE, send, redirect, deviceOf, newDevice, deviceCookie, resolveStatic, sendFile } from './core/http.mjs'
+import { openStats, statsPage } from './core/stats.mjs'
+import { readFileSync } from 'node:fs'
+import { BASE, send, redirect, deviceOf, newDevice, deviceCookie, resolveStatic, sendFile, notFound } from './core/http.mjs'
 
 const PORT = +process.env.PORT || 3000
 const PUBLIC = resolve(process.env.PUBLIC_DIR || join(import.meta.dirname, '..', 'public'))
 const DATA = process.env.DATA_DIR || join(import.meta.dirname, '..', 'data')
 const ADMINS = new Set((process.env.CASINO_ADMINS || '').split(',').map(s => s.trim()).filter(Boolean)) // 관리자 JMTT 사용자 ID
-const isAdmin = who => !!who && ADMINS.has(who.id)
+const isAdmin = who => !!who && (who.admin === true || ADMINS.has(who.id)) // JMTT 운영자(/auth/internal/me의 admin) 또는 CASINO_ADMINS
 
 mkdirSync(DATA, { recursive: true })
 const store = openStore(join(DATA, 'casino.db'))
@@ -29,7 +31,13 @@ setInterval(() => store.pruneHands(), 6 * 3600e3).unref()
 // ---------- 게임 불러오기 ----------
 // 게임 하나가 불러오기·준비에서 오류를 내도 카지노 전체가 죽지 않게, 그 게임만 'down'(점검 중)으로 둔다
 const titleOf = id => GAMES.find(g => g.id === id)?.title || id
-const house = houseKit({ store, wallet, titleOf })
+// 관리 통계 (#통계): 판 끝마다 메모리에 세고 1분마다 저장
+const stats = openStats(store, {
+  titleOf,
+  liveSeats: () => [...games.values()].reduce((a, g) => a + (summaryOf(g)?.players || 0), 0),
+  jackpot: () => { try { return Math.floor(JSON.parse(readFileSync(join(DATA, 'slots-jackpot.json'), 'utf8')).pool) } catch { return null } },
+})
+const house = houseKit({ store, wallet, titleOf, stats })
 const games = new Map() // id → { meta, mod, mode, host, status }
 for (const meta of GAMES) {
   const g = { meta, mod: null, mode: null, host: null, status: meta.status }
@@ -75,6 +83,20 @@ async function route(req, res) {
     })
   }
 
+  // 관리 통계 요약: JMTT 관리 페이지가 서버끼리 부른다 (ADMIN_GUIDE 2장, 앱 열쇠)
+  if (rel === '/api/jmtt/stats') {
+    if (!process.env.JMTT_COIN_KEY || req.headers.authorization !== 'Bearer ' + process.env.JMTT_COIN_KEY) return send(res, 401, { error: 'unauthorized' })
+    return send(res, 200, stats.summary())
+  }
+  // 카지노 통계 페이지: 운영자만 (JMTT 운영자 로그인)
+  if (rel === '/admin/stats') {
+    const who = await identify(req)
+    if (who === undefined) return send(res, 503, 'auth unavailable')
+    if (!who) return redirect(res, 302, '/auth/login?next=' + encodeURIComponent(BASE + rel))
+    if (!isAdmin(who)) return notFound(req, res, '운영자만 볼 수 있어요')
+    return send(res, 200, statsPage(stats.refresh(), titleOf), { 'Content-Type': 'text/html; charset=utf-8' })
+  }
+
   // 로비 캐셔: 파산 지원금 상태(GET)·받기(POST). 로그인한 사람만
   if (rel === '/api/refill') {
     const who = await identify(req)
@@ -97,7 +119,7 @@ async function route(req, res) {
   if (g) {
     if (g.status !== 'live') {
       const who = await identify(req)
-      if (!canOpen(g, who)) return send(res, 404, 'not found')
+      if (!canOpen(g, who)) return notFound(req, res, `${g.meta.title}은(는) 아직 열리지 않았어요`)
     }
     if (rel === '/' + seg) return redirect(res, 301, `${BASE}/${seg}/`)
     if (rel.startsWith(`/${seg}/api/`)) return gameApi(req, res, g, rel.slice(seg.length + 1))
@@ -105,7 +127,7 @@ async function route(req, res) {
 
   const file = await resolveStatic(PUBLIC, rel)
   if (file === 'dir') return redirect(res, 301, BASE + rel + '/')
-  if (!file) return send(res, 404, 'not found')
+  if (!file) return notFound(req, res)
   return sendFile(req, res, file)
 }
 
@@ -122,6 +144,7 @@ const server = http.createServer((req, res) => {
 
 // ---------- 웹소켓: /casino/<게임>/ws (옛 주소 /casino/ws = 홀덤) ----------
 const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 })
+const MAX_SOCKETS = +process.env.CASINO_MAX_SOCKETS || 1200 // 카지노 전체 동시 연결 상한 (test-load로 정함, CASINO.md)
 wss.on('headers', (headers, req) => { if (req.newDevice) headers.push('Set-Cookie: ' + deviceCookie(req.device, req)) })
 server.on('upgrade', async (req, socket, head) => {
   const path = new URL(req.url, 'http://x').pathname
@@ -137,6 +160,8 @@ server.on('upgrade', async (req, socket, head) => {
   req.device = deviceOf(req) || newDevice()
   req.newDevice = !deviceOf(req)
   wss.handleUpgrade(req, socket, head, ws => {
+    // 꽉 찼으면 죽지 말고 안내 (#부하): 화면이 20~40초 뒤 무작위로 다시 붙는다
+    if (wss.clients.size > MAX_SOCKETS) { ws.send(JSON.stringify({ t: 'full', msg: '지금 사람이 많아요. 잠시 뒤 다시 연결할게요.' })); ws.close(4503, 'full'); return }
     ws.who = who
     ws.device = req.device
     ws.game = g.meta.id
@@ -165,6 +190,7 @@ async function stop() {
   for (const g of games.values()) {
     try { g.host ? g.host.shutdown() : g.mod?.shutdown?.() } catch (err) { console.error(`${g.meta.id} shutdown`, err) }
   }
+  try { stats.save() } catch {}
   await Promise.race([wallet.flush(), new Promise(r => setTimeout(r, 7000))])
   process.exit(0)
 }

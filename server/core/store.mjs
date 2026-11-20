@@ -9,6 +9,8 @@ export function openStore(file) {
   const db = new DatabaseSync(file)
   db.exec(`
     PRAGMA journal_mode = WAL;
+    -- WAL에서는 NORMAL이어도 프로세스가 죽어도 잃지 않는다 (전원이 갑자기 꺼질 때만 마지막 몇 판). 판마다 쓰는 일이 많아 디스크 대기를 줄임 (#부하)
+    PRAGMA synchronous = NORMAL;
     PRAGMA busy_timeout = 3000;
     -- 앉아 있는 자리: 판이 끝날 때마다 칩을 적어 둔다 (판 도중 꺼지면 이 값 = 그 판 무효)
     CREATE TABLE IF NOT EXISTS seats (
@@ -100,7 +102,7 @@ export function openStore(file) {
     // ---- 월간 랭킹 (코인 순이익) ----
     seasonAdd(user, name, delta, won) {
       q(`INSERT INTO season (month, user_id, name, net, hands, wins) VALUES (?, ?, ?, ?, 1, ?)
-         ON CONFLICT (month, user_id) DO UPDATE SET name = excluded.name, net = net + excluded.net, hands = hands + 1, wins = wins + excluded.wins`)
+         ON CONFLICT (month, user_id) DO UPDATE SET name = excluded.name, net = MIN(MAX(net + excluded.net, -9007199254740991), 9007199254740991), hands = hands + 1, wins = wins + excluded.wins`)
         .run(monthKey(), user, name, delta, won ? 1 : 0)
     },
     season(month, n, me) {

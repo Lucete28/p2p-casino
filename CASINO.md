@@ -27,6 +27,9 @@
 | `/casino/<id>/api/*` | 그 게임의 HTTP API (게임 모듈의 `api`) |
 | `/casino/api/lobby` | 로비가 읽는 게임 목록·상태·인원, 내가 앉아 있는 게임 |
 | `/casino/api/refill` | 로비 캐셔의 파산 지원금: `GET` 상태, `POST` 받기 (4장) |
+| `/casino/api/jmtt/stats` | JMTT 관리 페이지가 부르는 통계 요약 (앱 열쇠 `JMTT_COIN_KEY`, home-server ADMIN_GUIDE 2장) |
+| `/casino/admin/stats` | 카지노 통계 페이지 (JMTT 운영자 로그인 또는 `CASINO_ADMINS`) |
+| 없는 주소 | 브라우저면 "카지노 로비로 · JMTT 메인으로"가 있는 404 화면 (`notFound`). 준비 중 게임도 같은 화면 |
 | `/casino/<id>` | `/casino/<id>/`로 301 |
 
 **옛 주소** (v1.8까지 홀덤이 `/casino/`에 있었음) — 한 달쯤 유지 후 정리
@@ -34,7 +37,7 @@
 - `/casino/ws`, `/casino/api/rooms|season|stats` → 홀덤
 - `/casino/stats.html` → `/casino/holdem/stats.html` (301)
 
-**준비 중 게임**: `server/core/registry.mjs`에서 `status: 'wip'`인 게임은 로비에 "오픈 예정"으로 보이고, 주소는 **관리자(`CASINO_ADMINS`)만** 열린다. 일반 사용자에게는 404. 그래서 만드는 중에도 main에 올려 실제 사이트에서 미리 볼 수 있다.
+**준비 중 게임**: `server/core/registry.mjs`에서 `status: 'wip'`인 게임은 로비에 "오픈 예정"으로 보이고, 주소는 **관리자(`CASINO_ADMINS` 또는 JMTT 운영자)만** 열린다. 일반 사용자에게는 404. 그래서 만드는 중에도 main에 올려 실제 사이트에서 미리 볼 수 있다.
 
 ## 2. 저장소 구조
 
@@ -51,7 +54,9 @@ p2p-casino/
 │  │  ├─ wallet.mjs          칩 지갑: 코인 맡기기·정산 대기열·재시작 복구
 │  │  ├─ store.mjs           SQLite 하나 (/app/data/casino.db)
 │  │  ├─ jmtt.mjs            /auth 확인·코인
-│  │  └─ rng.mjs             crypto 난수, 셔플, 카드 묶음
+│  │  ├─ rng.mjs             crypto 난수, 셔플, 카드 묶음
+│  │  ├─ refill.mjs          캐셔 파산 지원금
+│  │  └─ stats.mjs           관리 통계: 판 끝마다 메모리에 세고 1분마다 날짜×게임 한 줄 저장 (daily_stats), 요약·통계 페이지
 │  ├─ games/
 │  │  ├─ holdem/             ── 홀덤 세션 ── index.mjs(모듈) · room.mjs
 │  │  ├─ <id>/index.mjs      ── 각 게임 세션 ──
@@ -200,6 +205,8 @@ PORT=3200 JMTT_AUTH_URL=http://127.0.0.1:3100 JMTT_COIN_KEY=test CASINO_ADMINS=u
 | 테스트 (`BASE=http://127.0.0.1:3100 node <파일>`) | 보는 것 |
 |---|---|
 | `test-routes.mjs` | 주소·옛 주소·wip 막기·내보내면 안 되는 파일·로비 API |
+| `test-stats.mjs` | 통계 요약 API는 앱 열쇠만(401), 통계 페이지는 운영자만, 판을 하면 숫자가 오름 |
+| `test-load.mjs` | 동시 접속 부하 (**로컬 전용**): `SERVER_PID=<카지노 PID> N=500 node test-load.mjs` — 슬롯 N명이 2초마다 스핀, CPU·메모리·메시지·응답 시간·재접속 |
 | `test-house.mjs` | 관리 모드·칩 지갑 (테스트 게임). `CRASH=1`이면 판 도중 멈춤 → 서버 강제 종료·재시작 후 건 칩까지 돌아왔는지 장부 확인 |
 | `test-big.mjs` | 큰 금액: 21억이 넘는 코인 읽기, 큰 금액을 한 번에 맡기고 돌려받기, 한 사람의 정산이 다른 사람의 '코인으로'를 붙잡지 않음, 잔액이 MAX_SAFE_INTEGER를 넘게 되는 정산(`too_large`)에 안내·코인 그대로 |
 | `test-refill.mjs` | 파산 지원금: 코인 501이면 거절·500이면 됨, 칩이 있으면 거절(칩 0 자리는 괜찮음), 하루 10번, 동시에 눌러도 한 번. mock을 `MOCK_NO_EARN=1`로 띄우고 `EXPECT_NO_EARN=1`이면 메인 권한 없을 때(`not_ready`) |

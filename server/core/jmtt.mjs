@@ -14,7 +14,7 @@ export async function identify(cookie = '') {
   let who = null
   try {
     const r = await fetch(`${AUTH}/auth/internal/me`, { headers: { Cookie: cookie } })
-    if (r.ok) { const u = await r.json(); who = { id: u.id, name: u.name, picture: u.picture } }
+    if (r.ok) { const u = await r.json(); who = { id: u.id, name: u.name, picture: u.picture, ...(u.admin === true ? { admin: true } : {}) } }
   } catch (err) { console.warn('identify', err.message); throw err }
   cache.set(cookie, { who, until: Date.now() + 30000 })
   if (cache.size > 2000) cache.delete(cache.keys().next().value)
