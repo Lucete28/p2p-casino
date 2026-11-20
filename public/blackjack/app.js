@@ -831,7 +831,13 @@ if (/^(127\.0\.0\.1|localhost)$/.test(location.hostname) && new URLSearchParams(
   setTimeout(() => { blackjackBig(seats.get(state?.me) || null); setTimeout(() => coinRain(seats.get(state?.me) || { handsBox: $('mine') }), 2600) }, 2500)
 }
 
+// 나가기 확인: 카드를 받는 중(행동 시간)에만 묻는다 — 이때 나가면 건 칩을 잃음. 딜러 결과가 나온 뒤(결과 연출 중)는 결과대로 바로 정산돼서 묻지 않음
+const LEAVE_MSG = '카드를 받는 중이에요. 지금 나가면 건 칩을 잃어요. 나갈까요?'
+const losing = () => state?.phase === 'play' && !!mySeat()?.inRound
+let leaving = false // 우리가 직접 옮기는 중이면 '페이지 떠나기' 확인을 다시 띄우지 않음
+
 game = await startGame({
+  leaveMessage: () => (!leaving && losing()) ? LEAVE_MSG : null, // 공통 '← 로비'·탭 닫기 확인에 쓰임 (공통 부품이 이 옵션을 지원할 때)
   autoBuyIn: !firstVisit, // 처음이면 안내를 먼저 보고 '시작하기'에서 칩 바꾸기
   bustDelay: 900, // 정산이 이미 카드 연출 뒤라 짧게
   onToast() { releaseAct(); paintPanel() }, // 거절되면 버튼을 다시 풀기 (알림은 기본대로)
@@ -850,8 +856,6 @@ if (demoKind === 'full' || demoKind === 'result') showDemo()
 
 // ---------- 길찾기: 윗줄 '← 로비' 옆에 JMTT 메인으로 (윗줄은 공통 부품이라 여기서 링크만 덧붙임, 슬롯과 같음) ----------
 // 카드를 받는 중(행동 시간)에 나가면 건 칩을 잃으니 한 번 묻는다. 그 밖엔 나가기(남은 칩 → 코인)를 보낸 뒤 이동
-const losing = () => state?.phase === 'play' && !!mySeat()?.inRound
-let leaving = false // 우리가 직접 옮기는 중이면 아래 '페이지 떠나기' 확인을 다시 띄우지 않음
 {
   const a = document.createElement('a')
   a.className = 'casino-back bj-jmtt'
@@ -862,13 +866,14 @@ let leaving = false // 우리가 직접 옮기는 중이면 아래 '페이지 �
   a.onclick = ev => {
     if (!game?.me) return
     ev.preventDefault()
-    if (losing() && !confirm('카드를 받는 중이에요. 지금 나가면 건 칩을 잃어요. 나갈까요?')) return
+    if (losing() && !confirm(LEAVE_MSG)) return
     leaving = true
     game.send({ t: 'leave' })
     setTimeout(() => { location.href = '/' }, 200)
   }
-  // '← 로비'는 공통 부품이 판 중이면 묻고 옮긴다 → 그때는 아래 확인을 건너뜀 (취소했으면 1.5초 뒤 되돌림)
-  document.querySelector('.casino-top [data-back]')?.addEventListener('click', () => { leaving = true; setTimeout(() => { leaving = false }, 1500) }, true)
+  // '← 로비'는 공통 부품이 (leaveMessage로) 묻고 옮긴다 → 그 뒤엔 아래 '페이지 떠나기' 확인을 건너뜀.
+  // 공통 확인보다 뒤에 돌아야 해서 버블 단계에 둠 (앞에 두면 leaveMessage가 null이 되어 묻지 않음). 취소했으면 1.5초 뒤 되돌림
+  document.querySelector('.casino-top [data-back]')?.addEventListener('click', () => { leaving = true; setTimeout(() => { leaving = false }, 1500) })
 }
 // 브라우저 뒤로 가기·탭 닫기: 카드를 받는 중이면 한 번 묻기
 addEventListener('beforeunload', ev => { if (!leaving && losing()) { ev.preventDefault(); ev.returnValue = '' } })
