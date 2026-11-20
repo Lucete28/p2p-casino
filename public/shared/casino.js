@@ -180,8 +180,7 @@ export async function startGame(opts = {}) {
   // 로비로: 판이 진행 중이면 확인 (나가면 건 칩을 잃는다), 아니면 칩을 코인으로 돌려받고 이동
   q('[data-back]').onclick = e => {
     if (!state.me || !ws || ws.readyState !== 1) return
-    e.preventDefault()
-    if (state.inPlay > 0 && !confirm('판이 진행 중이에요. 지금 나가면 건 칩을 잃어요. 나갈까요?')) return
+    e.preventDefault() // 판 중 확인은 위의 click 리스너(askLeave)가 이미 했다
     api.send({ t: 'leave' })
     setTimeout(() => { location.href = '../' }, 200)
   }
@@ -189,6 +188,7 @@ export async function startGame(opts = {}) {
   // ---------- 서버 연결 ----------
   let ws = null, wait = 1000, everOpened = false
   const api = {
+    askLeave: () => askLeave(), // 게임이 윗줄에 덧붙인 링크(JMTT 등)도 같은 확인을 쓰게: false면 머무름. true면 떠나도 됨 (페이지 떠나기 확인은 다시 안 뜸)
     get me() { return state.me }, get coins() { return state.coins }, get chips() { return state.chips }, get inPlay() { return state.inPlay },
     get game() { return state.game },
     send(msg) { if (ws?.readyState === 1) ws.send(JSON.stringify(msg)); else toast('서버에 다시 연결하는 중이에요.') },
