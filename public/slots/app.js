@@ -5,13 +5,16 @@
 //   클래식: 베팅 1 → 가운데 줄 1개 · 3 → 가로 3줄 · 5 이상(5의 배수) → 5줄 모두
 //   나머지: 베팅 = 단위 × (줄 수 · 과일 폭탄은 25). 다이아몬드는 줄 1개라 아무 금액
 import { startGame } from '../shared/casino.js'
-import { MACHINES, MACHINE_IDS, SYMBOLS, JACKPOT, TEASE_MS, checkBet, linesOf, exactRtp, crashMultAt } from './rules.mjs'
+import { MACHINES, MACHINE_IDS, SYMBOLS, JACKPOT, TEASE_MS, checkBet, linesOf, maxLineBet, crashMultAt } from './rules.mjs'
 import { burst, flyCoins, floatText, shake, celebrate, celebrating } from './fx.js'
 
 const $ = id => document.getElementById(id)
 const fmt = n => Number(n || 0).toLocaleString('ko-KR')
 // 좁은 칸용 짧은 숫자: 155,400 → 15.5만 · 31,080,000 → 3,108만 · 2,450,000,000 → 24.5억 (10만 미만은 그대로)
-const fmtShort = n => n < 1e5 ? fmt(n) : n < 1e6 ? fmt(Math.floor(n / 1e3) / 10) + '만' : n < 1e8 ? fmt(Math.floor(n / 1e4)) + '만' : fmt(Math.floor(n / 1e7) / 10) + '억'
+// 1억 이상 24.5억 · 3,108억, 1조 이상 12.3조 · 9,007조 (안전한 정수 최대 약 9,007조까지 짧게)
+const fmtShort = n => n < 1e5 ? fmt(n) : n < 1e6 ? fmt(Math.floor(n / 1e3) / 10) + '만' : n < 1e8 ? fmt(Math.floor(n / 1e4)) + '만'
+  : n < 1e10 ? fmt(Math.floor(n / 1e7) / 10) + '억' : n < 1e12 ? fmt(Math.floor(n / 1e8)) + '억'
+  : n < 1e14 ? fmt(Math.floor(n / 1e11) / 10) + '조' : fmt(Math.floor(n / 1e12)) + '조'
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const store = { // localStorage 키는 casino:slots: 로 시작
@@ -42,9 +45,9 @@ let jackpotPool = 0, jackpotLast = null
 // ---------- 베팅: 금액 하나 → 줄 수·줄당 ----------
 const LADDER = []
 for (let e = 1; e <= 1e11; e *= 10) LADDER.push(e, 2 * e, 5 * e) // 1, 2, 5, 10, 20, 50 …
-function betsOf(m) {
-  if (m.lineChoices) return [1, 3, ...LADDER.filter(v => v >= 5 && v % 5 === 0)] // 클래식: 1, 3, 5, 10, 20, 50 …
-  return LADDER.map(v => v * linesOf(m))
+function betsOf(m) { // 머신마다 줄당 상한(maxLineBet)까지만
+  if (m.lineChoices) return [1, 3, ...LADDER.filter(v => v >= 5 && v % 5 === 0 && v / 5 <= maxLineBet(m))] // 클래식: 1, 3, 5, 10, 20, 50 …
+  return LADDER.filter(v => v <= maxLineBet(m)).map(v => v * linesOf(m))
 }
 const split = (m, bet) => m.lineChoices
   ? (bet >= 5 ? { lines: 5, lineBet: bet / 5 } : { lines: bet, lineBet: 1 })
@@ -976,19 +979,25 @@ game = await startGame({
 })
 paintBet()
 
-// ---------- JMTT 홈으로 (윗줄은 공통 부품이라 여기서 링크만 덧붙임) ----------
-// 칩이 있으면 나가기(남은 칩 → 코인, 도는 스핀은 정해진 결과대로 정산)를 보낸 뒤 이동
+// ---------- 로비로 · JMTT 홈으로 (#길찾기) ----------
+// 윗줄은 공통 부품이라 여기서 JMTT 링크를 덧붙이고, 두 링크의 나가기를 슬롯에 맞게 한다:
+// 슬롯은 돌던 판도 정해진 결과대로 정산되므로 묻지 않고 바로 나간다 (공통 문구 "건 칩을 잃어요"는 슬롯엔 맞지 않음).
+// 크래시 로켓이 날고 있을 때만 "지금 배수로 내리고 나갈까요?" 한 번 묻는다. 남은 칩은 코인으로 돌아온다
 {
+  const back = document.querySelector('.casino-top [data-back]')
   const a = document.createElement('a')
   a.className = 'casino-back sl-jmtt'
   a.href = '/'
   a.textContent = 'JMTT'
   a.title = 'JMTT 홈으로 (남은 칩은 코인으로 돌려받아요)'
-  document.querySelector('.casino-top [data-back]')?.after(a)
-  a.onclick = e => {
-    if (!game?.me || (!game.chips && !game.inPlay)) return
+  back?.after(a)
+  const leaveTo = href => e => {
+    if (!game?.me || (!game.chips && !game.inPlay)) return // 칩도 판도 없으면 그냥 이동
     e.preventDefault()
+    if (cur.type === 'crash' && crash.flying && !crash.cashed && !crash.sent && !confirm(`로켓이 날고 있어요. 지금 배수(×${crash.mult.toFixed(2)})로 내리고 나갈까요?`)) return
     game.send({ t: 'leave' })
-    setTimeout(() => { location.href = '/' }, 200)
+    setTimeout(() => { location.href = href }, 200)
   }
+  a.onclick = leaveTo('/')
+  if (back) back.onclick = leaveTo(back.getAttribute('href') || '../')
 }

@@ -18,7 +18,7 @@
 // 결과는 돌리는 순간 모두 정해진다 (프리스핀·연쇄의 새 과일·잭팟 포함). 그사이 나가거나 끊기거나 서버를 꺼도 그 결과대로 바로 정산.
 import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { MACHINE_IDS, JACKPOT, jackpotWeight, machineOf, checkBet, evaluate, freeSpins, teases, TEASE_MS, CRASH_U, crashPoint, crashMultAt, crashTimeFor } from '../../../public/slots/rules.mjs'
+import { MACHINE_IDS, JACKPOT, jackpotWeight, SAFE_HALF, maxBackPerLineBet, machineOf, checkBet, evaluate, freeSpins, teases, TEASE_MS, CRASH_U, crashPoint, crashMultAt, crashTimeFor } from '../../../public/slots/rules.mjs'
 
 export const SPIN_MS = 2300 // 화면의 릴 연출(마지막 릴 정지 약 2.0초)보다 약간 길게
 export const FS_MS = { intro: 2200, spin: 1800, outro: 800 } // 프리스핀 연출 (public/slots/app.js와 같게)
@@ -63,13 +63,22 @@ function announce(ctx, now_ = false) { // 모두에게 잭팟 금액 (1초에 �
 // 테스트·시뮬레이션용: 지금 잭팟 상태 (소수점 포함)
 export const jackpotState = () => ({ ...jp })
 
+// 지급은 모두 여기로: 받을 칩이 안전한 정수가 아니거나 잔액과 더해 넘치면 줄이고 기록한다 (#규모).
+// 판을 시작할 때 이미 막지만(spin), 타이머 안에서 ctx.payout이 throw하면 서버 전체가 죽으므로 마지막 그물
+function pay(p, ctx, amount, round, detail) {
+  const room = Number.MAX_SAFE_INTEGER - p.chips
+  let a = Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0
+  if (a > room || !Number.isSafeInteger(a)) { console.error(`[slots] 지급이 너무 큼 ${p.id} ${amount} → ${room}`); a = Math.max(0, Math.min(a, room)) }
+  try { ctx.payout(p, a, round, detail) } catch (err) { console.error('[slots] payout', err.message) }
+}
+
 function finish(p, ctx) {
   const job = pending.get(p.id)
   if (!job) return
   if (job.crash) return crashOut(p, ctx, 'leave') // 크래시: 나가기·종료면 지금 배수로 내림 (안 터졌으면)
   clearTimeout(job.timer)
   pending.delete(p.id)
-  ctx.payout(p, job.back, job.round, job.result)
+  pay(p, ctx, job.back, job.round, job.result)
   if (job.jackpot) finishJackpot(p, ctx, job.jackpot, job.machine)
   else saveSoon()
 }
@@ -86,7 +95,7 @@ function crashOut(p, ctx, why) {
   clearTimeout(job.timer); clearTimeout(k.autoT)
   pending.delete(p.id)
   const win = Math.floor(k.total * mult)
-  ctx.payout(p, win + (k.jackpot?.win || 0), job.round, { ...job.result, out: mult, why })
+  pay(p, ctx, win + (k.jackpot?.win || 0), job.round, { ...job.result, out: mult, why })
   if (k.jackpot) finishJackpot(p, ctx, k.jackpot, 'crash')
   ctx.send(p, { t: 'crashCashed', round: job.round, mult, win })
   // 내린 뒤에도 로켓은 날다가 터진다: 터진 배수를 나중에 알려 줌 (그 판은 이미 끝)
@@ -99,7 +108,7 @@ function crashBoom(p, ctx) {
   if (!job?.crash) return
   clearTimeout(job.crash.autoT)
   pending.delete(p.id)
-  ctx.payout(p, job.crash.jackpot?.win || 0, job.round, { ...job.result, out: null })
+  pay(p, ctx, job.crash.jackpot?.win || 0, job.round, { ...job.result, out: null })
   if (job.crash.jackpot) finishJackpot(p, ctx, job.crash.jackpot, 'crash')
   ctx.send(p, { t: 'crashed', round: job.round, at: job.crash.c })
   saveSoon()
@@ -109,13 +118,15 @@ function finishJackpot(p, ctx, j, machine) {
   saveJackpot(); announce(ctx, true)
 }
 
-// 모두의 잭팟: 베팅의 2%를 쌓고, min(베팅, capBet) ÷ odds 확률로 전부 (미스터리). 터지면 { win, kind }
+// 모두의 잭팟: min(베팅, capBet)의 2%를 쌓고, 같은 min(베팅, capBet) ÷ odds 확률로 전부 (미스터리). 터지면 { win, kind }
+// 적립도 capBet까지만 (#규모 2026-11-20): 1억씩 거는 사람이 있어도 잭팟이 목표(약 200만)보다 훨씬 커지지 않게
 function rollJackpot(ctx, total) {
-  jp.pool += total * JACKPOT.contribute
-  jp.reserve += total * JACKPOT.reserve
+  const w = jackpotWeight(total)
+  jp.pool += w * JACKPOT.contribute
+  jp.reserve += w * JACKPOT.reserve
   let jackpot = null
-  if (ctx.rng.int(JP_ODDS) < jackpotWeight(total)) { // 확률에 넣는 베팅은 JACKPOT.capBet(1만)까지만
-    const win = Math.floor(jp.pool)
+  if (ctx.rng.int(JP_ODDS) < w) { // 확률에 넣는 베팅은 JACKPOT.capBet(1만)까지만
+    const win = Math.min(Math.floor(jp.pool), SAFE_HALF)
     jp.pool = Math.max(jp.pool - win + jp.reserve, JACKPOT.floor)
     jp.reserve = 0
     jp.hits++
@@ -153,6 +164,9 @@ export default {
     const m = machineOf(d.machine)
     const bet = checkBet(m, d.lineBet, d.lines)
     if (bet.error) return ctx.send(p, { t: 'toast', msg: bet.error })
+    // 이번 판에 받을 수 있는 최대(이론상) + 지금 잭팟을 잔액에 더해도 안전한 정수 안이어야 (#규모)
+    if (p.chips - bet.total + maxBackPerLineBet(m) * bet.lineBet + Math.min(Math.floor(jp.pool), SAFE_HALF) > Number.MAX_SAFE_INTEGER)
+      return ctx.send(p, { t: 'toast', msg: '칩이 너무 많아서 이 베팅은 못 해요. 베팅을 줄이거나 칩 일부를 코인으로 바꿔 주세요.' })
     const round = 's_' + Date.now().toString(36) + ctx.rng.int(1e6).toString(36)
     if (!ctx.bet(p, bet.total, round)) return ctx.send(p, { t: 'toast', msg: p.chips ? '칩이 모자라요.' : '먼저 칩을 바꿔 주세요.' })
 

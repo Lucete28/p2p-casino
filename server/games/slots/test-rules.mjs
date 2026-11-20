@@ -8,7 +8,7 @@ process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'slots-test-'))
 const rng = await import('../../core/rng.mjs')
 const { default: slots, SPIN_MS, FS_MS, jackpotState } = await import('./index.mjs')
 const R = await import('../../../public/slots/rules.mjs')
-const { MACHINES, JACKPOT, jackpotWeight, windowOf, lineWin, gemWin, waysWins, cascade, freeSpins, checkBet, linesOf, evaluate, exactRtp, teases, TEASE_MS, MAX_LINE_BET, CRASH_U, crashPoint, crashMultAt, crashTimeFor } = R
+const { MACHINES, JACKPOT, jackpotWeight, windowOf, lineWin, gemWin, waysWins, cascade, freeSpins, checkBet, linesOf, evaluate, exactRtp, teases, TEASE_MS, MAX_LINE_BET, CRASH_U, crashPoint, crashMultAt, crashTimeFor, SAFE_HALF, maxBackPerLineBet, maxLineBet } = R
 
 let n = 0
 const ok = (name, fn) => { fn(); n++; console.log('✓', name) }
@@ -161,7 +161,27 @@ ok('베팅 검사: 클래식 줄 1·3·5, 다이아 1, 과일 폭탄 25, 나머�
   assert.deepEqual(checkBet(M.fruit5, 2, 25), { lineBet: 2, lines: 25, total: 50 })
   assert.equal(linesOf(M.lucky), 10)
   assert.ok(checkBet(M.fruit5, 1, 20).error)
-  for (const [b, l] of [[0, 5], [1.5, 5], [-1, 1], [1, 2], [NaN, 5], ['x', 3], [MAX_LINE_BET + 1, 1]]) assert.ok(checkBet(M.classic, b, l).error, `${b} ${l}`)
+  for (const [b, l] of [[0, 5], [1.5, 5], [-1, 1], [1, 2], [NaN, 5], ['x', 3], [maxLineBet(M.classic) + 1, 5]]) assert.ok(checkBet(M.classic, b, l).error, `${b} ${l}`)
+})
+
+ok('#규모 줄당 베팅 상한: 머신마다 이론상 최대 지급 × 상한이 안전한 정수의 절반 안', () => {
+  for (const m of Object.values(M)) {
+    const max = maxLineBet(m), lines = (m.lineChoices || [linesOf(m)]).at(-1)
+    assert.ok(Number.isSafeInteger(max * maxBackPerLineBet(m)) && max * maxBackPerLineBet(m) <= SAFE_HALF, m.id)
+    assert.ok(!checkBet(m, max, lines).error, `${m.id} 상한은 됨`)
+    assert.ok(checkBet(m, max + 1, lines).error, `${m.id} 상한+1은 안 됨`)
+  }
+  assert.equal(MAX_LINE_BET, Math.min(...Object.values(M).map(maxLineBet)))
+  // 실제로 나온 지급이 경계를 넘지 않는지 (머신마다 2만 판, 줄당 1)
+  const randStops = m => m.strips.map(st => rng.int(st.length)).concat(m.mstrip ? [rng.int(m.mstrip.length)] : [])
+  for (const m of SLOTS) {
+    const lines = (m.lineChoices || [linesOf(m)]).at(-1)
+    for (let i = 0; i < 20000; i++) {
+      const r = evaluate(m, randStops(m), lines, 1, 1, rr => m.strips[rr][rng.int(m.strips[rr].length)])
+      const back = r.back + (r.bonus ? freeSpins(m, lines, 1, () => randStops(m)).total : 0)
+      assert.ok(back <= maxBackPerLineBet(m), `${m.id} ${back}`)
+    }
+  }
 })
 
 ok('크래시: 터지는 배수 P(≥x) = 1/x (언제 내려도 100%), 시간과 배수', () => {
@@ -304,6 +324,30 @@ ok('모두의 잭팟 확률: 드물게 (1억 분의 베팅), 확률에 넣는 �
     assert.equal(!!ctx.sent.at(-1).jackpot, hit, `n=${n}`)
     slots.message(p, { t: 'skip' }, ctx)
   }
+})
+
+ok('#규모 모두의 잭팟 적립도 1만 칩까지만 (1억 베팅이어도 150 + 50)', () => {
+  const p = { id: 'u_big', name: '큰손', chips: 1e12, inPlay: 0, limits: {} }
+  const ctx = { ...fakeCtx(p), rng: noMystery }
+  const a = jackpotState()
+  slots.message(p, { t: 'spin', machine: 'crash', lineBet: 100_000_000, lines: 1 }, ctx) // 1억
+  assert.equal(ctx.sent.at(-1).t, 'crashStart')
+  const b = jackpotState()
+  assert.ok(Math.abs(b.pool - a.pool - 10_000 * JACKPOT.contribute) < 1e-6 && Math.abs(b.reserve - a.reserve - 10_000 * JACKPOT.reserve) < 1e-6)
+  slots.leave(p, ctx)
+  assert.equal(p.inPlay, 0)
+})
+
+ok('#규모 잔액이 아주 크면: 받을 수 있는 최대를 더해 넘칠 베팅은 시작 전에 막음, 되는 베팅은 정상', () => {
+  const big = Number.MAX_SAFE_INTEGER - 1e9 // 약 9,007조
+  const p = { id: 'u_huge', name: '아주 큰손', chips: big, inPlay: 0, limits: {} }
+  const ctx = { ...fakeCtx(p), rng: noMystery }
+  slots.message(p, { t: 'spin', machine: 'classic', lineBet: 1_000_000, lines: 5 }, ctx) // 최대 3,885 × 100만 = 39억 > 10억 여유
+  assert.equal(ctx.sent.at(-1).t, 'toast'); assert.equal(p.chips, big); assert.equal(p.inPlay, 0)
+  slots.message(p, { t: 'spin', machine: 'classic', lineBet: 1, lines: 5 }, ctx)
+  assert.equal(ctx.sent.at(-1).t, 'spun')
+  slots.message(p, { t: 'skip' }, ctx)
+  assert.ok(Number.isSafeInteger(p.chips) && p.inPlay === 0)
 })
 
 ok('다시 들어오면 머신별 마지막 그림, 서버 종료 때 정산하고 잭팟 저장', () => {
